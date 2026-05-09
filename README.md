@@ -190,9 +190,11 @@ API endpoints:
 |--------|----------|-------------|
 | `GET` | `/api/v1/health` | Health check |
 | `POST` | `/api/v1/videos/ingest` | Upload and ingest a video |
-| `POST` | `/api/v1/videos/generate` | Generate documentation from ingested video |
-| `POST` | `/api/v1/videos/refine` | Refine a generated document with feedback |
 | `GET` | `/api/v1/videos/{video_id}/status` | Check processing status |
+| `GET` | `/api/v1/videos/{video_id}/extraction` | Get extraction results |
+| `POST` | `/api/v1/documents/generate` | Generate documentation from ingested video |
+| `GET` | `/api/v1/documents/{document_id}` | Retrieve a generated document |
+| `POST` | `/api/v1/documents/{document_id}/refine` | Refine a generated document with feedback |
 | `WS` | `/api/v1/ws/{video_id}` | WebSocket for real-time progress |
 
 Interactive API docs available at `http://127.0.0.1:8000/docs` when the server is running.

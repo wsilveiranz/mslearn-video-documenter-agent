@@ -594,7 +594,7 @@ def check_serial_comma(content: str) -> list[StyleFinding]:
         text = m.group()
         # Check if there's a comma before "and/or"
         if not re.search(r',\s+(?:and|or)\s+', text):
-            # Only report if there are at least 2 commas (indicating 3+ items)
+            # Report if there is at least 1 comma (pattern already matched "A, B and C")
             comma_count = text.count(",")
             if comma_count >= 1:
                 findings.append(StyleFinding(

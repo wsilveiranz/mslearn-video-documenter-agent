@@ -6,6 +6,7 @@ matches the real documentation in topic, structure, steps, and terminology.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -16,7 +17,11 @@ from agent_framework import Agent
 
 pytestmark = [pytest.mark.eval, pytest.mark.integration]
 
-_REFERENCE_CACHE_FILENAME = "reference_article.md"
+
+def _cache_filename_for_url(url: str) -> str:
+    """Return a cache filename based on a URL hash to avoid stale reuse."""
+    url_hash = hashlib.sha256(url.encode()).hexdigest()[:12]
+    return f"reference_article_{url_hash}.md"
 
 _JUDGE_SYSTEM_PROMPT = """\
 You are an expert documentation evaluator. You compare a generated document \
@@ -78,7 +83,7 @@ between the generated document and the reference.
 
 def _fetch_reference_article(url: str, cache_dir: Path) -> str:
     """Fetch the reference article from MS Learn, caching locally."""
-    cache_path = cache_dir / _REFERENCE_CACHE_FILENAME
+    cache_path = cache_dir / _cache_filename_for_url(url)
     if cache_path.exists():
         return cache_path.read_text(encoding="utf-8")
 
@@ -89,30 +94,34 @@ def _fetch_reference_article(url: str, cache_dir: Path) -> str:
     # Strip HTML to plain text — keep structure visible
     from html.parser import HTMLParser
 
+    _skip_tags = frozenset(("script", "style", "nav", "footer", "header"))
+
     class _TextExtractor(HTMLParser):
         def __init__(self):
             super().__init__()
             self._parts: list[str] = []
-            self._skip = False
+            self._skip_depth = 0
 
         def handle_starttag(self, tag, attrs):
-            self._skip = tag in ("script", "style", "nav", "footer", "header")
-            if tag in ("h1", "h2", "h3", "h4"):
-                level = int(tag[1])
-                self._parts.append("\n" + "#" * level + " ")
-            elif tag == "li":
-                self._parts.append("\n- ")
-            elif tag == "p":
-                self._parts.append("\n\n")
-            elif tag == "br":
-                self._parts.append("\n")
+            if tag in _skip_tags:
+                self._skip_depth += 1
+            if self._skip_depth == 0:
+                if tag in ("h1", "h2", "h3", "h4"):
+                    level = int(tag[1])
+                    self._parts.append("\n" + "#" * level + " ")
+                elif tag == "li":
+                    self._parts.append("\n- ")
+                elif tag == "p":
+                    self._parts.append("\n\n")
+                elif tag == "br":
+                    self._parts.append("\n")
 
         def handle_endtag(self, tag):
-            if tag in ("script", "style", "nav", "footer", "header"):
-                self._skip = False
+            if tag in _skip_tags and self._skip_depth > 0:
+                self._skip_depth -= 1
 
         def handle_data(self, data):
-            if not self._skip:
+            if self._skip_depth == 0:
                 self._parts.append(data)
 
     extractor = _TextExtractor()

@@ -1,5 +1,5 @@
 # Add FFmpeg (installed via winget) to the user PATH permanently.
-# Run this in an elevated (Admin) PowerShell terminal.
+# No elevation required — this modifies the current user's PATH only.
 #
 # Usage:
 #   .\add-ffmpeg-to-path.ps1                          # auto-discover from winget

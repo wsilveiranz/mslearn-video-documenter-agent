@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -174,9 +173,21 @@ async def ingest_video(
 
     is_temp_file = False
     if file is not None:
+        settings = get_settings()
+        max_bytes = settings.max_video_size_mb * 1024 * 1024
         suffix = Path(file.filename).suffix if file.filename else ".mp4"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            shutil.copyfileobj(file.file, tmp)
+            bytes_written = 0
+            while chunk := await file.read(1024 * 1024):
+                bytes_written += len(chunk)
+                if bytes_written > max_bytes:
+                    tmp.close()
+                    Path(tmp.name).unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Upload exceeds {settings.max_video_size_mb} MB limit.",
+                    )
+                tmp.write(chunk)
             source = tmp.name
         is_temp_file = True
     else:
