@@ -124,8 +124,8 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
             processing_mode=mode,
             supplementary_context=supplementary_context,
         )
-        events = await run_pipeline.run(request)
-        result = events[-1].data
+        workflow_result = await run_pipeline.run(request)
+        result = workflow_result.get_outputs()[0]
 
         _documents[result.document.document_id] = result.document
         _extractions[result.document.document_id] = result.extraction
