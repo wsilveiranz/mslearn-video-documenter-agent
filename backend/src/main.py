@@ -18,9 +18,14 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import router
-from src.api.websocket import ws_router
-from src.config import get_settings
+# Ensure backend/ is on sys.path when running main.py directly
+_backend_dir = str(Path(__file__).resolve().parent.parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
+from src.api.routes import router  # noqa: E402
+from src.api.websocket import ws_router  # noqa: E402
+from src.config import get_settings  # noqa: E402
 
 logger = structlog.get_logger()
 
@@ -68,14 +73,16 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-async def cli_process(video_path: str, doc_type: str, output_dir: str) -> None:
+async def cli_process(video_path: str, doc_type: str, output_dir: str, mode: str | None = None) -> None:
     """CLI entry point for processing a video into documentation."""
     from src.agents.orchestrator import PipelineInput, run_pipeline
     from src.models.document import DocType
+    from src.models.video import ProcessingMode
 
     request = PipelineInput(
         video_source=video_path,
         doc_type=DocType(doc_type),
+        processing_mode=ProcessingMode(mode) if mode else None,
     )
 
     logger.info("cli.start", video=video_path, doc_type=doc_type, output=output_dir)
@@ -115,9 +122,15 @@ if __name__ == "__main__":
             default="tutorial",
             choices=["quickstart", "tutorial", "how-to", "concept", "overview"],
         )
+        process_parser.add_argument(
+            "--mode",
+            default=None,
+            choices=["cloud", "local"],
+            help="Processing mode: 'local' uses FFmpeg+Whisper, 'cloud' uses Azure services (default: from config)",
+        )
         process_parser.add_argument("--output", default="./output", help="Output directory")
         args = parser.parse_args()
-        asyncio.run(cli_process(args.video_path, args.doc_type, args.output))
+        asyncio.run(cli_process(args.video_path, args.doc_type, args.output, args.mode))
     else:
         settings = get_settings()
         uvicorn.run(

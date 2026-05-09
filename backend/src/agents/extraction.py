@@ -44,11 +44,12 @@ class ExtractionAgent:
 
     async def _extract_cloud(self, metadata: VideoMetadata) -> ExtractionResult:
         """Cloud extraction using Azure Video Indexer + Speech."""
-        logger.warning(
-            "extraction.cloud_not_implemented",
-            msg="Cloud extraction requires Phase 3 — Azure Video Indexer integration",
+        msg = (
+            "Cloud extraction is not yet implemented (requires Phase 3 — Azure Video Indexer integration). "
+            "Use --mode local to process videos with FFmpeg + Whisper."
         )
-        return ExtractionResult(video_metadata=metadata, processing_mode=ProcessingMode.CLOUD)
+        logger.error("extraction.cloud_not_implemented", msg=msg)
+        raise NotImplementedError(msg)
 
     async def _extract_local(self, metadata: VideoMetadata) -> ExtractionResult:
         """Local extraction using FFmpeg + PySceneDetect + Whisper."""

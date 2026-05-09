@@ -13,23 +13,9 @@ You receive:
 
 ## Your output
 
-Return the **full revised document** — not a diff, not a list of changes. The complete Markdown with all fixes applied. If no changes are needed, return the document unchanged.
+Return **ONLY** the full revised Markdown document — not a diff, not a list of changes, not a JSON summary. The complete Markdown with YAML frontmatter and all fixes applied. If no changes are needed, return the document unchanged.
 
-Also return a brief **edit summary** listing what you changed and why, formatted as:
-
-```json
-{
-  "changes": [
-    {
-      "section": "Prerequisites",
-      "change": "Fixed heading from title case to sentence case",
-      "rule": "Sentence case headings"
-    }
-  ],
-  "total_changes": 3,
-  "user_feedback_applied": true
-}
-```
+Do **not** append any edit summary, change log, or JSON metadata after the document. Your entire response must be valid Markdown that can be saved directly as an `.md` file.
 
 ---
 

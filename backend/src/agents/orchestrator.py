@@ -92,6 +92,16 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
     extraction_agent = ExtractionAgent(foundry_client=client)
     extraction_result = await extraction_agent.process(ingestion_result.metadata, mode)
 
+    # Validate extraction produced meaningful data
+    if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
+        msg = (
+            "Extraction produced no transcript, scenes, or keyframes. "
+            "The pipeline cannot generate grounded documentation from empty data. "
+            "Check that the video file is valid and processing mode is correct."
+        )
+        logger.error("pipeline.empty_extraction", video_source=request.video_source, mode=mode)
+        raise RuntimeError(msg)
+
     # Stage 3: Structure
     logger.info("pipeline.stage", stage="structure")
     structure_agent = StructureAgent(client)

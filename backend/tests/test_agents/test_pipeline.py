@@ -17,6 +17,7 @@ from src.models.video import (
     ExtractionResult,
     IngestionResult,
     ProcessingMode,
+    TranscriptSegment,
     VideoMetadata,
     VideoSourceType,
 )
@@ -47,6 +48,9 @@ def _make_extraction_result() -> ExtractionResult:
     return ExtractionResult(
         video_metadata=_make_metadata(),
         processing_mode=ProcessingMode.LOCAL,
+        transcript=[
+            TranscriptSegment(text="This is a test transcript.", start_seconds=0.0, end_seconds=5.0),
+        ],
     )
 
 

@@ -30,7 +30,7 @@ class EditorAgent:
             logger.warning("editor.prompt_not_found", path=str(prompt_path))
 
     def _extract_markdown(self, text: str) -> str:
-        """Extract Markdown from LLM response, stripping code fences if present."""
+        """Extract Markdown from LLM response, stripping code fences and trailing JSON."""
         # Try explicit ```markdown or ```md fences
         match = re.search(r'```(?:markdown|md)\s*\n(.*?)```', text, re.DOTALL)
         if match and match.group(1).strip():
@@ -41,7 +41,14 @@ class EditorAgent:
         if outer and outer.group(1).strip():
             return outer.group(1).strip()
 
-        return text.strip()
+        cleaned = text.strip()
+
+        # Strip trailing JSON block (e.g., editor edit summary that leaked through)
+        cleaned = re.sub(r'\n```json\s*\n\{.*\}\s*$', '', cleaned, flags=re.DOTALL)
+        # Also handle bare JSON (no code fence) at the end
+        cleaned = re.sub(r'\n\{[\s\S]*"changes"[\s\S]*"total_changes"[\s\S]*\}\s*$', '', cleaned)
+
+        return cleaned.strip()
 
     def _count_words(self, text: str) -> int:
         """Count words, excluding YAML frontmatter."""
