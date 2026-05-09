@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "6804247616050136705"
+      "templateHash": "10923865731487743782"
     }
   },
   "parameters": {
@@ -118,7 +118,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "11851746728615674887"
+              "templateHash": "6529928769392868124"
             }
           },
           "parameters": {
@@ -147,7 +147,7 @@
           "resources": [
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
-              "apiVersion": "2025-04-01-preview",
+              "apiVersion": "2025-06-01",
               "name": "[format('{0}/{1}', format('ai-{0}', parameters('resourceToken')), 'gpt-4o')]",
               "properties": {
                 "model": {
@@ -166,7 +166,7 @@
             },
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
-              "apiVersion": "2025-04-01-preview",
+              "apiVersion": "2025-06-01",
               "name": "[format('{0}/{1}', format('ai-{0}', parameters('resourceToken')), 'gpt-4o-mini')]",
               "properties": {
                 "model": {
@@ -186,7 +186,7 @@
             },
             {
               "type": "Microsoft.CognitiveServices/accounts/projects",
-              "apiVersion": "2025-04-01-preview",
+              "apiVersion": "2025-06-01",
               "name": "[format('{0}/{1}', format('ai-{0}', parameters('resourceToken')), 'video-documenter-project')]",
               "location": "[parameters('location')]",
               "identity": {
@@ -204,7 +204,7 @@
             },
             {
               "type": "Microsoft.CognitiveServices/accounts",
-              "apiVersion": "2025-04-01-preview",
+              "apiVersion": "2025-06-01",
               "name": "[format('ai-{0}', parameters('resourceToken'))]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
@@ -248,11 +248,11 @@
             },
             "projectEndpoint": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts/projects', format('ai-{0}', parameters('resourceToken')), 'video-documenter-project'), '2025-04-01-preview').endpoints['AI Foundry API']]"
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts/projects', format('ai-{0}', parameters('resourceToken')), 'video-documenter-project'), '2025-06-01').endpoints['AI Foundry API']]"
             },
             "openAiEndpoint": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', format('ai-{0}', parameters('resourceToken'))), '2025-04-01-preview').endpoints['OpenAI Language Model Instance API']]"
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', format('ai-{0}', parameters('resourceToken'))), '2025-06-01').endpoints['OpenAI Language Model Instance API']]"
             }
           }
         }
@@ -533,7 +533,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "4568803409252616160"
+              "templateHash": "11309304188604831537"
             }
           },
           "parameters": {
@@ -559,7 +559,7 @@
           "resources": [
             {
               "type": "Microsoft.VideoIndexer/accounts",
-              "apiVersion": "2024-01-01",
+              "apiVersion": "2025-04-01",
               "name": "[format('vi-{0}', parameters('resourceToken'))]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
@@ -590,7 +590,7 @@
           "outputs": {
             "accountId": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.VideoIndexer/accounts', format('vi-{0}', parameters('resourceToken'))), '2024-01-01').accountId]"
+              "value": "[reference(resourceId('Microsoft.VideoIndexer/accounts', format('vi-{0}', parameters('resourceToken'))), '2025-04-01').accountId]"
             },
             "resourceId": {
               "type": "string",
@@ -602,7 +602,7 @@
             },
             "principalId": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.VideoIndexer/accounts', format('vi-{0}', parameters('resourceToken'))), '2024-01-01', 'full').identity.principalId]"
+              "value": "[reference(resourceId('Microsoft.VideoIndexer/accounts', format('vi-{0}', parameters('resourceToken'))), '2025-04-01', 'full').identity.principalId]"
             }
           }
         }

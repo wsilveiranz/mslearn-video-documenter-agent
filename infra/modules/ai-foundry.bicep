@@ -8,7 +8,7 @@ param principalType string
 param gpt4oCapacity int
 param gpt4oMiniCapacity int
 
-resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
+resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: 'ai-${resourceToken}'
   location: location
   tags: tags

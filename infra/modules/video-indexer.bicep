@@ -7,7 +7,7 @@ param principalId string
 param principalType string
 param storageAccountId string
 
-resource videoIndexer 'Microsoft.VideoIndexer/accounts@2024-01-01' = {
+resource videoIndexer 'Microsoft.VideoIndexer/accounts@2025-04-01' = {
   name: 'vi-${resourceToken}'
   location: location
   tags: tags
