@@ -26,10 +26,10 @@ param secondaryModelCapacity int = 60
 param enableModelDeployments bool = false
 
 @description('Deployment name for the primary model (must match what backend expects)')
-param primaryModelDeploymentName string = 'gpt-5-4-mini'
+param primaryModelDeploymentName string = 'gpt-4.1-mini'
 
 @description('Deployment name for the secondary/mini model')
-param secondaryModelDeploymentName string = 'gpt-5-4-nano'
+param secondaryModelDeploymentName string = 'gpt-4.1-mini'
 
 @description('Enable Video Indexer provisioning (requires Microsoft.VideoIndexer provider)')
 param enableVideoIndexer bool = true
