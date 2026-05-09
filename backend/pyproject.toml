@@ -57,3 +57,9 @@ include = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "cloud: tests requiring Azure cloud services",
+    "local: tests for local-mode processing",
+    "integration: integration tests requiring external services",
+    "slow: slow tests (>10s)",
+]
