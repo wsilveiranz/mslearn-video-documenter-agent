@@ -1,0 +1,118 @@
+"""Unit tests for FFmpegService with mocked subprocess calls."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from src.services.ffmpeg_service import FFmpegService
+
+
+@pytest.fixture
+def settings():
+    """Create a mock Settings object."""
+    s = MagicMock()
+    s.ffmpeg_path = "ffmpeg"
+    return s
+
+
+@pytest.fixture
+def service(settings):
+    return FFmpegService(settings)
+
+
+def _make_probe_output(duration: float = 60.0, width: int = 1920, height: int = 1080) -> str:
+    return json.dumps({
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": width,
+                "height": height,
+                "avg_frame_rate": "30/1",
+                "duration": str(duration),
+            }
+        ],
+        "format": {
+            "duration": str(duration),
+            "size": "10485760",
+        },
+    })
+
+
+@pytest.fixture
+def mock_subprocess():
+    """Patch asyncio.create_subprocess_exec to return a controlled process."""
+    with patch("src.services.ffmpeg_service.asyncio.create_subprocess_exec") as mock_exec:
+        proc = AsyncMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(return_value=(b"", b""))
+        mock_exec.return_value = proc
+        yield mock_exec, proc
+
+
+class TestProbeVideo:
+    async def test_probe_video_returns_metadata(self, service, mock_subprocess, tmp_path):
+        _mock_exec, proc = mock_subprocess
+        video_file = tmp_path / "test_video.mp4"
+        video_file.write_bytes(b"x" * 1000)
+        probe_output = _make_probe_output(duration=120.5, width=1280, height=720)
+        proc.communicate = AsyncMock(return_value=(probe_output.encode(), b""))
+
+        result = await service.probe_video(video_file)
+
+        assert result.duration_seconds == 120.5
+        assert result.resolution_width == 1280
+        assert result.resolution_height == 720
+        assert result.fps == 30.0
+        assert result.file_size_bytes == 10485760
+        assert len(result.video_id) == 12
+
+    async def test_probe_video_bad_return_code(self, service, mock_subprocess):
+        _, proc = mock_subprocess
+        proc.returncode = 1
+        proc.communicate = AsyncMock(return_value=(b"", b"ffprobe error"))
+
+        with pytest.raises(RuntimeError, match="exited with code 1"):
+            await service.probe_video(Path("bad_video.mp4"))
+
+
+class TestExtractAudio:
+    async def test_extract_audio_returns_output_path(self, service, mock_subprocess):
+        result = await service.extract_audio(Path("video.mp4"), Path("audio.wav"))
+
+        assert result == Path("audio.wav")
+
+    async def test_extract_audio_default_output(self, service, mock_subprocess):
+        result = await service.extract_audio(Path("video.mp4"))
+
+        assert result == Path("video.wav")
+
+    async def test_extract_audio_failure(self, service, mock_subprocess):
+        _, proc = mock_subprocess
+        proc.returncode = 1
+        proc.communicate = AsyncMock(return_value=(b"", b"audio extraction failed"))
+
+        with pytest.raises(RuntimeError):
+            await service.extract_audio(Path("video.mp4"))
+
+
+class TestExtractFrames:
+    async def test_extract_frames_at_scenes(self, service, mock_subprocess, tmp_path):
+        # Create fake frame files to be found by glob
+        for i in range(3):
+            (tmp_path / f"frame_{i:04d}.png").touch()
+
+        result = await service.extract_frames_at_scenes(Path("video.mp4"), tmp_path)
+
+        assert len(result) == 3
+
+    async def test_extract_frames_at_interval(self, service, mock_subprocess, tmp_path):
+        for i in range(5):
+            (tmp_path / f"frame_{i:04d}.png").touch()
+
+        result = await service.extract_frames_at_interval(Path("video.mp4"), tmp_path, interval_sec=2.0)
+
+        assert len(result) == 5

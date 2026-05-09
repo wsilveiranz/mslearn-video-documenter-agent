@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+import shutil
+import tempfile
+import uuid
+from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from src.agents.editor import EditorAgent
+from src.agents.evaluate import EvaluateAgent
+from src.agents.ingestion import IngestionAgent
+from src.agents.orchestrator import PipelineInput, run_pipeline
+from src.config import get_settings
 from src.models.document import DocType, GeneratedDocument
-from src.models.evaluation import EvaluationReport
-from src.models.video import ProcessingStatus, VideoJob
+from src.models.video import ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Video Documenter"])
 
-# ---- In-memory storage (replaced with proper storage in Phase 1) ----
+# ---- In-memory storage (Phase 1) ----
 _video_jobs: dict[str, VideoJob] = {}
 _documents: dict[str, GeneratedDocument] = {}
+_extractions: dict[str, ExtractionResult] = {}
 
 
 # ---- Request/Response Models ----
@@ -67,36 +75,115 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok", "service": "video-documenter"}
 
 
+# ---- Background task helpers ----
+
+async def _run_ingestion(video_id: str, source: str) -> None:
+    """Run ingestion in the background and update the video job."""
+    job = _video_jobs[video_id]
+    try:
+        job.status = ProcessingStatus.INGESTING
+        job.current_stage = "ingestion"
+        job.progress_pct = 10.0
+
+        settings = get_settings()
+        mode = ProcessingMode(settings.processing_mode)
+        agent = IngestionAgent()
+        result = await agent.process(source, mode)
+
+        job.extraction_result = None
+        job.status = ProcessingStatus.QUEUED
+        job.current_stage = "ingestion_complete"
+        job.progress_pct = 20.0
+        # Store the ingestion metadata on the job for later use
+        job.video_id = result.video_id
+
+        logger.info("api.ingestion_complete", video_id=result.video_id)
+    except Exception as exc:
+        job.status = ProcessingStatus.FAILED
+        job.error_message = str(exc)
+        logger.error("api.ingestion_failed", video_id=video_id, error=str(exc))
+
+
+async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context: str) -> None:
+    """Run the full pipeline in the background and update stores."""
+    job = _video_jobs.get(video_id)
+    if job is None:
+        return
+
+    try:
+        job.status = ProcessingStatus.EXTRACTING
+        job.current_stage = "pipeline"
+        job.progress_pct = 30.0
+
+        settings = get_settings()
+        mode = ProcessingMode(settings.processing_mode)
+
+        request = PipelineInput(
+            video_source=job.video_id,
+            doc_type=doc_type,
+            processing_mode=mode,
+            supplementary_context=supplementary_context,
+        )
+        events = await run_pipeline.run(request)
+        result = events[-1].data
+
+        _documents[result.document.document_id] = result.document
+        _extractions[result.document.document_id] = result.extraction
+
+        job.extraction_result = result.extraction
+        job.status = ProcessingStatus.COMPLETED
+        job.current_stage = "completed"
+        job.progress_pct = 100.0
+
+        logger.info(
+            "api.pipeline_complete",
+            video_id=video_id,
+            doc_id=result.document.document_id,
+            passed=result.evaluation.passed,
+            score=result.evaluation.scores.overall,
+        )
+    except Exception as exc:
+        job.status = ProcessingStatus.FAILED
+        job.error_message = str(exc)
+        logger.error("api.pipeline_failed", video_id=video_id, error=str(exc))
+
+
 # ---- Video Endpoints ----
 
 @router.post("/videos/ingest", response_model=IngestResponse)
 async def ingest_video(
-    file: UploadFile = File(None),
-    video_path: str = Form(None),
+    background_tasks: BackgroundTasks,
+    file: UploadFile | None = None,
+    video_path: str | None = Form(None),
 ) -> IngestResponse:
     """Upload or register a video for processing.
-    
+
     Accepts either a file upload or a file path/URL.
     """
     if file is None and video_path is None:
         raise HTTPException(status_code=400, detail="Provide either a file upload or video_path")
 
-    source = video_path or file.filename or "unknown"
-    logger.info("api.ingest", source=source)
+    if file is not None:
+        suffix = Path(file.filename).suffix if file.filename else ".mp4"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            source = tmp.name
+    else:
+        source = video_path  # type: ignore[assignment]
 
-    # TODO Phase 1: Call IngestionAgent
-    # - Validate video format and size
-    # - Upload to blob storage (cloud mode)
-    # - Create VideoJob record
+    video_id = uuid.uuid4().hex[:12]
 
-    video_id = "stub-video-id"
+    logger.info("api.ingest", source=source, video_id=video_id)
+
     job = VideoJob(video_id=video_id, status=ProcessingStatus.QUEUED)
     _video_jobs[video_id] = job
+
+    background_tasks.add_task(_run_ingestion, video_id, source)
 
     return IngestResponse(
         video_id=video_id,
         status=ProcessingStatus.QUEUED,
-        message=f"Video '{source}' queued for processing. This is a stub — full pipeline coming in Phase 1.",
+        message=f"Video '{Path(source).name}' queued for ingestion.",
     )
 
 
@@ -131,21 +218,25 @@ async def get_extraction_results(video_id: str) -> dict:
 # ---- Document Endpoints ----
 
 @router.post("/documents/generate", response_model=GenerateResponse)
-async def generate_document(request: GenerateRequest) -> GenerateResponse:
+async def generate_document(request: GenerateRequest, background_tasks: BackgroundTasks) -> GenerateResponse:
     """Generate an MS Learn document from a processed video."""
     job = _video_jobs.get(request.video_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Video job '{request.video_id}' not found")
 
+    if job.status == ProcessingStatus.FAILED:
+        raise HTTPException(status_code=400, detail=f"Video job '{request.video_id}' has failed: {job.error_message}")
+
     logger.info("api.generate", video_id=request.video_id, doc_type=request.doc_type)
 
-    # TODO Phase 1: Call pipeline (Structure → Writer → Editor → Evaluate)
-    doc_id = "stub-doc-id"
+    background_tasks.add_task(
+        _run_pipeline, request.video_id, request.doc_type, request.supplementary_context
+    )
 
     return GenerateResponse(
-        document_id=doc_id,
+        document_id="pending",
         status="queued",
-        message=f"Document generation for '{request.doc_type.value}' queued. Stub — coming in Phase 1.",
+        message=f"Document generation for '{request.doc_type.value}' queued.",
     )
 
 
@@ -166,17 +257,45 @@ async def get_document(document_id: str) -> DocumentResponse:
 
 
 @router.post("/documents/{document_id}/refine", response_model=GenerateResponse)
-async def refine_document(document_id: str, request: RefineRequest) -> GenerateResponse:
+async def refine_document(
+    document_id: str, request: RefineRequest, background_tasks: BackgroundTasks
+) -> GenerateResponse:
     """Iteratively refine a generated document with feedback."""
     doc = _documents.get(document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")
 
+    extraction = _extractions.get(document_id)
+
     logger.info("api.refine", doc_id=document_id, feedback_length=len(request.feedback))
 
-    # TODO Phase 1: Call EditorAgent with feedback, then re-evaluate
+    async def _refine() -> None:
+        try:
+            from src.agents.orchestrator import create_foundry_client
+
+            client = create_foundry_client()
+            editor = EditorAgent(client)
+            refined = await editor.process(doc, feedback=request.feedback)
+
+            if extraction is not None:
+                evaluator = EvaluateAgent(client)
+                evaluation = await evaluator.process(refined, extraction)
+                logger.info(
+                    "api.refine_evaluated",
+                    doc_id=document_id,
+                    score=evaluation.scores.overall,
+                    passed=evaluation.passed,
+                )
+
+            _documents[document_id] = refined
+            logger.info("api.refine_complete", doc_id=document_id, revision=refined.revision_number)
+        except Exception as exc:
+            logger.error("api.refine_failed", doc_id=document_id, error=str(exc))
+
+    background_tasks.add_task(_refine)
+
     return GenerateResponse(
         document_id=document_id,
         status="queued",
-        message="Refinement queued. Stub — coming in Phase 1.",
+        message="Refinement queued.",
     )
