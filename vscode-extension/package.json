@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "publisher": "video-documenter",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.100.0",
+    "node": ">=24.0.0"
   },
   "categories": [
     "Chat"
@@ -67,7 +68,7 @@
     "@vscode/prompt-tsx": "^0.3.0-alpha.12"
   },
   "devDependencies": {
-    "@types/node": "^22.19.18",
+    "@types/node": "^24.12.3",
     "@types/vscode": "^1.100.0",
     "typescript": "^5.9.2"
   }
