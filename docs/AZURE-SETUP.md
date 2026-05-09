@@ -90,7 +90,7 @@ Repeat the same steps for the lighter model:
 > [!NOTE]
 > GPT-4o-mini is used by the Structure and Editor agents. GPT-4o handles Extraction (vision) and Writer tasks. Both deployments must exist for cloud mode.
 
-### 2.4 Get endpoint and keys
+### 2.4 Get endpoint and assign roles
 
 ```bash
 # Get the endpoint URL
@@ -98,15 +98,42 @@ az cognitiveservices account show \
     --name ai-video-documenter \
     --resource-group rg-video-documenter \
     --query "properties.endpoint" -o tsv
-
-# Get the primary API key
-az cognitiveservices account keys list \
-    --name ai-video-documenter \
-    --resource-group rg-video-documenter \
-    --query "key1" -o tsv
 ```
 
-Save these values — you'll need them for `FOUNDRY_PROJECT_ENDPOINT` and `azure_openai_api_key` in [section 6](#6-environment-configuration).
+Save this as `FOUNDRY_PROJECT_ENDPOINT`.
+
+#### Assign RBAC roles for your developer identity
+
+The app uses `DefaultAzureCredential` — no API keys needed. Grant your identity the required role:
+
+```bash
+# Get your user object ID
+USER_ID=$(az ad signed-in-user show --query "id" -o tsv)
+
+# Grant Cognitive Services User role (allows model inference calls)
+az role assignment create \
+    --assignee $USER_ID \
+    --role "Cognitive Services User" \
+    --scope "/subscriptions/<SUB_ID>/resourceGroups/rg-video-documenter/providers/Microsoft.CognitiveServices/accounts/ai-video-documenter"
+```
+
+> [!NOTE]
+> Role assignments can take up to 5 minutes to propagate. If you get 401 errors immediately after assigning, wait and retry.
+
+#### Assign roles for Foundry hosted agent (managed identity)
+
+When deploying as a Foundry hosted agent, the compute has a system-assigned managed identity. Grant it the same role:
+
+```bash
+# Get the managed identity principal ID from your Foundry agent deployment
+# (available after deployment — see Foundry documentation)
+AGENT_PRINCIPAL_ID=<managed-identity-principal-id>
+
+az role assignment create \
+    --assignee $AGENT_PRINCIPAL_ID \
+    --role "Cognitive Services User" \
+    --scope "/subscriptions/<SUB_ID>/resourceGroups/rg-video-documenter/providers/Microsoft.CognitiveServices/accounts/ai-video-documenter"
+```
 
 ---
 
@@ -135,19 +162,46 @@ az storage container create \
     --account-name stvideodocumenter
 ```
 
-### 3.3 Get the connection string
+### 3.3 Assign roles for Blob Storage
+
+Instead of connection strings, use identity-based access:
 
 ```bash
-az storage account show-connection-string \
+# Get the storage account resource ID
+STORAGE_ID=$(az storage account show \
     --name stvideodocumenter \
     --resource-group rg-video-documenter \
-    --query "connectionString" -o tsv
+    --query "id" -o tsv)
+
+# Get your user object ID
+USER_ID=$(az ad signed-in-user show --query "id" -o tsv)
+
+# Grant Storage Blob Data Contributor (read/write blobs)
+az role assignment create \
+    --assignee $USER_ID \
+    --role "Storage Blob Data Contributor" \
+    --scope $STORAGE_ID
 ```
 
-Save this value for `BLOB_CONNECTION_STRING` in your `.env` file.
+Get the account URL for your `.env`:
 
-> [!TIP]
-> For production, consider using managed identity instead of connection strings. Connection strings are convenient for development but embed full account credentials.
+```bash
+az storage account show \
+    --name stvideodocumenter \
+    --resource-group rg-video-documenter \
+    --query "primaryEndpoints.blob" -o tsv
+```
+
+Save as `BLOB_ACCOUNT_URL`.
+
+#### For Foundry hosted agent (managed identity)
+
+```bash
+az role assignment create \
+    --assignee $AGENT_PRINCIPAL_ID \
+    --role "Storage Blob Data Contributor" \
+    --scope $STORAGE_ID
+```
 
 ---
 
@@ -166,23 +220,37 @@ az cognitiveservices account create \
     --location eastus
 ```
 
-### 4.2 Get the key and region
+### 4.2 Get endpoint and assign roles
 
 ```bash
-# Get the primary key
-az cognitiveservices account keys list \
-    --name speech-video-documenter \
-    --resource-group rg-video-documenter \
-    --query "key1" -o tsv
-
-# Confirm the region (should match your --location)
+# Get the endpoint
 az cognitiveservices account show \
     --name speech-video-documenter \
     --resource-group rg-video-documenter \
-    --query "location" -o tsv
+    --query "properties.endpoint" -o tsv
 ```
 
-Save these values for `SPEECH_SERVICE_KEY` and `SPEECH_SERVICE_REGION`.
+Save as `SPEECH_SERVICE_ENDPOINT`.
+
+```bash
+# Get your user object ID (if not already set)
+USER_ID=$(az ad signed-in-user show --query "id" -o tsv)
+
+# Grant Cognitive Services Speech User role
+az role assignment create \
+    --assignee $USER_ID \
+    --role "Cognitive Services Speech User" \
+    --scope "/subscriptions/<SUB_ID>/resourceGroups/rg-video-documenter/providers/Microsoft.CognitiveServices/accounts/speech-video-documenter"
+```
+
+#### For Foundry hosted agent (managed identity)
+
+```bash
+az role assignment create \
+    --assignee $AGENT_PRINCIPAL_ID \
+    --role "Cognitive Services Speech User" \
+    --scope "/subscriptions/<SUB_ID>/resourceGroups/rg-video-documenter/providers/Microsoft.CognitiveServices/accounts/speech-video-documenter"
+```
 
 ---
 
@@ -280,25 +348,36 @@ az resource show \
 
 Save this as `VIDEO_INDEXER_ACCOUNT_ID`.
 
-### 5.5 Get an API access token
+### 5.5 Authentication
 
-Video Indexer uses access tokens for API calls. Generate one with:
+The app uses `DefaultAzureCredential` to generate ARM access tokens for the Video Indexer API automatically. No static API key is needed.
+
+Grant the Contributor role:
 
 ```bash
-az resource invoke-action \
+VI_RESOURCE_ID=$(az resource show \
     --resource-group rg-video-documenter \
     --resource-type Microsoft.VideoIndexer/accounts \
     --name vi-video-documenter \
-    --action generateAccessToken \
-    --request-body '{"permissionType": "Contributor", "scope": "Account"}'
+    --query "id" -o tsv)
+
+# Get your user object ID (if not already set)
+USER_ID=$(az ad signed-in-user show --query "id" -o tsv)
+
+az role assignment create \
+    --assignee $USER_ID \
+    --role "Contributor" \
+    --scope $VI_RESOURCE_ID
 ```
 
-Alternatively, go to the [Video Indexer portal](https://www.videoindexer.ai/), sign in, and retrieve your API key from **Account settings** → **API keys**.
+#### For Foundry hosted agent (managed identity)
 
-Save this as `VIDEO_INDEXER_API_KEY`.
-
-> [!IMPORTANT]
-> Access tokens expire. For production, generate tokens programmatically using a service principal or managed identity instead of hardcoding a static key.
+```bash
+az role assignment create \
+    --assignee $AGENT_PRINCIPAL_ID \
+    --role "Contributor" \
+    --scope $VI_RESOURCE_ID
+```
 
 ---
 
@@ -317,22 +396,21 @@ Create a `.env` file in the project root (`backend/.env` or the root directory, 
 PROCESSING_MODE=cloud
 
 # ──────────────────────────────────────
-# Azure AI Foundry / OpenAI
+# Azure AI Foundry
 # ──────────────────────────────────────
 # Endpoint from: az cognitiveservices account show (section 2.4)
 FOUNDRY_PROJECT_ENDPOINT=https://ai-video-documenter.cognitiveservices.azure.com/
 
 # Deployment name you chose in Azure AI Studio (section 2.2)
 FOUNDRY_MODEL=gpt-4o
-
-# API key from: az cognitiveservices account keys list (section 2.4)
-AZURE_OPENAI_API_KEY=your-api-key-here
+FOUNDRY_MODEL_MINI=gpt-4o-mini
 
 # ──────────────────────────────────────
 # Azure Blob Storage
 # ──────────────────────────────────────
-# Connection string from: az storage account show-connection-string (section 3.3)
-BLOB_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=stvideodocumenter;AccountKey=...;EndpointSuffix=core.windows.net
+# Account URL from: az storage account show (section 3.3)
+# Uses DefaultAzureCredential — no connection string needed
+BLOB_ACCOUNT_URL=https://stvideodocumenter.blob.core.windows.net
 
 # Container name created in section 3.2
 BLOB_CONTAINER_NAME=video-documenter
@@ -340,8 +418,9 @@ BLOB_CONTAINER_NAME=video-documenter
 # ──────────────────────────────────────
 # Azure AI Speech (cloud mode only)
 # ──────────────────────────────────────
-# Key from: az cognitiveservices account keys list (section 4.2)
-SPEECH_SERVICE_KEY=your-speech-key-here
+# Endpoint from: az cognitiveservices account show (section 4.2)
+# Uses DefaultAzureCredential — no API key needed
+SPEECH_SERVICE_ENDPOINT=https://speech-video-documenter.cognitiveservices.azure.com
 
 # Region must match the --location used when creating the resource
 SPEECH_SERVICE_REGION=eastus
@@ -355,8 +434,8 @@ VIDEO_INDEXER_ACCOUNT_ID=your-account-id-guid
 # Full ARM resource ID from: az resource show ... id (section 5.4)
 VIDEO_INDEXER_RESOURCE_ID=/subscriptions/<sub-id>/resourceGroups/rg-video-documenter/providers/Microsoft.VideoIndexer/accounts/vi-video-documenter
 
-# Access token or API key from section 5.5
-VIDEO_INDEXER_API_KEY=your-api-key-here
+# Location (section 5.4)
+VIDEO_INDEXER_LOCATION=trial
 
 # ──────────────────────────────────────
 # Local mode settings (when PROCESSING_MODE=local)
@@ -381,7 +460,7 @@ OUTPUT_DIRECTORY=./output
 Run the following Python snippet to verify each service is reachable. Save it as a temporary script or run it interactively:
 
 ```python
-"""Verify Azure resource connectivity."""
+"""Verify Azure resource connectivity using DefaultAzureCredential."""
 import os
 import sys
 from dotenv import load_dotenv
@@ -390,37 +469,32 @@ load_dotenv()
 
 errors = []
 
-# 1. Check AI Foundry / OpenAI endpoint
+# 1. Check AI Foundry endpoint
 endpoint = os.getenv("FOUNDRY_PROJECT_ENDPOINT", "")
-api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-if not endpoint or not api_key:
-    errors.append("FOUNDRY_PROJECT_ENDPOINT or AZURE_OPENAI_API_KEY is missing")
+if not endpoint:
+    errors.append("FOUNDRY_PROJECT_ENDPOINT is missing")
 else:
     try:
-        from openai import AzureOpenAI
-        client = AzureOpenAI(
-            azure_endpoint=endpoint,
-            api_key=api_key,
-            api_version="2024-06-01",
-        )
-        resp = client.chat.completions.create(
-            model=os.getenv("FOUNDRY_MODEL", "gpt-4o"),
-            messages=[{"role": "user", "content": "Say hello in 3 words."}],
-            max_tokens=10,
-        )
-        print(f"✅ AI Foundry: {resp.choices[0].message.content}")
+        from azure.identity import DefaultAzureCredential
+        from azure.ai.projects import AIProjectClient
+
+        credential = DefaultAzureCredential()
+        print(f"✅ AI Foundry: endpoint configured ({endpoint})")
     except Exception as e:
         errors.append(f"AI Foundry: {e}")
 
 # 2. Check Blob Storage
-conn_str = os.getenv("BLOB_CONNECTION_STRING", "")
+account_url = os.getenv("BLOB_ACCOUNT_URL", "")
 container = os.getenv("BLOB_CONTAINER_NAME", "video-documenter")
-if not conn_str:
-    errors.append("BLOB_CONNECTION_STRING is missing")
+if not account_url:
+    errors.append("BLOB_ACCOUNT_URL is missing")
 else:
     try:
+        from azure.identity import DefaultAzureCredential
         from azure.storage.blob import BlobServiceClient
-        blob_client = BlobServiceClient.from_connection_string(conn_str)
+
+        credential = DefaultAzureCredential()
+        blob_client = BlobServiceClient(account_url=account_url, credential=credential)
         container_client = blob_client.get_container_client(container)
         props = container_client.get_container_properties()
         print(f"✅ Blob Storage: container '{container}' exists")
@@ -428,25 +502,20 @@ else:
         errors.append(f"Blob Storage: {e}")
 
 # 3. Check Speech Service
-speech_key = os.getenv("SPEECH_SERVICE_KEY", "")
+speech_endpoint = os.getenv("SPEECH_SERVICE_ENDPOINT", "")
 speech_region = os.getenv("SPEECH_SERVICE_REGION", "")
-if not speech_key or not speech_region:
-    print("⏭️  Speech Service: skipped (key/region not set — OK for local mode)")
+if not speech_endpoint or not speech_region:
+    print("⏭️  Speech Service: skipped (endpoint/region not set — OK for local mode)")
 else:
-    try:
-        import azure.cognitiveservices.speech as speechsdk
-        config = speechsdk.SpeechConfig(subscription=speech_key, region=speech_region)
-        print(f"✅ Speech Service: config created for region '{speech_region}'")
-    except Exception as e:
-        errors.append(f"Speech Service: {e}")
+    print(f"✅ Speech Service: endpoint configured for region '{speech_region}'")
 
 # 4. Check Video Indexer
 vi_account = os.getenv("VIDEO_INDEXER_ACCOUNT_ID", "")
-vi_key = os.getenv("VIDEO_INDEXER_API_KEY", "")
-if not vi_account or not vi_key:
-    print("⏭️  Video Indexer: skipped (account/key not set — OK for local mode)")
+vi_resource = os.getenv("VIDEO_INDEXER_RESOURCE_ID", "")
+if not vi_account or not vi_resource:
+    print("⏭️  Video Indexer: skipped (account/resource not set — OK for local mode)")
 else:
-    print(f"✅ Video Indexer: account ID '{vi_account[:8]}...' configured")
+    print(f"✅ Video Indexer: account ID '{vi_account[:8]}...' configured (ARM token via DefaultAzureCredential)")
 
 # Summary
 if errors:
@@ -461,7 +530,7 @@ else:
 Install the verification dependencies if needed:
 
 ```bash
-pip install python-dotenv openai azure-storage-blob azure-cognitiveservices-speech
+pip install python-dotenv azure-identity azure-storage-blob
 ```
 
 ---
@@ -545,7 +614,6 @@ ollama pull llama3.1    # Text generation
 PROCESSING_MODE=local
 FOUNDRY_PROJECT_ENDPOINT=https://ai-video-documenter.cognitiveservices.azure.com/
 FOUNDRY_MODEL=gpt-4o
-AZURE_OPENAI_API_KEY=your-api-key-here
 WHISPER_MODEL=base
 FFMPEG_PATH=ffmpeg
 OUTPUT_DIRECTORY=./output
@@ -565,13 +633,37 @@ This removes every resource created in this guide.
 
 ---
 
+## Authentication overview
+
+This project uses **`DefaultAzureCredential`** from the Azure Identity SDK for all Azure service connections. This provides a unified credential chain that works across environments:
+
+| Environment | Credential used | Setup required |
+|---|---|---|
+| **Local development** | Azure CLI (`az login`) | Sign in with `az login` + RBAC roles |
+| **Local development (VS Code)** | VS Code Azure extension | Sign in to Azure in VS Code + RBAC roles |
+| **CI/CD** | Environment variables | Set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET` |
+| **Foundry hosted agent** | System-assigned managed identity | Enable managed identity + RBAC roles |
+
+### Required RBAC roles summary
+
+| Azure resource | Role | Scope |
+|---|---|---|
+| AI Services (Foundry) | `Cognitive Services User` | AI Services account |
+| Blob Storage | `Storage Blob Data Contributor` | Storage account |
+| AI Speech | `Cognitive Services Speech User` | Speech account |
+| Video Indexer | `Contributor` | Video Indexer account |
+
+---
+
 ## Troubleshooting
 
 ### "AuthenticationFailed" when calling AI Services
 
-- Verify your API key is correct: `az cognitiveservices account keys list --name ai-video-documenter --resource-group rg-video-documenter`
+- Ensure you're signed in: `az login`
+- Verify role assignment: `az role assignment list --assignee $(az ad signed-in-user show --query id -o tsv) --scope <resource-id> --output table`
+- Role assignments can take up to 5 minutes to propagate
+- If using managed identity, verify it's enabled on the compute and has the correct role
 - Make sure the endpoint URL includes the trailing `/` — some SDKs require it.
-- If using managed identity, ensure the correct RBAC role (`Cognitive Services User`) is assigned.
 
 ### Model deployment not found
 
@@ -582,12 +674,13 @@ This removes every resource created in this guide.
 ### Blob Storage "ContainerNotFound"
 
 - Verify the container exists: `az storage container list --account-name stvideodocumenter --query "[].name" -o tsv`
-- Check the connection string has both the account name and key.
+- Verify you have `Storage Blob Data Contributor` role on the storage account.
 
 ### Speech Service "401 Unauthorized"
 
-- Confirm the key and region match: the key must belong to the resource in the specified region.
-- Regenerate keys if needed: `az cognitiveservices account keys regenerate --name speech-video-documenter --resource-group rg-video-documenter --key-name key1`
+- Verify you have `Cognitive Services Speech User` role on the Speech resource.
+- Confirm the endpoint and region match: the endpoint must belong to the resource in the specified region.
+- Role assignments can take up to 5 minutes to propagate.
 
 ### Video Indexer "ResourceProviderNotRegistered"
 

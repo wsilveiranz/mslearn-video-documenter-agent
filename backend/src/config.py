@@ -40,11 +40,14 @@ class Settings(BaseSettings):
     )
 
     # --- Azure Blob Storage ---
-    blob_connection_string: str = Field(default="", description="Azure Blob Storage connection string")
+    blob_account_url: str = Field(
+        default="",
+        description="Azure Blob Storage account URL (e.g., https://stvideodocumenter.blob.core.windows.net)",
+    )
     blob_container_name: str = Field(default="video-documenter", description="Container name for video files")
 
     # --- Azure AI Speech (cloud mode) ---
-    speech_service_key: str = Field(default="", description="Azure AI Speech service key")
+    speech_service_endpoint: str = Field(default="", description="Azure AI Speech endpoint URL")
     speech_service_region: str = Field(default="eastus", description="Azure AI Speech region")
 
     # --- Azure Video Indexer (cloud mode) ---
@@ -53,7 +56,6 @@ class Settings(BaseSettings):
         default="",
         description="Full ARM resource ID for Video Indexer",
     )
-    video_indexer_api_key: str = Field(default="", description="Video Indexer API key")
     video_indexer_location: str = Field(default="trial", description="Video Indexer account location")
 
     # --- Local Mode Settings ---
@@ -92,6 +94,19 @@ class Settings(BaseSettings):
     @property
     def is_local_mode(self) -> bool:
         return self.processing_mode == "local"
+
+    def get_azure_credential(self):
+        """Get Azure credential for service authentication.
+
+        Uses DefaultAzureCredential which supports:
+        - Managed Identity (production/Foundry hosted agents)
+        - Azure CLI credential (local development)
+        - Environment variables (CI/CD)
+        - VS Code credential (local development)
+        """
+        from azure.identity import DefaultAzureCredential
+
+        return DefaultAzureCredential()
 
 
 @lru_cache

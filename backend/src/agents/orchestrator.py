@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from agent_framework import workflow
 from agent_framework.foundry import FoundryChatClient
-from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 
 from src.config import get_settings
 from src.models.document import DocType, GeneratedDocument
@@ -42,12 +42,12 @@ class PipelineInput(BaseModel):
 
 
 def create_foundry_client() -> FoundryChatClient:
-    """Create a FoundryChatClient from application settings."""
+    """Create a FoundryChatClient using DefaultAzureCredential."""
     settings = get_settings()
     return FoundryChatClient(
         project_endpoint=settings.foundry_project_endpoint,
         model=settings.foundry_model,
-        credential=AzureCliCredential(),
+        credential=DefaultAzureCredential(),
     )
 
 

@@ -448,14 +448,13 @@ class Settings(BaseSettings):
     # Azure Video Indexer (cloud mode)
     video_indexer_account_id: str = ""
     video_indexer_resource_id: str = ""
-    video_indexer_api_key: str = ""
     
     # Azure Speech (cloud mode)
-    speech_service_key: str = ""
+    speech_service_endpoint: str = ""
     speech_service_region: str = "eastus"
     
     # Azure Blob Storage
-    blob_connection_string: str = ""
+    blob_account_url: str = ""
     blob_container_name: str = "video-documenter"
     
     # Local mode settings
