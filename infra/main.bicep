@@ -22,6 +22,9 @@ param primaryModelCapacity int = 30
 @description('Secondary model deployment capacity (thousands of tokens per minute)')
 param secondaryModelCapacity int = 60
 
+@description('Enable model deployments (disable to deploy models manually via Portal/CLI)')
+param enableModelDeployments bool = false
+
 @description('Enable Video Indexer provisioning (requires Microsoft.VideoIndexer provider)')
 param enableVideoIndexer bool = true
 
@@ -55,7 +58,7 @@ module aiFoundry 'modules/ai-foundry.bicep' = {
 // Model deployments must be a separate nested deployment because ARM
 // pre-flight validation cannot validate deployments against an account
 // that doesn't exist yet (produces opaque error 715-123420).
-module modelDeployments 'modules/model-deployments.bicep' = {
+module modelDeployments 'modules/model-deployments.bicep' = if (enableModelDeployments) {
   scope: rg
   name: 'model-deployments'
   params: {
