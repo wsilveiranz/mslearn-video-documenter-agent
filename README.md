@@ -159,10 +159,10 @@ output/
     └── ...
 ```
 
-**Example:**
+**Example** (provide your own video file):
 
 ```bash
-python src/main.py process ../test_videos/CloneToStandard-ShortDemo.mp4 --mode local --doc-type tutorial
+python src/main.py process path/to/your-video.mp4 --mode local --doc-type tutorial
 ```
 
 ```

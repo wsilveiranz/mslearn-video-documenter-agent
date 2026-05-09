@@ -10,7 +10,7 @@
 
 ## Roadmap Overview
 
-The implementation is divided into **5 phases**, each delivering a usable increment. The agent becomes functional after Phase 2, with progressively richer capabilities in later phases.
+The implementation is divided into **6 phases**, each delivering a usable increment. The agent becomes functional after Phase 2, with progressively richer capabilities in later phases.
 
 ```
 Phase 0: Foundation ──▶ Phase 1: Core Pipeline ──▶ Phase 2: VS Code Integration
@@ -20,13 +20,13 @@ Phase 0: Foundation ──▶ Phase 1: Core Pipeline ──▶ Phase 2: VS Code 
   Azure provisioning     Local processing           End-to-end flow
   MAF scaffolding        Basic generation           File input/output
 
-Phase 3: Cloud & Quality ──▶ Phase 4: Polish & Extensibility
-    │                            │
-    ▼                            ▼
-  Azure Video Indexer          Screenshot annotations
-  Azure Speech                 Multi-source video input
-  Evaluate Agent               Evaluation dashboard
-  Iterative refinement         MCP server (future)
+Phase 3: Tool & Extension ──▶ Phase 4: Cloud & Quality ──▶ Phase 5: Polish & Extensibility
+    │                             │                             │
+    ▼                             ▼                             ▼
+  MCP client + grounding       Azure Video Indexer           Screenshot annotations
+  Companion extensions         Azure Speech                  Multi-source video input
+  Learn Authoring Pack         Evaluate Agent                Evaluation dashboard
+  Content Mentor workflow      Iterative refinement          MCP server (future)
 ```
 
 ---

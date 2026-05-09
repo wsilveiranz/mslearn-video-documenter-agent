@@ -293,6 +293,17 @@ az resource create --name example
 
 **Recommendation:** The Video Documenter agent should be designed as a **complementary tool** that generates draft content, which can then be refined using Content Mentor.
 
+**Key capabilities for Video Documenter workflow:**
+- `@content-mentor` chat participant in GitHub Copilot Chat for documentation-specific AI review
+- Markdown auto-fix for common formatting issues (lists, tables, links, alerts, spacing, images)
+- Link validation including detection of broken links, redirects, and timeouts
+- Visual TOC management for Learn documentation hierarchies
+- "Verify Against UI" capability — AI agent walks through live product UIs and compares against documentation
+
+**Integration model:** Companion workflow. The Video Documenter generates draft content, then users run Content Mentor for AI-powered validation and refinement. The VS Code extension detects Content Mentor installation and provides contextual tips.
+
+**Note:** Content Mentor (formerly DocuMentor) is maintained by Microsoft and is available as an internal Microsoft VS Code extension (`msft-content.content-mentor`).
+
 ### 9.2 Doc-Kit
 
 **Status:** Internal pilot (Foundry docs team)  

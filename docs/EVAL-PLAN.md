@@ -1,6 +1,13 @@
 # Evaluation plan
 
-This document describes the evaluation strategy for each agent in the video-to-documentation pipeline. All eval tests live in `backend/tests/eval/` and run against a real test video (`test_videos/CloneToStandard-ShortDemo.mp4`).
+This document describes the evaluation strategy for each agent in the video-to-documentation pipeline. All eval tests live in `backend/tests/eval/` and run against a user-provided test video. By default they expect `test_videos/CloneToStandard-ShortDemo.mp4`, but you can supply any video via `--video`:
+
+```bash
+pytest tests/eval/ -v -s --video path/to/your-video.mp4
+```
+
+> [!NOTE]
+> The `test_videos/` directory is not included in the repository. Place your own screen recording there, or pass `--video` to point to a video elsewhere. Tests that require a video file will skip automatically if none is found.
 
 ## Quick reference
 
