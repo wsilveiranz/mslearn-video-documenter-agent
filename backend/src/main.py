@@ -78,8 +78,10 @@ async def cli_process(video_path: str, doc_type: str, output_dir: str) -> None:
         doc_type=DocType(doc_type),
     )
 
-    events = await run_pipeline.run(request)
-    result = events[-1].data
+    logger.info("cli.start", video=video_path, doc_type=doc_type, output=output_dir)
+
+    workflow_result = await run_pipeline.run(request)
+    result = workflow_result.get_outputs()[0]
 
     # Save output
     out = Path(output_dir)
