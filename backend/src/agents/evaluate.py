@@ -7,7 +7,6 @@ import re
 from pathlib import Path
 
 import structlog
-
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
 
@@ -62,7 +61,7 @@ class EvaluateAgent:
             instructions=self._system_prompt,
         )
         result = await agent.run(user_message)
-        response_text: str = result.messages[-1].content
+        response_text: str = result.text
 
         parsed: dict | None = None
         try:
@@ -74,7 +73,7 @@ class EvaluateAgent:
                 operation="json_parse",
             )
             retry_result = await agent.run(_RETRY_MESSAGE)
-            retry_text: str = retry_result.messages[-1].content
+            retry_text: str = retry_result.text
             try:
                 parsed = self._extract_json(retry_text)
             except (json.JSONDecodeError, ValueError):

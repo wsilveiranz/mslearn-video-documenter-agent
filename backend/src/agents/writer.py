@@ -7,7 +7,6 @@ import uuid
 from pathlib import Path
 
 import structlog
-
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
 
@@ -133,7 +132,7 @@ class WriterAgent:
         """Invoke the MAF agent and return extracted Markdown, or empty string on error."""
         try:
             result = await agent.run(user_message)
-            response_text = result.messages[-1].content
+            response_text = result.text
             return self._extract_markdown(response_text)
         except Exception as exc:
             logger.warning("writer.llm_error", error=str(exc), operation="llm_call")

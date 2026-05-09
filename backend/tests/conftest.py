@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 def pytest_configure(config):
     """Register custom markers."""

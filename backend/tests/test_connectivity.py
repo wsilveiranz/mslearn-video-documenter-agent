@@ -126,7 +126,7 @@ class TestDataModels:
         assert result.processing_mode == ProcessingMode.LOCAL
 
     def test_document_outline_creation(self):
-        from src.models.document import DocumentOutline, DocType, Frontmatter
+        from src.models.document import DocType, DocumentOutline, Frontmatter
         outline = DocumentOutline(
             doc_type=DocType.TUTORIAL,
             frontmatter=Frontmatter(
@@ -205,6 +205,7 @@ class TestFastAPI:
     def test_health_endpoint(self):
         """Health endpoint returns OK."""
         from fastapi.testclient import TestClient
+
         from src.main import app
         client = TestClient(app)
         response = client.get("/api/v1/health")
@@ -215,6 +216,7 @@ class TestFastAPI:
     def test_ingest_requires_input(self):
         """Ingest endpoint validates that file or path is provided."""
         from fastapi.testclient import TestClient
+
         from src.main import app
         client = TestClient(app)
         response = client.post("/api/v1/videos/ingest")
@@ -223,6 +225,7 @@ class TestFastAPI:
     def test_status_not_found(self):
         """Status endpoint returns 404 for unknown video ID."""
         from fastapi.testclient import TestClient
+
         from src.main import app
         client = TestClient(app)
         response = client.get("/api/v1/videos/nonexistent/status")
@@ -318,10 +321,11 @@ class TestAzureConnectivity:
         if not settings.foundry_project_endpoint:
             pytest.skip("FOUNDRY_PROJECT_ENDPOINT not set")
 
-        from agent_framework.foundry import FoundryChatClient
-        from agent_framework import Agent
-        from azure.identity import DefaultAzureCredential
         import asyncio
+
+        from agent_framework import Agent
+        from agent_framework.foundry import FoundryChatClient
+        from azure.identity import DefaultAzureCredential
 
         client = FoundryChatClient(
             project_endpoint=settings.foundry_project_endpoint,
@@ -342,8 +346,8 @@ class TestAzureConnectivity:
         if not settings.blob_account_url:
             pytest.skip("BLOB_ACCOUNT_URL not set")
 
-        from azure.storage.blob import BlobServiceClient
         from azure.identity import DefaultAzureCredential
+        from azure.storage.blob import BlobServiceClient
 
         blob_client = BlobServiceClient(
             account_url=settings.blob_account_url,

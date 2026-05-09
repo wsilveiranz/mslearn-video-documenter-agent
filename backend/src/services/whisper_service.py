@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import structlog
@@ -10,6 +11,19 @@ from src.config import get_settings
 from src.models.video import TranscriptSegment
 
 logger = structlog.get_logger()
+
+
+def _ensure_ffmpeg_on_path() -> None:
+    """Add the configured FFMPEG_PATH directory to PATH so Whisper can find ffmpeg."""
+    settings = get_settings()
+    ffmpeg_path = getattr(settings, "ffmpeg_path", None)
+    if not ffmpeg_path:
+        return
+    ffmpeg_dir = str(Path(ffmpeg_path).parent)
+    current_path = os.environ.get("PATH", "")
+    if ffmpeg_dir not in current_path:
+        os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path
+        logger.debug("whisper.ffmpeg_path_added", ffmpeg_dir=ffmpeg_dir)
 
 
 class WhisperService:
@@ -70,6 +84,8 @@ class WhisperService:
             audio_path=audio_path.name,
             model=self._model_name,
         )
+
+        _ensure_ffmpeg_on_path()
 
         try:
             result = self._model.transcribe(str(audio_path))

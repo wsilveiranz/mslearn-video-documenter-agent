@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 
 import structlog
-
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
 
@@ -32,9 +31,16 @@ class EditorAgent:
 
     def _extract_markdown(self, text: str) -> str:
         """Extract Markdown from LLM response, stripping code fences if present."""
-        match = re.search(r'```(?:markdown|md)?\s*\n(.*?)```', text, re.DOTALL)
-        if match:
+        # Try explicit ```markdown or ```md fences
+        match = re.search(r'```(?:markdown|md)\s*\n(.*?)```', text, re.DOTALL)
+        if match and match.group(1).strip():
             return match.group(1).strip()
+
+        # Strip any outer code fence wrapper (```yaml, ```text, bare ```, etc.)
+        outer = re.match(r'^```\w*\s*\n(.*)\n```\s*$', text.strip(), re.DOTALL)
+        if outer and outer.group(1).strip():
+            return outer.group(1).strip()
+
         return text.strip()
 
     def _count_words(self, text: str) -> int:
@@ -74,7 +80,7 @@ class EditorAgent:
                 instructions=self._system_prompt,
             )
             result = await agent.run(user_message)
-            response_text = result.messages[-1].content
+            response_text = result.text
         except Exception as exc:
             logger.warning(
                 "editor.maf_fallback",
@@ -104,7 +110,12 @@ class EditorAgent:
         refined_markdown = self._extract_markdown(response_text)
 
         if not refined_markdown:
-            logger.warning("editor.empty_after_extraction", doc_id=document.document_id)
+            logger.warning(
+                "editor.empty_after_extraction",
+                doc_id=document.document_id,
+                response_len=len(response_text),
+                response_preview=response_text[:200],
+            )
             return document
 
         original_word_count = self._count_words(document.markdown_content)

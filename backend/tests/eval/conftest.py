@@ -25,7 +25,7 @@ def video_path(request):
     """Path to the test video file."""
     path = Path(request.config.getoption("--video"))
     if not path.is_absolute():
-        path = Path(__file__).parent.parent.parent / path  # relative to backend/
+        path = Path(__file__).parent.parent.parent.parent / path  # relative to repo root
     if not path.exists():
         pytest.skip(f"Test video not found: {path}")
     return path
