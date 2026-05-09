@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "12438351290215789587"
+      "templateHash": "5920274559280616596"
     }
   },
   "parameters": {
@@ -112,7 +112,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "6364321100064688575"
+              "templateHash": "637434827715036930"
             }
           },
           "parameters": {
@@ -165,8 +165,7 @@
               "properties": {
                 "allowProjectManagement": true,
                 "customSubDomainName": "[format('ai-{0}', parameters('resourceToken'))]",
-                "publicNetworkAccess": "Enabled",
-                "disableLocalAuth": true
+                "publicNetworkAccess": "Enabled"
               }
             },
             {

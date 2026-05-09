@@ -17,7 +17,7 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     allowProjectManagement: true
     customSubDomainName: 'ai-${resourceToken}'
     publicNetworkAccess: 'Enabled'
-    disableLocalAuth: true
+    disableLocalAuth: false
   }
 
   resource project 'projects' = {
