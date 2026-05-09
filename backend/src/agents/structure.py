@@ -203,10 +203,17 @@ class StructureAgent:
                 if tr.get("start") is not None and tr.get("end") is not None:
                     transcript_ranges = [(float(tr["start"]), float(tr["end"]))]
 
+                raw_type = raw_section.get("type", "")
+                is_placeholder = raw_type == "placeholder"
+                level = int(raw_section.get("level", 2))
+                level = max(1, min(level, 4))
+
                 section = DocumentSection(
                     heading=heading,
-                    level=2,
+                    level=level,
                     content_hint=raw_section.get("notes", ""),
+                    section_type=raw_type,
+                    is_placeholder=is_placeholder,
                     source_scenes=raw_section.get("scene_ids", []),
                     source_transcript_ranges=transcript_ranges,
                 )

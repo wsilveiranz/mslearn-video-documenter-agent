@@ -136,3 +136,6 @@ class VideoJob(BaseModel):
     ingestion_video_id: str | None = Field(
         default=None, description="Video ID assigned by the ingestion agent"
     )
+    document_id: str | None = Field(
+        default=None, description="Document ID populated when pipeline completes"
+    )

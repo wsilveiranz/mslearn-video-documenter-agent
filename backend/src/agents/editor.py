@@ -43,8 +43,13 @@ class EditorAgent:
 
         cleaned = text.strip()
 
-        # Strip trailing JSON block (e.g., editor edit summary that leaked through)
-        cleaned = re.sub(r'\n```json\s*\n\{.*\}\s*$', '', cleaned, flags=re.DOTALL)
+        # Strip trailing JSON block only when it matches the editor edit-summary shape
+        cleaned = re.sub(
+            r'\n```json\s*\n\{[^}]*"changes"[^}]*"total_changes"[^}]*\}\s*```\s*$',
+            '',
+            cleaned,
+            flags=re.DOTALL,
+        )
         # Also handle bare JSON (no code fence) at the end
         cleaned = re.sub(r'\n\{[\s\S]*"changes"[\s\S]*"total_changes"[\s\S]*\}\s*$', '', cleaned)
 

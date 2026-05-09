@@ -106,11 +106,15 @@ class IngestionAgent:
         staged_path = working_dir / video_path.name
         shutil.copy2(video_path, staged_path)
 
+        # Update source_path to the stable staged location so downstream
+        # agents read from the working directory, not the original (or temp) path.
+        metadata.source_path = str(staged_path)
+
         logger.info(
             "ingestion.complete",
             operation="ingestion",
             video_id=metadata.video_id,
-            staged_path=str(staged_path.name),
+            staged_path=str(staged_path),
             duration_s=metadata.duration_seconds,
         )
 

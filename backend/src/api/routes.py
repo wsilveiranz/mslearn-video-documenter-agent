@@ -57,6 +57,7 @@ class StatusResponse(BaseModel):
     status: ProcessingStatus
     progress_pct: float
     current_stage: str
+    document_id: str | None = None
 
 
 class DocumentResponse(BaseModel):
@@ -77,7 +78,7 @@ async def health_check() -> dict[str, str]:
 
 # ---- Background task helpers ----
 
-async def _run_ingestion(video_id: str, source: str) -> None:
+async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = False) -> None:
     """Run ingestion in the background and update the video job."""
     job = _video_jobs[video_id]
     try:
@@ -103,6 +104,12 @@ async def _run_ingestion(video_id: str, source: str) -> None:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.ingestion_failed", video_id=video_id, error=str(exc))
+    finally:
+        if is_temp_file:
+            try:
+                Path(source).unlink(missing_ok=True)
+            except OSError:
+                logger.warning("api.temp_cleanup_failed", path=source)
 
 
 async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context: str) -> None:
@@ -132,6 +139,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
         _extractions[result.document.document_id] = result.extraction
 
         job.extraction_result = result.extraction
+        job.document_id = result.document.document_id
         job.status = ProcessingStatus.COMPLETED
         job.current_stage = "completed"
         job.progress_pct = 100.0
@@ -164,11 +172,13 @@ async def ingest_video(
     if file is None and video_path is None:
         raise HTTPException(status_code=400, detail="Provide either a file upload or video_path")
 
+    is_temp_file = False
     if file is not None:
         suffix = Path(file.filename).suffix if file.filename else ".mp4"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             shutil.copyfileobj(file.file, tmp)
             source = tmp.name
+        is_temp_file = True
     else:
         source = video_path  # type: ignore[assignment]
 
@@ -179,7 +189,7 @@ async def ingest_video(
     job = VideoJob(video_id=video_id, status=ProcessingStatus.QUEUED)
     _video_jobs[video_id] = job
 
-    background_tasks.add_task(_run_ingestion, video_id, source)
+    background_tasks.add_task(_run_ingestion, video_id, source, is_temp_file=is_temp_file)
 
     return IngestResponse(
         video_id=video_id,
@@ -200,6 +210,7 @@ async def get_video_status(video_id: str) -> StatusResponse:
         status=job.status,
         progress_pct=job.progress_pct,
         current_stage=job.current_stage,
+        document_id=job.document_id,
     )
 
 
