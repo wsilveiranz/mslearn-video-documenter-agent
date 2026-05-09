@@ -25,6 +25,90 @@ Before you begin, make sure you have:
 
 ---
 
+## Quick start with azd (recommended)
+
+The fastest way to provision all resources is with `azd up`. This provisions everything in a single command with proper RBAC role assignments for your developer identity.
+
+### Prerequisites
+
+- [Azure Developer CLI (azd)](https://aka.ms/install-azd) installed
+- Azure subscription with Contributor + User Access Administrator roles
+
+### Steps
+
+1. Sign in:
+   ```bash
+   azd auth login
+   ```
+
+2. Initialize the environment:
+   ```bash
+   azd init
+   ```
+   When prompted, enter an environment name (e.g., `video-documenter-dev`).
+
+3. (Optional) Register the Video Indexer provider if not already registered:
+   ```bash
+   az provider register --namespace Microsoft.VideoIndexer
+   az provider show --namespace Microsoft.VideoIndexer --query "registrationState" -o tsv
+   ```
+   Wait until it shows `Registered`.
+
+4. Provision all resources:
+   ```bash
+   azd up
+   ```
+   Select your Azure subscription and region (recommend `eastus`).
+
+5. `azd` automatically:
+   - Creates a resource group (`rg-<env-name>`)
+   - Deploys AI Foundry with GPT-4o and GPT-4o-mini
+   - Creates Blob Storage with `video-documenter` container
+   - Creates Speech Service
+   - Creates Video Indexer (linked to storage)
+   - Assigns RBAC roles to your identity on all resources
+
+6. Copy outputs to your `.env`:
+   ```bash
+   azd env get-values > backend/.env
+   ```
+
+7. Verify connectivity:
+   ```bash
+   cd backend
+   python -m pytest tests/test_connectivity.py -v -m cloud
+   ```
+
+### Configuration options
+
+Set these before `azd up` to customize:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GPT4O_CAPACITY` | `30` | GPT-4o TPM (thousands) |
+| `GPT4O_MINI_CAPACITY` | `60` | GPT-4o-mini TPM (thousands) |
+| `ENABLE_VIDEO_INDEXER` | `true` | Set `false` to skip Video Indexer |
+
+Example:
+```bash
+azd env set GPT4O_CAPACITY 60
+azd env set ENABLE_VIDEO_INDEXER false
+azd up
+```
+
+### Tear down
+
+```bash
+azd down
+```
+
+---
+
+> [!NOTE]
+> The manual setup sections below are provided as an alternative if you prefer to provision resources individually or need to customize beyond what the Bicep templates support.
+
+---
+
 ## 1. Resource group
 
 Create a single resource group to keep all project resources together. This makes cleanup easy — delete the group when you're done.

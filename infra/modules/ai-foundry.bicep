@@ -1,0 +1,82 @@
+targetScope = 'resourceGroup'
+
+param location string
+param tags object
+param resourceToken string
+param principalId string
+param principalType string
+param gpt4oCapacity int
+param gpt4oMiniCapacity int
+
+resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
+  name: 'ai-${resourceToken}'
+  location: location
+  tags: tags
+  sku: { name: 'S0' }
+  kind: 'AIServices'
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    allowProjectManagement: true
+    customSubDomainName: 'ai-${resourceToken}'
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: true
+  }
+
+  resource gpt4o 'deployments' = {
+    name: 'gpt-4o'
+    properties: {
+      model: {
+        name: 'gpt-4o'
+        format: 'OpenAI'
+        version: '2024-11-20'
+      }
+    }
+    sku: {
+      name: 'GlobalStandard'
+      capacity: gpt4oCapacity
+    }
+  }
+
+  resource gpt4oMini 'deployments' = {
+    name: 'gpt-4o-mini'
+    dependsOn: [gpt4o]
+    properties: {
+      model: {
+        name: 'gpt-4o-mini'
+        format: 'OpenAI'
+        version: '2024-07-18'
+      }
+    }
+    sku: {
+      name: 'GlobalStandard'
+      capacity: gpt4oMiniCapacity
+    }
+  }
+
+  resource project 'projects' = {
+    name: 'video-documenter-project'
+    location: location
+    identity: { type: 'SystemAssigned' }
+    properties: {
+      description: 'MS Learn Video Documenter Agent'
+      displayName: 'Video Documenter'
+    }
+    dependsOn: [gpt4o, gpt4oMini]
+  }
+}
+
+// RBAC: Cognitive Services User → developer
+resource cogServicesUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiAccount.id, principalId, 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  scope: aiAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
+    principalId: principalId
+    principalType: principalType
+  }
+}
+
+output aiServicesAccountId string = aiAccount.id
+output aiServicesAccountName string = aiAccount.name
+output projectEndpoint string = aiAccount::project.properties.endpoints['AI Foundry API']
+output openAiEndpoint string = aiAccount.properties.endpoints['OpenAI Language Model Instance API']
