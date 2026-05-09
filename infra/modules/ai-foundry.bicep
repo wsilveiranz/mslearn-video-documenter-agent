@@ -5,8 +5,6 @@ param tags object
 param resourceToken string
 param principalId string
 param principalType string
-param gpt4oCapacity int
-param gpt4oMiniCapacity int
 
 resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: 'ai-${resourceToken}'
@@ -22,37 +20,6 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     disableLocalAuth: true
   }
 
-  resource gpt4o 'deployments' = {
-    name: 'gpt-4o'
-    properties: {
-      model: {
-        name: 'gpt-4o'
-        format: 'OpenAI'
-        version: '2024-11-20'
-      }
-    }
-    sku: {
-      name: 'GlobalStandard'
-      capacity: gpt4oCapacity
-    }
-  }
-
-  resource gpt4oMini 'deployments' = {
-    name: 'gpt-4o-mini'
-    dependsOn: [gpt4o]
-    properties: {
-      model: {
-        name: 'gpt-4o-mini'
-        format: 'OpenAI'
-        version: '2024-07-18'
-      }
-    }
-    sku: {
-      name: 'GlobalStandard'
-      capacity: gpt4oMiniCapacity
-    }
-  }
-
   resource project 'projects' = {
     name: 'video-documenter-project'
     location: location
@@ -61,7 +28,6 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
       description: 'MS Learn Video Documenter Agent'
       displayName: 'Video Documenter'
     }
-    dependsOn: [gpt4o, gpt4oMini]
   }
 }
 

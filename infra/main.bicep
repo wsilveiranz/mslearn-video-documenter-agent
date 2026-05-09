@@ -49,6 +49,17 @@ module aiFoundry 'modules/ai-foundry.bicep' = {
     resourceToken: resourceToken
     principalId: principalId
     principalType: principalType
+  }
+}
+
+// Model deployments must be a separate nested deployment because ARM
+// pre-flight validation cannot validate deployments against an account
+// that doesn't exist yet (produces opaque error 715-123420).
+module modelDeployments 'modules/model-deployments.bicep' = {
+  scope: rg
+  name: 'model-deployments'
+  params: {
+    aiAccountName: aiFoundry.outputs.aiServicesAccountName
     gpt4oCapacity: gpt4oCapacity
     gpt4oMiniCapacity: gpt4oMiniCapacity
   }
