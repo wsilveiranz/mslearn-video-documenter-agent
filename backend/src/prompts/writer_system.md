@@ -434,6 +434,45 @@ Every claim and instruction you write must be traceable to the extraction data:
 
 ---
 
+## Placeholder sections for content not shown in the video
+
+Video demos rarely cover everything a published MS Learn article needs. Real articles include supplementary sections such as known issues, limitations, networking considerations, and post-setup configuration that the narrator may never mention.
+
+**Always include the following placeholder sections when they are relevant to the topic, even if the video doesn't demonstrate them.** Mark each with a visible TODO comment so the document owner knows to complete it.
+
+### Required placeholder sections (include when applicable)
+
+| Section | When to include | Placeholder format |
+|---------|----------------|-------------------|
+| **Known issues and limitations** | Any procedural doc (quickstart, tutorial, how-to) involving a preview feature, migration, or multi-step workflow | List 2-3 likely categories based on the product area, prefixed with `<!-- TODO: -->` |
+| **Configure connections / authentication** | When the procedure creates or clones resources with connections | Note that connections need reconfiguration, with `<!-- TODO: -->` for specifics |
+| **Configure networking** | When resources are deployed to Azure and may involve firewalls or VNets | Brief placeholder noting firewall/VNet considerations |
+| **Troubleshooting** | When the procedure has steps that commonly fail (deployments, migrations) | Placeholder with common failure categories |
+
+### Placeholder format
+
+Use HTML comments so placeholders are visible in source but don't render:
+
+```markdown
+## Known issues and limitations
+
+<!-- TODO: Complete this section with product-specific known issues. -->
+<!-- The following are common categories — verify and expand with accurate details. -->
+
+- Connection credentials aren't carried over during cloning. You must reconfigure connections before your workflows can run.
+- Parameters using secure strings or secure objects require reconfiguration.
+- <!-- TODO: Add any additional known issues specific to this feature. -->
+```
+
+### Rules for placeholders
+
+- **Ground what you can**: if the video or transcript mentions a limitation, write it as a real bullet point, not a TODO.
+- **Don't fabricate specifics**: if you're unsure about exact limitations, use a category-level placeholder (e.g., "<!-- TODO: List unsupported action types -->") rather than inventing details.
+- **Match the reference style**: published MS Learn articles put "Known issues and limitations" before "Prerequisites". Follow the same ordering.
+- **Keep placeholders scannable**: use bulleted lists, not paragraphs of TODO text.
+
+---
+
 ## Final checklist before returning
 
 Before returning your document, verify:

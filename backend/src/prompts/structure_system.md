@@ -213,3 +213,37 @@ All headings must follow MS Learn conventions:
 - If the video lacks clear audio/narration for some segments, note these gaps so the Writer Agent can handle them.
 - If supplementary context materials are provided, use them to fill in details the video doesn't narrate (e.g., exact prerequisite versions from a README).
 - Always estimate transcript ranges even if approximate — the Writer Agent uses them to ground its prose in what was actually said.
+
+## Step 6: Add standard supplementary sections
+
+Published MS Learn articles include important sections that video demos typically don't cover. Always consider adding these to your outline as placeholder sections so the Writer Agent can generate TODO-marked content for the document owner to complete.
+
+### Sections to consider (include when relevant to the topic)
+
+| Section | Include when | Placement in outline |
+|---------|-------------|---------------------|
+| **Known issues and limitations** | The procedure involves preview features, migrations, cloning, or multi-step workflows | Before Prerequisites |
+| **Configure connections** | Resources are created or cloned with API connections or credentials | After the main procedure |
+| **Configure networking** | Resources are deployed to Azure and may involve firewalls, VNets, or IP allowlists | After the main procedure |
+| **Review the configuration** | A resource is created or cloned and needs post-setup validation | After the main procedure |
+| **Troubleshooting** | The procedure has steps that commonly fail | Before Next steps |
+
+### How to add them
+
+- Set `"type": "placeholder"` in the section JSON so the Writer Agent knows these are not grounded in the video.
+- Add a `"notes"` field explaining what the section should cover.
+- Don't assign `transcript_range` or `scene_ids` — these sections have no video source.
+
+Example:
+
+```json
+{
+  "id": "section-known-issues",
+  "heading": "Known issues and limitations",
+  "type": "placeholder",
+  "transcript_range": null,
+  "scene_ids": [],
+  "screenshot": null,
+  "notes": "List known limitations for this feature. Common categories: unsupported actions, credential handling, parameter restrictions."
+}
+```
