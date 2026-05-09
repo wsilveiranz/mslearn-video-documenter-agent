@@ -260,13 +260,31 @@ Current evaluations use three types of graders:
 | **Structural** | Checks presence of expected document elements | Has YAML frontmatter, has H1 |
 | **Heuristic** | Numeric threshold with relaxed bounds | Word count > 200, title 30–80 chars |
 
+### Rule-based style graders (implemented)
+
+`tests/eval/graders.py` provides 8 rule-based grader functions that check MS Learn style compliance. Each returns a list of `StyleFinding` objects with severity levels: `error` (hard fail), `warning` (should fix), `info` (nice to have).
+
+| Grader | Checks | Severity |
+|--------|--------|----------|
+| `check_frontmatter` | YAML frontmatter present, required fields (`title`, `description`, `ms.topic`, `ms.date`), title length 43–59, description length 75–300 | error / warning |
+| `check_headings` | Sentence case (not Title Case), no numbered headings, H1 present | error / warning |
+| `check_voice_and_tone` | Contraction opportunities (`do not` → `don't`, etc.) | info |
+| `check_terminology` | "select" not "click", "sign in" not "log in", "earlier" not "above", wordy phrases | warning |
+| `check_markdown_extensions` | `:::image` syntax instead of `![](...)`, alert syntax (`> [!NOTE]`), code block language identifiers | warning |
+| `check_structure` | Max 12 steps per procedure, prerequisites before steps, next-steps section present | warning |
+| `check_serial_comma` | Oxford comma in lists of 3+ items | info |
+| `check_grounding` | Transcript term coverage (≥30%), phrase coverage, stop-word filtering | error / info |
+
+**Style tests:** `test_eval_style.py` — runs style graders against writer, editor, and pipeline output.
+**Grounding tests:** `test_eval_grounding.py` — verifies document content is traceable to video transcript.
+**Grader unit tests:** `test_graders.py` — 23 tests validating grader correctness against known-good and known-bad content.
+
 ### Missing grader types (not yet implemented)
 
 | Type | Description | Would address |
 |------|-------------|---------------|
 | **LLM-as-judge** | A second LLM scores the output against criteria | Style compliance, content accuracy, grounding |
 | **Reference comparison** | Diff against a gold-standard expected output | Writer accuracy, editor correctness |
-| **Regex / rule-based** | Pattern-match for specific MS Learn formatting | Contractions, sentence case headings, `:::image` syntax |
 | **Semantic similarity** | Embedding distance between video transcript and generated text | Grounding / hallucination detection |
 | **Human-in-the-loop** | Log outputs for manual review with accept/reject | Calibrate LLM-as-judge scores |
 
@@ -308,3 +326,44 @@ All artifacts are saved to `backend/tests/eval/output/` and are gitignored.
 | `pipeline_document.json` | Pipeline | `GeneratedDocument` model |
 | `pipeline_document.md` | Pipeline | Raw Markdown output |
 | `pipeline_evaluation.json` | Pipeline | `EvaluationReport` model |
+
+---
+
+## Evaluation roadmap
+
+This phased roadmap progressively adds more sophisticated evaluation capabilities.
+
+### Phase 1 — Rule-based graders ✅ (current)
+
+Deterministic, fast, zero LLM cost. Run on every CI build.
+
+- [x] YAML frontmatter validation (required fields, title/description length)
+- [x] Heading style checks (sentence case, no numbering, H1 presence)
+- [x] MS Learn voice and tone (contraction opportunities)
+- [x] Terminology enforcement ("select" not "click", "sign in" not "log in")
+- [x] Markdown extension validation (`:::image`, alerts, code block languages)
+- [x] Document structure (step count, prerequisites, next-steps)
+- [x] Grammar checks (serial comma detection)
+- [x] Transcript grounding (term + phrase coverage ≥30%)
+- [x] 23 unit tests for grader correctness
+
+### Phase 2 — LLM-as-judge + reference comparison
+
+Requires multiple test videos and gold-standard reference documents. Higher cost per run — use as nightly or pre-release gate.
+
+- [ ] **LLM-as-judge evaluator** — GPT-4o scores documents against a rubric (accuracy, completeness, voice compliance) on a 1–5 scale with written justification
+- [ ] **Reference document comparison** — Diff generated output against a human-authored reference document for the same video; measure ROUGE/BLEU-style overlap
+- [ ] **Step-by-step grounding** — Verify each numbered step in the output maps to a specific transcript segment or keyframe; flag steps with no evidence
+- [ ] **Cross-doc-type consistency** — Run the same video through all 5 doc types (tutorial, quickstart, how-to, concept, overview) and verify each follows its template rules
+- [ ] **Multi-video test corpus** — Expand test suite beyond single demo video: add a coding tutorial, an Azure portal walkthrough, a CLI-heavy demo, and a silent UI demo
+- [ ] **Semantic similarity scoring** — Use embedding models to measure cosine similarity between transcript chunks and corresponding document sections
+
+### Phase 3 — Calibration and consistency
+
+Requires Phase 2 data to calibrate. Focus on reliability and human alignment.
+
+- [ ] **Inter-run consistency** — Run the same video 5× and measure output variance (scores, structure, content overlap); flag non-deterministic quality
+- [ ] **Human-in-the-loop calibration** — Collect human accept/reject ratings on 20+ generated documents; compare with LLM-as-judge scores; tune rubric until correlation >0.8
+- [ ] **Evaluator accuracy audit** — Test whether the Evaluate agent's scores agree with the LLM-as-judge (Phase 2) and human ratings (Phase 3)
+- [ ] **Regression detection** — Track evaluation scores over time; alert when a prompt or model change degrades output quality by >5%
+- [ ] **Suggestion actionability** — Measure how many Evaluate agent suggestions the Editor actually implements, and whether implemented suggestions improve scores

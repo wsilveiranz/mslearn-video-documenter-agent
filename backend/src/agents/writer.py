@@ -218,9 +218,16 @@ class WriterAgent:
 
     def _extract_markdown(self, text: str) -> str:
         """Extract Markdown content from LLM response, stripping code fences if present."""
-        match = re.search(r"```(?:markdown|md)?\s*\n(.*?)```", text, re.DOTALL)
-        if match:
+        # Try explicit ```markdown or ```md fences
+        match = re.search(r"```(?:markdown|md)\s*\n(.*?)```", text, re.DOTALL)
+        if match and match.group(1).strip():
             return match.group(1).strip()
+
+        # Strip any outer code fence wrapper (```yaml, ```text, bare ```, etc.)
+        outer = re.match(r"^```\w*\s*\n(.*)\n```\s*$", text.strip(), re.DOTALL)
+        if outer and outer.group(1).strip():
+            return outer.group(1).strip()
+
         return text.strip()
 
     def _count_words(self, text: str) -> int:
