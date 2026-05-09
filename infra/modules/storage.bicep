@@ -8,6 +8,7 @@ param principalType string
 param containerName string
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  #disable-next-line BCP334
   name: 'st${resourceToken}'
   location: location
   tags: tags

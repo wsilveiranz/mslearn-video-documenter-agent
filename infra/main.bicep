@@ -124,6 +124,6 @@ output SPEECH_SERVICE_ENDPOINT string = speech.outputs.endpoint
 output SPEECH_SERVICE_REGION string = location
 
 // Video Indexer
-output VIDEO_INDEXER_ACCOUNT_ID string = enableVideoIndexer ? videoIndexer.outputs.accountId : ''
-output VIDEO_INDEXER_RESOURCE_ID string = enableVideoIndexer ? videoIndexer.outputs.resourceId : ''
+output VIDEO_INDEXER_ACCOUNT_ID string = enableVideoIndexer ? videoIndexer!.outputs.accountId : ''
+output VIDEO_INDEXER_RESOURCE_ID string = enableVideoIndexer ? videoIndexer!.outputs.resourceId : ''
 output VIDEO_INDEXER_LOCATION string = location
