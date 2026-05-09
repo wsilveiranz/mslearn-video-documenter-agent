@@ -25,6 +25,12 @@ param secondaryModelCapacity int = 60
 @description('Enable model deployments (disable to deploy models manually via Portal/CLI)')
 param enableModelDeployments bool = false
 
+@description('Deployment name for the primary model (must match what backend expects)')
+param primaryModelDeploymentName string = 'gpt-5-4-mini'
+
+@description('Deployment name for the secondary/mini model')
+param secondaryModelDeploymentName string = 'gpt-5-4-nano'
+
 @description('Enable Video Indexer provisioning (requires Microsoft.VideoIndexer provider)')
 param enableVideoIndexer bool = true
 
@@ -63,6 +69,8 @@ module modelDeployments 'modules/model-deployments.bicep' = if (enableModelDeplo
   name: 'model-deployments'
   params: {
     aiAccountName: aiFoundry.outputs.aiServicesAccountName
+    primaryModelDeploymentName: primaryModelDeploymentName
+    secondaryModelDeploymentName: secondaryModelDeploymentName
     primaryModelCapacity: primaryModelCapacity
     secondaryModelCapacity: secondaryModelCapacity
   }
@@ -136,8 +144,8 @@ output AZURE_RESOURCE_GROUP string = resourceGroupName
 
 // AI Foundry
 output FOUNDRY_PROJECT_ENDPOINT string = aiFoundry.outputs.projectEndpoint
-output FOUNDRY_MODEL string = 'gpt-5-4-mini'
-output FOUNDRY_MODEL_MINI string = 'gpt-5-4-nano'
+output FOUNDRY_MODEL string = primaryModelDeploymentName
+output FOUNDRY_MODEL_MINI string = secondaryModelDeploymentName
 
 // Blob Storage
 output BLOB_ACCOUNT_URL string = storage.outputs.blobEndpoint

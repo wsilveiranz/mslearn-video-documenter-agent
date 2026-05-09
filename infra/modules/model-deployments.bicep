@@ -1,6 +1,8 @@
 targetScope = 'resourceGroup'
 
 param aiAccountName string
+param primaryModelDeploymentName string
+param secondaryModelDeploymentName string
 param primaryModelCapacity int
 param secondaryModelCapacity int
 
@@ -8,9 +10,9 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = 
   name: aiAccountName
 }
 
-resource gpt54mini 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
+resource primaryModel 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: aiAccount
-  name: 'gpt-5-4-mini'
+  name: primaryModelDeploymentName
   properties: {
     model: {
       name: 'gpt-5.4-mini'
@@ -24,10 +26,10 @@ resource gpt54mini 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01'
   }
 }
 
-resource gpt54nano 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
+resource secondaryModel 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: aiAccount
-  name: 'gpt-5-4-nano'
-  dependsOn: [gpt54mini]
+  name: secondaryModelDeploymentName
+  dependsOn: [primaryModel]
   properties: {
     model: {
       name: 'gpt-5.4-nano'
