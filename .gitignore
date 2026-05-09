@@ -54,6 +54,10 @@ Desktop.ini
 .coverage
 htmlcov/
 .mypy_cache/
+backend/tests/eval/output/
 
 # Logs
 *.log
+
+# Misc
+/test_videos/*.*
