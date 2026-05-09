@@ -7,7 +7,6 @@ import re
 from datetime import datetime
 
 import structlog
-
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
 
@@ -90,7 +89,7 @@ class StructureAgent:
         transcript_text = " ".join(seg.text for seg in extraction.transcript)
 
         scenes_summary = "\n".join(
-            f"- Scene {s.id} [{s.start_seconds:.1f}s–{s.end_seconds:.1f}s]: {s.description}"
+            f"- Scene {s.id} [{s.start_seconds:.1f}s-{s.end_seconds:.1f}s]: {s.description}"
             for s in extraction.scenes
         )
 
@@ -112,7 +111,7 @@ class StructureAgent:
         parts = [
             f"## Document type requested\n{doc_type.value}",
             f"## Video metadata\nDuration: {extraction.video_metadata.duration_seconds:.1f}s | "
-            f"Resolution: {extraction.video_metadata.resolution_width}×{extraction.video_metadata.resolution_height}",
+            f"Resolution: {extraction.video_metadata.resolution_width}x{extraction.video_metadata.resolution_height}",
             f"## Full transcript\n{transcript_text or '(no transcript available)'}",
             f"## Scenes ({len(extraction.scenes)} detected)\n{scenes_summary or '(no scenes)'}",
             f"## Keyframes ({len(extraction.keyframes)} captured)\n{keyframes_summary or '(no keyframes)'}",
