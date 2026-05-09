@@ -131,19 +131,22 @@ Process a video file directly from the command line:
 ```bash
 cd backend
 
-# Basic usage — generates a tutorial by default
-python src/main.py process path/to/video.mp4
+# Basic usage — generates a tutorial in local mode
+python src/main.py process path/to/video.mp4 --mode local
 
 # Specify document type
-python src/main.py process path/to/video.mp4 --doc-type quickstart
-python src/main.py process path/to/video.mp4 --doc-type tutorial
-python src/main.py process path/to/video.mp4 --doc-type how-to
-python src/main.py process path/to/video.mp4 --doc-type concept
-python src/main.py process path/to/video.mp4 --doc-type overview
+python src/main.py process path/to/video.mp4 --mode local --doc-type quickstart
+python src/main.py process path/to/video.mp4 --mode local --doc-type tutorial
+python src/main.py process path/to/video.mp4 --mode local --doc-type how-to
+python src/main.py process path/to/video.mp4 --mode local --doc-type concept
+python src/main.py process path/to/video.mp4 --mode local --doc-type overview
 
 # Custom output directory
-python src/main.py process path/to/video.mp4 --doc-type tutorial --output ./my-docs
+python src/main.py process path/to/video.mp4 --mode local --doc-type tutorial --output ./my-docs
 ```
+
+> [!IMPORTANT]
+> The `--mode` flag controls how video extraction runs. Use `--mode local` for local processing with FFmpeg + Whisper (recommended for development). Cloud mode (`--mode cloud`) requires Azure Video Indexer, which isn't yet implemented. If omitted, the mode defaults to the `PROCESSING_MODE` value in your `.env` file.
 
 **Output:** The generated Markdown file and media assets are saved to the output directory (default: `./output/`).
 
@@ -159,7 +162,7 @@ output/
 **Example:**
 
 ```bash
-python src/main.py process ../test_videos/CloneToStandard-ShortDemo.mp4 --doc-type tutorial
+python src/main.py process ../test_videos/CloneToStandard-ShortDemo.mp4 --mode local --doc-type tutorial
 ```
 
 ```
