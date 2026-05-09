@@ -1,0 +1,59 @@
+[project]
+name = "mslearn-video-documenter"
+version = "0.1.0"
+description = "AI-powered agent that transforms screen recording videos into MS Learn-style documentation"
+requires-python = ">=3.11"
+dependencies = [
+    "agent-framework>=1.3.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "structlog>=24.4.0",
+    "azure-identity>=1.19.0",
+    "azure-storage-blob>=12.24.0",
+    "httpx>=0.28.0",
+    "python-multipart>=0.0.18",
+    "websockets>=14.0",
+]
+
+[project.optional-dependencies]
+local = [
+    "openai-whisper>=20240930",
+    "opencv-python-headless>=4.10.0",
+    "scenedetect[opencv]>=0.6.5",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "pyright>=1.1.390",
+    "httpx>=0.28.0",
+]
+
+[build-system]
+requires = ["setuptools>=70.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "SIM", "TCH", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+include = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

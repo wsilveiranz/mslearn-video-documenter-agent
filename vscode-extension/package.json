@@ -1,0 +1,74 @@
+{
+  "name": "mslearn-video-documenter",
+  "displayName": "MS Learn Video Documenter",
+  "description": "Analyzes screen recordings and generates MS Learn-style documentation",
+  "version": "0.1.0",
+  "publisher": "video-documenter",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Chat"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "video-documenter.agent",
+        "name": "video-documenter",
+        "fullName": "MS Learn Video Documenter",
+        "description": "Analyzes screen recordings and generates MS Learn documentation",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "analyze",
+            "description": "Analyze a screen recording video"
+          },
+          {
+            "name": "generate",
+            "description": "Generate documentation from analyzed video"
+          },
+          {
+            "name": "refine",
+            "description": "Refine a section of generated documentation"
+          },
+          {
+            "name": "status",
+            "description": "Check processing status"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "video-documenter.analyzeFile",
+        "title": "Analyze with Video Documenter",
+        "category": "Video Documenter"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "video-documenter.analyzeFile",
+          "when": "resourceExtname =~ /\\.(mp4|avi|mov|mkv|webm)$/",
+          "group": "video-documenter"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "@vscode/chat-extension-utils": "^0.0.0-alpha.1",
+    "@vscode/prompt-tsx": "^0.3.0-alpha.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.18",
+    "@types/vscode": "^1.100.0",
+    "typescript": "^5.9.2"
+  }
+}
