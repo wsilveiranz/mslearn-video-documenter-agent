@@ -118,6 +118,16 @@ module videoIndexer 'modules/video-indexer.bicep' = if (enableVideoIndexer) {
   }
 }
 
+// Cross-service RBAC: Video Indexer MI → Storage Blob Data Contributor
+module crossServiceRbac 'modules/cross-service-rbac.bicep' = if (enableVideoIndexer) {
+  scope: rg
+  name: 'cross-service-rbac'
+  params: {
+    storageAccountName: storage.outputs.storageAccountName
+    videoIndexerPrincipalId: videoIndexer!.outputs.principalId
+  }
+}
+
 // ═══════════════════════════════════════════════════════════
 // OUTPUTS (used by azd to populate .env)
 // ═══════════════════════════════════════════════════════════
