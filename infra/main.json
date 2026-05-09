@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "5436178619858241974"
+      "templateHash": "12438351290215789587"
     }
   },
   "parameters": {
@@ -41,18 +41,18 @@
         "description": "Principal type - use User for developer, ServicePrincipal for managed identity"
       }
     },
-    "gpt4oCapacity": {
+    "primaryModelCapacity": {
       "type": "int",
       "defaultValue": 30,
       "metadata": {
-        "description": "GPT-4o model deployment capacity (thousands of tokens per minute)"
+        "description": "Primary model deployment capacity (thousands of tokens per minute)"
       }
     },
-    "gpt4oMiniCapacity": {
+    "secondaryModelCapacity": {
       "type": "int",
       "defaultValue": 60,
       "metadata": {
-        "description": "GPT-4o-mini model deployment capacity (thousands of tokens per minute)"
+        "description": "Secondary model deployment capacity (thousands of tokens per minute)"
       }
     },
     "enableVideoIndexer": {
@@ -222,11 +222,11 @@
           "aiAccountName": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'ai-foundry'), '2025-04-01').outputs.aiServicesAccountName.value]"
           },
-          "gpt4oCapacity": {
-            "value": "[parameters('gpt4oCapacity')]"
+          "primaryModelCapacity": {
+            "value": "[parameters('primaryModelCapacity')]"
           },
-          "gpt4oMiniCapacity": {
-            "value": "[parameters('gpt4oMiniCapacity')]"
+          "secondaryModelCapacity": {
+            "value": "[parameters('secondaryModelCapacity')]"
           }
         },
         "template": {
@@ -236,17 +236,17 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "12884439637946308132"
+              "templateHash": "17830184706254108470"
             }
           },
           "parameters": {
             "aiAccountName": {
               "type": "string"
             },
-            "gpt4oCapacity": {
+            "primaryModelCapacity": {
               "type": "int"
             },
-            "gpt4oMiniCapacity": {
+            "secondaryModelCapacity": {
               "type": "int"
             }
           },
@@ -254,36 +254,36 @@
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
               "apiVersion": "2025-06-01",
-              "name": "[format('{0}/{1}', parameters('aiAccountName'), 'gpt-4o')]",
+              "name": "[format('{0}/{1}', parameters('aiAccountName'), 'gpt-5-4-mini')]",
               "properties": {
                 "model": {
-                  "name": "gpt-4o",
+                  "name": "gpt-5.4-mini",
                   "format": "OpenAI",
-                  "version": "2024-11-20"
+                  "version": "2026-03-17"
                 }
               },
               "sku": {
                 "name": "GlobalStandard",
-                "capacity": "[parameters('gpt4oCapacity')]"
+                "capacity": "[parameters('primaryModelCapacity')]"
               }
             },
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
               "apiVersion": "2025-06-01",
-              "name": "[format('{0}/{1}', parameters('aiAccountName'), 'gpt-4o-mini')]",
+              "name": "[format('{0}/{1}', parameters('aiAccountName'), 'gpt-5-4-nano')]",
               "properties": {
                 "model": {
-                  "name": "gpt-4o-mini",
+                  "name": "gpt-5.4-nano",
                   "format": "OpenAI",
-                  "version": "2024-07-18"
+                  "version": "2026-03-17"
                 }
               },
               "sku": {
                 "name": "GlobalStandard",
-                "capacity": "[parameters('gpt4oMiniCapacity')]"
+                "capacity": "[parameters('secondaryModelCapacity')]"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiAccountName'), 'gpt-4o')]"
+                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiAccountName'), 'gpt-5-4-mini')]"
               ]
             }
           ]
@@ -657,11 +657,11 @@
     },
     "FOUNDRY_MODEL": {
       "type": "string",
-      "value": "gpt-4o"
+      "value": "gpt-5-4-mini"
     },
     "FOUNDRY_MODEL_MINI": {
       "type": "string",
-      "value": "gpt-4o-mini"
+      "value": "gpt-5-4-nano"
     },
     "BLOB_ACCOUNT_URL": {
       "type": "string",

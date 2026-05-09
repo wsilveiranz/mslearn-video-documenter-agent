@@ -1,42 +1,42 @@
 targetScope = 'resourceGroup'
 
 param aiAccountName string
-param gpt4oCapacity int
-param gpt4oMiniCapacity int
+param primaryModelCapacity int
+param secondaryModelCapacity int
 
 resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
   name: aiAccountName
 }
 
-resource gpt4o 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
+resource gpt54mini 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: aiAccount
-  name: 'gpt-4o'
+  name: 'gpt-5-4-mini'
   properties: {
     model: {
-      name: 'gpt-4o'
+      name: 'gpt-5.4-mini'
       format: 'OpenAI'
-      version: '2024-11-20'
+      version: '2026-03-17'
     }
   }
   sku: {
     name: 'GlobalStandard'
-    capacity: gpt4oCapacity
+    capacity: primaryModelCapacity
   }
 }
 
-resource gpt4oMini 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
+resource gpt54nano 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: aiAccount
-  name: 'gpt-4o-mini'
-  dependsOn: [gpt4o]
+  name: 'gpt-5-4-nano'
+  dependsOn: [gpt54mini]
   properties: {
     model: {
-      name: 'gpt-4o-mini'
+      name: 'gpt-5.4-nano'
       format: 'OpenAI'
-      version: '2024-07-18'
+      version: '2026-03-17'
     }
   }
   sku: {
     name: 'GlobalStandard'
-    capacity: gpt4oMiniCapacity
+    capacity: secondaryModelCapacity
   }
 }

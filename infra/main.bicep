@@ -16,11 +16,11 @@ param principalId string
 @allowed(['User', 'ServicePrincipal'])
 param principalType string = 'User'
 
-@description('GPT-4o model deployment capacity (thousands of tokens per minute)')
-param gpt4oCapacity int = 30
+@description('Primary model deployment capacity (thousands of tokens per minute)')
+param primaryModelCapacity int = 30
 
-@description('GPT-4o-mini model deployment capacity (thousands of tokens per minute)')
-param gpt4oMiniCapacity int = 60
+@description('Secondary model deployment capacity (thousands of tokens per minute)')
+param secondaryModelCapacity int = 60
 
 @description('Enable Video Indexer provisioning (requires Microsoft.VideoIndexer provider)')
 param enableVideoIndexer bool = true
@@ -60,8 +60,8 @@ module modelDeployments 'modules/model-deployments.bicep' = {
   name: 'model-deployments'
   params: {
     aiAccountName: aiFoundry.outputs.aiServicesAccountName
-    gpt4oCapacity: gpt4oCapacity
-    gpt4oMiniCapacity: gpt4oMiniCapacity
+    primaryModelCapacity: primaryModelCapacity
+    secondaryModelCapacity: secondaryModelCapacity
   }
 }
 
@@ -123,8 +123,8 @@ output AZURE_RESOURCE_GROUP string = resourceGroupName
 
 // AI Foundry
 output FOUNDRY_PROJECT_ENDPOINT string = aiFoundry.outputs.projectEndpoint
-output FOUNDRY_MODEL string = 'gpt-4o'
-output FOUNDRY_MODEL_MINI string = 'gpt-4o-mini'
+output FOUNDRY_MODEL string = 'gpt-5-4-mini'
+output FOUNDRY_MODEL_MINI string = 'gpt-5-4-nano'
 
 // Blob Storage
 output BLOB_ACCOUNT_URL string = storage.outputs.blobEndpoint
