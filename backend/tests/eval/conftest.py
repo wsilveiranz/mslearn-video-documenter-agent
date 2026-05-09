@@ -18,6 +18,11 @@ def pytest_addoption(parser):
         default="tests/eval/output",
         help="Directory for evaluation artifacts",
     )
+    parser.addoption(
+        "--reference-url",
+        default="https://learn.microsoft.com/en-us/azure/logic-apps/clone-consumption-logic-app-to-standard-workflow",
+        help="URL of the published MS Learn article to use as evaluation reference",
+    )
 
 
 @pytest.fixture
@@ -50,3 +55,9 @@ def foundry_client():
         return create_foundry_client()
     except Exception as e:
         pytest.skip(f"Azure AI Foundry not available: {e}")
+
+
+@pytest.fixture
+def reference_url(request):
+    """URL of the published MS Learn article for reference-based evaluation."""
+    return request.config.getoption("--reference-url")
