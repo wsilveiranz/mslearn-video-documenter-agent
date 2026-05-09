@@ -1,4 +1,4 @@
-﻿"""Evaluate the Extraction Agent with a real video file."""
+"""Evaluate the Extraction Agent with a real video file."""
 
 from __future__ import annotations
 

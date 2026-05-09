@@ -38,12 +38,6 @@ class TestDetectScenes:
         mock_scene_manager = MagicMock()
         mock_scene_manager.get_scene_list.return_value = scene_list
 
-        with (
-            patch("src.services.scene_detection_service.SceneDetectionService.detect_scenes") as _,
-        ):
-            # Call the real method but with mocked imports
-            pass
-
         # Direct mock approach: patch at import level
         with patch.dict("sys.modules", {
             "scenedetect": MagicMock(),

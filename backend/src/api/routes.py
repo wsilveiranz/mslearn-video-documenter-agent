@@ -94,10 +94,11 @@ async def _run_ingestion(video_id: str, source: str) -> None:
         job.status = ProcessingStatus.QUEUED
         job.current_stage = "ingestion_complete"
         job.progress_pct = 20.0
-        # Store the ingestion metadata on the job for later use
-        job.video_id = result.video_id
+        # Store ingestion output separately — keep job.video_id stable
+        job.ingestion_video_id = result.video_id
+        job.source_path = result.metadata.source_path
 
-        logger.info("api.ingestion_complete", video_id=result.video_id)
+        logger.info("api.ingestion_complete", video_id=video_id, ingestion_id=result.video_id)
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
@@ -119,7 +120,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
         mode = ProcessingMode(settings.processing_mode)
 
         request = PipelineInput(
-            video_source=job.video_id,
+            video_source=job.source_path or "",
             doc_type=doc_type,
             processing_mode=mode,
             supplementary_context=supplementary_context,
@@ -226,6 +227,12 @@ async def generate_document(request: GenerateRequest, background_tasks: Backgrou
 
     if job.status == ProcessingStatus.FAILED:
         raise HTTPException(status_code=400, detail=f"Video job '{request.video_id}' has failed: {job.error_message}")
+
+    if job.current_stage != "ingestion_complete":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Video job '{request.video_id}' ingestion is not yet complete (stage: {job.current_stage})",
+        )
 
     logger.info("api.generate", video_id=request.video_id, doc_type=request.doc_type)
 

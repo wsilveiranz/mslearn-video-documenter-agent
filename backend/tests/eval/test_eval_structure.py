@@ -1,4 +1,4 @@
-﻿"""Evaluate the Structure Agent with real LLM calls."""
+"""Evaluate the Structure Agent with real LLM calls."""
 
 from __future__ import annotations
 

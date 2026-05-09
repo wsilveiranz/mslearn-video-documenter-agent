@@ -459,8 +459,8 @@ Use HTML comments so placeholders are visible in source but don't render:
 <!-- TODO: Complete this section with product-specific known issues. -->
 <!-- The following are common categories — verify and expand with accurate details. -->
 
-- Connection credentials aren't carried over during cloning. You must reconfigure connections before your workflows can run.
-- Parameters using secure strings or secure objects require reconfiguration.
+- <!-- TODO: List any credential or authentication limitations specific to this feature. -->
+- <!-- TODO: List any configuration or parameter constraints (e.g., secure strings, object types). -->
 - <!-- TODO: Add any additional known issues specific to this feature. -->
 ```
 

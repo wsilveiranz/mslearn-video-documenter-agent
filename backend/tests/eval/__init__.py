@@ -1,1 +1,1 @@
-﻿"""Agent evaluation test suite."""
+"""Agent evaluation test suite."""

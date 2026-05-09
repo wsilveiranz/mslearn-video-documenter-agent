@@ -1,4 +1,4 @@
-﻿"""Full end-to-end pipeline evaluation."""
+"""Full end-to-end pipeline evaluation."""
 
 from __future__ import annotations
 

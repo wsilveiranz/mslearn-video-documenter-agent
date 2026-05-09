@@ -19,7 +19,17 @@ def _ensure_ffmpeg_on_path() -> None:
     ffmpeg_path = getattr(settings, "ffmpeg_path", None)
     if not ffmpeg_path:
         return
-    ffmpeg_dir = str(Path(ffmpeg_path).parent)
+
+    ffmpeg_resolved = Path(ffmpeg_path)
+    # Only modify PATH when the configured path is an explicit absolute path
+    # or points to an existing file — never add '.' to PATH.
+    if not ffmpeg_resolved.is_absolute() and os.sep not in ffmpeg_path:
+        return
+
+    ffmpeg_dir = str(ffmpeg_resolved.parent)
+    if ffmpeg_dir == ".":
+        return
+
     current_path = os.environ.get("PATH", "")
     if ffmpeg_dir not in current_path:
         os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path

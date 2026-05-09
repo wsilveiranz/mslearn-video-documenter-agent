@@ -1,4 +1,4 @@
-﻿"""Shared fixtures and CLI options for agent evaluation."""
+"""Shared fixtures and CLI options for agent evaluation."""
 
 from __future__ import annotations
 

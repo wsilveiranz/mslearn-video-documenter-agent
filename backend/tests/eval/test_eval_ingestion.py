@@ -1,4 +1,4 @@
-﻿"""Evaluate the Ingestion Agent with a real video file."""
+"""Evaluate the Ingestion Agent with a real video file."""
 
 from __future__ import annotations
 

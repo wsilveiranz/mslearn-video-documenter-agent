@@ -105,10 +105,14 @@ async def cli_process(video_path: str, doc_type: str, output_dir: str, mode: str
         if src_path.exists():
             shutil.copy2(src_path, media_dir / src_path.name)
 
-    print(f"Document saved to {doc_path}")
     score = result.evaluation.scores.overall
     status = "PASSED" if result.evaluation.passed else "FAILED"
-    print(f"Quality score: {score:.2f} ({status})")
+    logger.info(
+        "cli.complete",
+        doc_path=str(doc_path),
+        quality_score=round(score, 2),
+        quality_status=status,
+    )
 
 
 if __name__ == "__main__":
