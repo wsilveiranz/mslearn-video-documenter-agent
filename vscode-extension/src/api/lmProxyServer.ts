@@ -88,7 +88,7 @@ export class LmProxyServer {
     }
 
     /** Start the HTTP server. Returns the port it's listening on. */
-    async start(): Promise<number> {
+    async start(preferredPort?: number): Promise<number> {
         if (this.server) {
             return this.port;
         }
@@ -97,7 +97,8 @@ export class LmProxyServer {
             this.handleRequest(req, res);
         });
 
-        this.port = await this.listen(this.server, DEFAULT_PORT);
+        const startPort = preferredPort && preferredPort > 0 ? preferredPort : DEFAULT_PORT;
+        this.port = await this.listen(this.server, startPort);
         this.outputChannel.info(`LM Proxy server listening on http://127.0.0.1:${this.port}`);
         return this.port;
     }
