@@ -34,13 +34,39 @@ class CopilotProxyUnreachableError(CopilotProxyError):
     """Raised when the Copilot LM Proxy cannot be reached."""
 
 
-class _ProxyChatResponse:
-    """Minimal response wrapper returned by the non-streaming path.
+class _CompletionMessage:
+    """Mimics ``openai.types.chat.ChatCompletionMessage``."""
 
-    Exposes a ``.text`` property for direct-call sites (``vision_service.py``)
-    while also being usable through the standard ``ChatResponse`` interface
-    returned by ``get_response``.
+    __slots__ = ("content", "role")
+
+    def __init__(self, content: str, role: str = "assistant") -> None:
+        self.content = content
+        self.role = role
+
+
+class _CompletionChoice:
+    """Mimics ``openai.types.chat.ChatCompletionChoice``."""
+
+    __slots__ = ("finish_reason", "index", "message")
+
+    def __init__(self, message: _CompletionMessage, finish_reason: str = "stop", index: int = 0) -> None:
+        self.message = message
+        self.finish_reason = finish_reason
+        self.index = index
+
+
+class _CompletionResponse:
+    """Mimics ``openai.types.chat.ChatCompletion``.
+
+    Returned by :meth:`CopilotProxyChatClient.complete` so that call sites
+    like ``editor.py`` can access ``response.choices[0].message.content``.
     """
+
+    __slots__ = ("choices", "model")
+
+    def __init__(self, choices: list[_CompletionChoice], model: str) -> None:
+        self.choices = choices
+        self.model = model
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +221,70 @@ class CopilotProxyChatClient:
             model=self.model,
             response_length=len(response.text),
             finish_reason=response.finish_reason,
+        )
+        return response
+
+    # ------------------------------------------------------------------
+    # OpenAI-compatible .complete() for editor fallback
+    # ------------------------------------------------------------------
+
+    async def complete(
+        self,
+        messages: Sequence[dict[str, Any]],
+        **kwargs: Any,
+    ) -> _CompletionResponse:
+        """OpenAI-compatible completion for call sites using dict-style messages.
+
+        The editor agent's fallback path calls::
+
+            response = await client.complete(messages=[{"role": ..., "content": ...}])
+            text = response.choices[0].message.content
+
+        This method accepts those raw dicts (no ``agent_framework.Message``
+        conversion needed) and returns a ``_CompletionResponse`` with the
+        same shape as an ``openai.ChatCompletion``.
+        """
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": list(messages),
+            **kwargs,
+        }
+
+        logger.debug(
+            "copilot_client.complete_request",
+            operation="complete",
+            model=self.model,
+            message_count=len(messages),
+        )
+
+        data = await self._post_with_retry("/v1/chat/completions", payload)
+
+        choices_data = data.get("choices", [])
+        choices: list[_CompletionChoice] = []
+        for i, choice in enumerate(choices_data):
+            msg_data = choice.get("message", {})
+            text = msg_data.get("content", "") or ""
+            finish = choice.get("finish_reason", "stop")
+            choices.append(
+                _CompletionChoice(
+                    message=_CompletionMessage(content=text),
+                    finish_reason=finish,
+                    index=i,
+                )
+            )
+
+        if not choices:
+            choices.append(
+                _CompletionChoice(message=_CompletionMessage(content=""))
+            )
+
+        response = _CompletionResponse(choices=choices, model=self.model)
+
+        logger.info(
+            "copilot_client.complete_response",
+            operation="complete",
+            model=self.model,
+            response_length=len(response.choices[0].message.content),
         )
         return response
 
