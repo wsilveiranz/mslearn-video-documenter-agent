@@ -90,6 +90,16 @@
           "type": "number",
           "default": 0,
           "description": "Port for the LM Proxy server (0 = auto-assign). The proxy exposes Copilot models as an OpenAI-compatible API for the backend."
+        },
+        "video-documenter.autoStartBackend": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start the Python backend server when the extension activates. Disable if you prefer to start the backend manually."
+        },
+        "video-documenter.backendPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the backend directory. Leave empty to auto-detect from the monorepo layout (backend/ next to vscode-extension/)."
         }
       }
     }
