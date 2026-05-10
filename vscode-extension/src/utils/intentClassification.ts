@@ -61,6 +61,28 @@ export function extractTargetPath(prompt: string): string | undefined {
 }
 
 /**
+ * Parse the raw LLM classification response into a ConversationIntent.
+ * Handles variations like "save", "Save.", "The category is save", etc.
+ * Defaults to 'refine' for unrecognised responses (preserves legacy behaviour).
+ */
+export function parseLlmClassification(raw: string): ConversationIntent {
+    const cleaned = raw.trim().toLowerCase();
+
+    // Direct match
+    if (cleaned === 'save' || cleaned === 'refine' || cleaned === 'general') {
+        return cleaned;
+    }
+
+    // Substring match (handles "save." or "The category is save")
+    if (cleaned.includes('save')) { return 'save'; }
+    if (cleaned.includes('general')) { return 'general'; }
+    if (cleaned.includes('refine')) { return 'refine'; }
+
+    // Default: treat as refinement (preserves original behaviour)
+    return 'refine';
+}
+
+/**
  * Resolve a target path, appending a filename if it's a directory
  * and adding .md extension if missing.
  * Pure version without VS Code or fs dependencies (for testing).

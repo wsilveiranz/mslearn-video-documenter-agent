@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
     classifyIntentFast,
     extractTargetPath,
+    parseLlmClassification,
     resolveTargetPathPure,
 } from '../utils/intentClassification';
 
@@ -270,5 +271,104 @@ describe('resolveTargetPathPure', () => {
         );
         const expected = path.join('C:\\workspace', 'docs', `${docId}.md`);
         assert.strictEqual(result, expected);
+    });
+});
+
+describe('parseLlmClassification', () => {
+
+    // --- Exact matches ---
+
+    it('should parse "save" exactly', () => {
+        assert.strictEqual(parseLlmClassification('save'), 'save');
+    });
+
+    it('should parse "refine" exactly', () => {
+        assert.strictEqual(parseLlmClassification('refine'), 'refine');
+    });
+
+    it('should parse "general" exactly', () => {
+        assert.strictEqual(parseLlmClassification('general'), 'general');
+    });
+
+    // --- Case insensitivity ---
+
+    it('should handle uppercase "Save"', () => {
+        assert.strictEqual(parseLlmClassification('Save'), 'save');
+    });
+
+    it('should handle all-caps "REFINE"', () => {
+        assert.strictEqual(parseLlmClassification('REFINE'), 'refine');
+    });
+
+    it('should handle mixed case "General"', () => {
+        assert.strictEqual(parseLlmClassification('General'), 'general');
+    });
+
+    // --- Trailing punctuation ---
+
+    it('should handle trailing period "save."', () => {
+        assert.strictEqual(parseLlmClassification('save.'), 'save');
+    });
+
+    it('should handle trailing period "refine."', () => {
+        assert.strictEqual(parseLlmClassification('refine.'), 'refine');
+    });
+
+    // --- Whitespace ---
+
+    it('should handle leading/trailing whitespace', () => {
+        assert.strictEqual(parseLlmClassification('  save  '), 'save');
+    });
+
+    it('should handle newlines', () => {
+        assert.strictEqual(parseLlmClassification('\nrefine\n'), 'refine');
+    });
+
+    // --- Verbose LLM responses ---
+
+    it('should extract "save" from verbose response', () => {
+        assert.strictEqual(parseLlmClassification('The category is save'), 'save');
+    });
+
+    it('should extract "refine" from verbose response', () => {
+        assert.strictEqual(parseLlmClassification('I would classify this as refine'), 'refine');
+    });
+
+    it('should extract "general" from verbose response', () => {
+        assert.strictEqual(parseLlmClassification('This is a general question'), 'general');
+    });
+
+    // --- Quoted responses ---
+
+    it('should handle double-quoted "save"', () => {
+        assert.strictEqual(parseLlmClassification('"save"'), 'save');
+    });
+
+    it('should handle single-quoted \'refine\'', () => {
+        assert.strictEqual(parseLlmClassification("'refine'"), 'refine');
+    });
+
+    // --- Fallback behaviour ---
+
+    it('should default to "refine" for unrecognised response', () => {
+        assert.strictEqual(parseLlmClassification('I don\'t know'), 'refine');
+    });
+
+    it('should default to "refine" for empty string', () => {
+        assert.strictEqual(parseLlmClassification(''), 'refine');
+    });
+
+    it('should default to "refine" for gibberish', () => {
+        assert.strictEqual(parseLlmClassification('asdfghjkl'), 'refine');
+    });
+
+    // --- Priority when multiple keywords appear ---
+
+    it('should prioritise "save" over "refine" when both appear', () => {
+        assert.strictEqual(parseLlmClassification('save not refine'), 'save');
+    });
+
+    it('should prioritise "general" over "refine" when both appear', () => {
+        assert.strictEqual(parseLlmClassification('this is general not refine'), 'general');
     });
 });

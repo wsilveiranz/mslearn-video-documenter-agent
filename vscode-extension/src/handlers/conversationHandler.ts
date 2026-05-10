@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { BackendClient } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
-import { classifyIntentFast, ConversationIntent } from '../utils/intentClassification';
+import { classifyIntentFast, parseLlmClassification, ConversationIntent } from '../utils/intentClassification';
 import { handleRefine } from './refineHandler';
 import { handleSave } from './saveHandler';
 
@@ -42,11 +42,7 @@ async function classifyIntent(
             result += fragment;
         }
 
-        const classified = result.trim().toLowerCase();
-        if (classified.includes('save')) { return 'save'; }
-        if (classified.includes('general')) { return 'general'; }
-        // Default to refine for document-related feedback
-        return 'refine';
+        return parseLlmClassification(result);
     } catch {
         // If LLM classification fails, fall back to refinement (preserves original behavior)
         return 'refine';
