@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,14 +14,19 @@ from src.models.video import ProcessingStatus, VideoJob
 # ---- ConnectionManager unit tests ----
 
 class TestConnectionManager:
-    """Test the ConnectionManager.send_progress method directly."""
+    """Test the ConnectionManager.send_progress method directly.
+
+    send_progress is fire-and-forget (schedules a background task).
+    We yield to the event loop after calling it so the task completes.
+    """
 
     @pytest.mark.asyncio
     async def test_send_progress_no_connections(self):
         """send_progress is a no-op when no client is connected."""
         mgr = ConnectionManager()
         # Should not raise even with no connections registered
-        await mgr.send_progress("vid123", "ingestion", 1, 6, "Starting...")
+        mgr.send_progress("vid123", "ingestion", 1, 6, "Starting...")
+        await asyncio.sleep(0.05)
 
     @pytest.mark.asyncio
     async def test_send_progress_delivers_message(self):
@@ -31,7 +37,8 @@ class TestConnectionManager:
         ws = AsyncMock()
         await mgr.connect(ws, "vid123")
 
-        await mgr.send_progress("vid123", "ingestion", 1, 6, "Starting ingestion...")
+        mgr.send_progress("vid123", "ingestion", 1, 6, "Starting ingestion...")
+        await asyncio.sleep(0.05)
 
         ws.send_text.assert_awaited_once()
         payload = json.loads(ws.send_text.call_args[0][0])
@@ -51,7 +58,8 @@ class TestConnectionManager:
         await mgr.connect(ws, "vid123")
 
         # Should not raise; disconnected ws should be pruned
-        await mgr.send_progress("vid123", "ingestion", 1, 6, "Starting...")
+        mgr.send_progress("vid123", "ingestion", 1, 6, "Starting...")
+        await asyncio.sleep(0.05)
 
         assert "vid123" not in mgr._connections
 
@@ -63,7 +71,8 @@ class TestConnectionManager:
         await mgr.connect(ws1, "vid123")
         await mgr.connect(ws2, "vid123")
 
-        await mgr.send_progress("vid123", "extracting", 2, 6, "Extracting...")
+        mgr.send_progress("vid123", "extracting", 2, 6, "Extracting...")
+        await asyncio.sleep(0.05)
 
         ws1.send_text.assert_awaited_once()
         ws2.send_text.assert_awaited_once()
@@ -75,7 +84,8 @@ class TestConnectionManager:
         ws = AsyncMock()
         await mgr.connect(ws, "vid-A")
 
-        await mgr.send_progress("vid-B", "ingestion", 1, 6, "Starting...")
+        mgr.send_progress("vid-B", "ingestion", 1, 6, "Starting...")
+        await asyncio.sleep(0.05)
 
         ws.send_text.assert_not_awaited()
 
@@ -113,14 +123,14 @@ class TestRunIngestionProgress:
             patch("src.api.routes.IngestionAgent") as MockAgent,
             patch("src.api.routes.get_settings") as mock_settings,
         ):
-            mock_manager.send_progress = AsyncMock()
+            mock_manager.send_progress = MagicMock()
             MockAgent.return_value.process = AsyncMock(return_value=mock_result)
             mock_settings.return_value.processing_mode = "local"
 
             from src.api.routes import _run_ingestion
             await _run_ingestion("testvid", "/fake/video.mp4")
 
-        calls = mock_manager.send_progress.await_args_list
+        calls = mock_manager.send_progress.call_args_list
         stages = [c.args[1] for c in calls]
         assert "ingestion" in stages
         assert "ingestion_complete" in stages
@@ -142,13 +152,13 @@ class TestRunIngestionProgress:
             patch("src.api.routes.IngestionAgent") as MockAgent,
             patch("src.api.routes.get_settings") as mock_settings,
         ):
-            mock_manager.send_progress = AsyncMock()
+            mock_manager.send_progress = MagicMock()
             MockAgent.return_value.process = AsyncMock(side_effect=RuntimeError("boom"))
             mock_settings.return_value.processing_mode = "local"
 
             from src.api.routes import _run_ingestion
             await _run_ingestion("testvid", "/fake/video.mp4")
 
-        calls = mock_manager.send_progress.await_args_list
+        calls = mock_manager.send_progress.call_args_list
         stages = [c.args[1] for c in calls]
         assert "failed" in stages

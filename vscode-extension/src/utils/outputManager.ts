@@ -114,8 +114,13 @@ export class OutputManager {
             throw new Error('No workspace folder open.');
         }
 
-        const outputDir = sanitizeOutputDir(getOutputDirectory());        const mdFileUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir, `${documentId}.md`);
+        const outputDir = sanitizeOutputDir(getOutputDirectory());
+        const baseDirUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir);
 
+        // Ensure output directory exists (may have been removed since initial save)
+        await vscode.workspace.fs.createDirectory(baseDirUri);
+
+        const mdFileUri = vscode.Uri.joinPath(baseDirUri, `${documentId}.md`);
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
         return mdFileUri;
     }

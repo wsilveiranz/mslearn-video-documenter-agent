@@ -17,6 +17,7 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         self._connections: dict[str, list[WebSocket]] = {}
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     async def connect(self, websocket: WebSocket, video_id: str) -> None:
         await websocket.accept()
@@ -34,7 +35,7 @@ class ConnectionManager:
                 del self._connections[video_id]
         logger.info("ws.disconnected", video_id=video_id)
 
-    async def send_progress(
+    def send_progress(
         self,
         video_id: str,
         stage: str,
@@ -42,10 +43,29 @@ class ConnectionManager:
         total_steps: int,
         detail: str = "",
     ) -> None:
-        """Broadcast a step-based progress update to all connections watching a video.
+        """Fire-and-forget: schedule a progress broadcast as a background task.
+
+        Returns immediately so the pipeline is never blocked by WebSocket I/O.
+        """
+        if video_id not in self._connections:
+            return
+
+        task = asyncio.create_task(self._broadcast(video_id, stage, step, total_steps, detail))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _broadcast(
+        self,
+        video_id: str,
+        stage: str,
+        step: int,
+        total_steps: int,
+        detail: str,
+    ) -> None:
+        """Send a step-based progress update to all connections watching a video.
 
         Sends to all clients concurrently with a 2s timeout per client.
-        Never blocks the pipeline — failures are silently handled.
+        Failures are silently handled (disconnected clients are removed).
         """
         if video_id not in self._connections:
             return

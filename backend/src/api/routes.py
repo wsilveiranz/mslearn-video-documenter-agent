@@ -102,8 +102,13 @@ async def classify_intent_endpoint(request: ClassifyIntentRequest) -> dict:
         result = await classify_intent(request.message, client)
         return result.model_dump()
     except Exception as e:
-        logger.error("classify_intent_failed", error=str(e))
-        return {"intent": "refine", "confidence": "llm", "raw_response": None}
+        logger.error(
+            "classify_intent_failed",
+            operation="intent_classification",
+            error=str(e),
+            exc_info=True,
+        )
+        return {"intent": "refine", "confidence": "fallback", "raw_response": None}
 
 
 # ---- Background task helpers ----
@@ -115,7 +120,7 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
         job.status = ProcessingStatus.INGESTING
         job.current_stage = "ingestion"
         job.step = 1
-        await manager.send_progress(video_id, "ingestion", 1, 6, "Step 1/6: Ingesting video...")
+        manager.send_progress(video_id, "ingestion", 1, 6, "Step 1/6: Ingesting video...")
 
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
@@ -131,12 +136,12 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
         job.video_metadata = result.metadata
 
         logger.info("api.ingestion_complete", video_id=video_id, ingestion_id=result.video_id)
-        await manager.send_progress(video_id, "ingestion_complete", 1, 6, "Step 1/6: Ingestion complete ✓")
+        manager.send_progress(video_id, "ingestion_complete", 1, 6, "Step 1/6: Ingestion complete ✓")
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.ingestion_failed", video_id=video_id, error=repr(exc), exc_info=True)
-        await manager.send_progress(video_id, "failed", job.step, 6, str(exc))
+        manager.send_progress(video_id, "failed", job.step, 6, str(exc))
     finally:
         if is_temp_file:
             try:
@@ -160,7 +165,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
         job.status = ProcessingStatus.PROCESSING
         job.current_stage = "extracting"
         job.step = 2
-        await manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extracting transcript, scenes, and keyframes...")
+        manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extracting transcript, scenes, and keyframes...")
 
         extraction_agent = ExtractionAgent(foundry_client=client)
 
@@ -178,42 +183,42 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
             raise RuntimeError("Extraction produced no transcript, scenes, or keyframes.")
 
         job.extraction_result = extraction_result
-        await manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extraction complete ✓")
+        manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extraction complete ✓")
 
         # Step 3/6: Structure
         job.current_stage = "structuring"
         job.step = 3
-        await manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Creating document outline...")
+        manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Creating document outline...")
 
         structure_agent = StructureAgent(client)
         outline = await structure_agent.process(extraction_result, doc_type, supplementary_context)
 
-        await manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Outline ready ✓")
+        manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Outline ready ✓")
 
         # Step 4/6: Writer
         job.current_stage = "writing"
         job.step = 4
-        await manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Writing document...")
+        manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Writing document...")
 
         writer_agent = WriterAgent(client)
         document = await writer_agent.process(outline, extraction_result)
 
-        await manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Draft complete ✓")
+        manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Draft complete ✓")
 
         # Step 5/6: Editor
         job.current_stage = "editing"
         job.step = 5
-        await manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing for MS Learn style...")
+        manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing for MS Learn style...")
 
         editor_agent = EditorAgent(client)
         document = await editor_agent.process(document)
 
-        await manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing complete ✓")
+        manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing complete ✓")
 
         # Step 6/6: Evaluate
         job.current_stage = "evaluating"
         job.step = 6
-        await manager.send_progress(video_id, "evaluating", 6, 6, "Step 6/6: Quality evaluation...")
+        manager.send_progress(video_id, "evaluating", 6, 6, "Step 6/6: Quality evaluation...")
 
         evaluate_agent = EvaluateAgent(client)
         evaluation = await evaluate_agent.process(document, extraction_result)
@@ -222,7 +227,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
         iteration = 1
         while not evaluation.passed and iteration < MAX_REVISION_ITERATIONS:
             iteration += 1
-            await manager.send_progress(
+            manager.send_progress(
                 video_id, "evaluating", 6, 6, f"Step 6/6: Revision {iteration} — re-editing..."
             )
             feedback = "\n".join(
@@ -247,12 +252,12 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
             passed=evaluation.passed,
             score=evaluation.scores.overall,
         )
-        await manager.send_progress(video_id, "completed", 6, 6, "Document generated!")
+        manager.send_progress(video_id, "completed", 6, 6, "Document generated!")
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.pipeline_failed", video_id=video_id, error=repr(exc), exc_info=True)
-        await manager.send_progress(video_id, "failed", job.step, 6, str(exc))
+        manager.send_progress(video_id, "failed", job.step, 6, str(exc))
 
 
 # ---- Video Endpoints ----
@@ -410,7 +415,7 @@ async def refine_document(
             from src.agents.orchestrator import create_foundry_client
 
             if video_id:
-                await manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
+                manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
 
             client = create_foundry_client()
             editor = EditorAgent(client)
@@ -429,11 +434,11 @@ async def refine_document(
             _documents[document_id] = refined
             logger.info("api.refine_complete", doc_id=document_id, revision=refined.revision_number)
             if video_id:
-                await manager.send_progress(video_id, "refined", 2, 2, "Refinement complete")
+                manager.send_progress(video_id, "refined", 2, 2, "Refinement complete")
         except Exception as exc:
             logger.error("api.refine_failed", doc_id=document_id, error=repr(exc), exc_info=True)
             if video_id:
-                await manager.send_progress(video_id, "failed", 0, 1, f"Refinement failed: {exc}")
+                manager.send_progress(video_id, "failed", 0, 1, f"Refinement failed: {exc}")
 
     background_tasks.add_task(_refine)
 

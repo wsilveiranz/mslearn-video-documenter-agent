@@ -129,7 +129,7 @@ class VideoJob(BaseModel):
 
     video_id: str
     status: ProcessingStatus = ProcessingStatus.QUEUED
-    step: int = Field(default=0, description="Current step number (1-based)")
+    step: int = Field(default=0, description="Current step number (0 = not started, 1-6 = pipeline steps)")
     total_steps: int = Field(default=6, description="Total number of pipeline steps")
     current_stage: str = ""
     error_message: str | None = None
