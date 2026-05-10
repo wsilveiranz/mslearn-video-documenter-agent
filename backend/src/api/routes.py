@@ -14,6 +14,7 @@ from src.agents.editor import EditorAgent
 from src.agents.evaluate import EvaluateAgent
 from src.agents.ingestion import IngestionAgent
 from src.agents.orchestrator import PipelineInput, run_pipeline
+from src.api.websocket import manager
 from src.config import get_settings
 from src.models.document import DocType, GeneratedDocument
 from src.models.video import ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
@@ -84,6 +85,7 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
         job.status = ProcessingStatus.INGESTING
         job.current_stage = "ingestion"
         job.progress_pct = 10.0
+        await manager.send_progress(video_id, "ingestion", 10.0, "Starting ingestion...")
 
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
@@ -99,10 +101,12 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
         job.source_path = result.metadata.source_path
 
         logger.info("api.ingestion_complete", video_id=video_id, ingestion_id=result.video_id)
+        await manager.send_progress(video_id, "ingestion_complete", 20.0, "Ingestion complete")
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.ingestion_failed", video_id=video_id, error=str(exc))
+        await manager.send_progress(video_id, "failed", job.progress_pct, str(exc))
     finally:
         if is_temp_file:
             try:
@@ -121,6 +125,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
         job.status = ProcessingStatus.EXTRACTING
         job.current_stage = "pipeline"
         job.progress_pct = 30.0
+        await manager.send_progress(video_id, "extracting", 30.0, "Extracting video content...")
 
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
@@ -150,10 +155,12 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
             passed=result.evaluation.passed,
             score=result.evaluation.scores.overall,
         )
+        await manager.send_progress(video_id, "completed", 100.0, "Document generated!")
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.pipeline_failed", video_id=video_id, error=str(exc))
+        await manager.send_progress(video_id, "failed", job.progress_pct, str(exc))
 
 
 # ---- Video Endpoints ----
@@ -302,6 +309,8 @@ async def refine_document(
         try:
             from src.agents.orchestrator import create_foundry_client
 
+            await manager.send_progress(document_id, "refining", 50.0, "Refining document...")
+
             client = create_foundry_client()
             editor = EditorAgent(client)
             refined = await editor.process(doc, feedback=request.feedback)
@@ -318,6 +327,7 @@ async def refine_document(
 
             _documents[document_id] = refined
             logger.info("api.refine_complete", doc_id=document_id, revision=refined.revision_number)
+            await manager.send_progress(document_id, "refined", 100.0, "Refinement complete")
         except Exception as exc:
             logger.error("api.refine_failed", doc_id=document_id, error=str(exc))
 
