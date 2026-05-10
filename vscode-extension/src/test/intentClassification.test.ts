@@ -94,6 +94,36 @@ describe('classifyIntentFast', () => {
         assert.strictEqual(classifyIntentFast('   '), undefined);
     });
 
+    // --- Should classify rename/move/delete as "general" ---
+
+    it('should classify "rename file to file-abc.md" as general', () => {
+        assert.strictEqual(classifyIntentFast('rename file to file-abc.md'), 'general');
+    });
+
+    it('should classify "rename it to output.md" as general', () => {
+        assert.strictEqual(classifyIntentFast('rename it to output.md'), 'general');
+    });
+
+    it('should classify "move the file to another folder" as general', () => {
+        assert.strictEqual(classifyIntentFast('move the file to another folder'), 'general');
+    });
+
+    it('should classify "reorganize the sections" as general', () => {
+        assert.strictEqual(classifyIntentFast('reorganize the sections'), 'general');
+    });
+
+    it('should classify "please rename this document" as general', () => {
+        assert.strictEqual(classifyIntentFast('please rename this document'), 'general');
+    });
+
+    it('should classify "delete the file" as general', () => {
+        assert.strictEqual(classifyIntentFast('delete the file'), 'general');
+    });
+
+    it('should classify "reformat the code blocks" as general', () => {
+        assert.strictEqual(classifyIntentFast('reformat the code blocks'), 'general');
+    });
+
     // --- Regression: must NOT match refinement phrased with save/write verbs ---
 
     it('should not match "write it in a more formal tone"', () => {

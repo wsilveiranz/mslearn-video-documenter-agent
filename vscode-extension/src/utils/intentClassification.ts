@@ -2,6 +2,11 @@ import * as path from 'path';
 
 export type ConversationIntent = 'save' | 'refine' | 'general';
 
+/** Patterns that should be classified as "general" (not save or refine). */
+export const GENERAL_PATTERNS = [
+    /^(please\s+)?(rename|move|reorganize|reformat|delete|remove)\b/i,
+];
+
 export const SAVE_PATTERNS = [
     // "save/export to <path-like>" — require a filesystem-looking destination after the preposition
     /^(please\s+)?(save|export|write|copy)\s+(it\s+|the\s+(doc|document|file|markdown|md)\s+)?(to|at|into)\s+["']?([a-zA-Z]:[/\\]|[/~.])/i,
@@ -18,6 +23,12 @@ export const SAVE_PATTERNS = [
  */
 export function classifyIntentFast(prompt: string): ConversationIntent | undefined {
     const trimmed = prompt.trim();
+
+    for (const pattern of GENERAL_PATTERNS) {
+        if (pattern.test(trimmed)) {
+            return 'general';
+        }
+    }
 
     for (const pattern of SAVE_PATTERNS) {
         if (pattern.test(trimmed)) {

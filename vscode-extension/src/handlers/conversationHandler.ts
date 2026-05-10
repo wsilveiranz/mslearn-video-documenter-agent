@@ -30,7 +30,7 @@ async function classifyIntent(
             '- "save": The user wants to save, export, or download the document to a specific file or directory path\n' +
             '- "refine": The user is providing feedback to improve, edit, or change the document content\n' +
             '- "general": The user is asking a question, requesting help, or making a request that is NOT about saving or refining the document (e.g., rename, explain, summarize, compare)\n\n' +
-            'IMPORTANT: "rename", "move", "reorganize", and "reformat" are NOT save operations — classify them as "general" or "refine".\n\n' +
+            'IMPORTANT: "rename", "move", "reorganize", and "reformat" are NOT save or refine operations — always classify them as "general".\n\n' +
             'Respond with ONLY the category name (save, refine, or general). No explanation.\n\n' +
             `User message: "${prompt.trim()}"`
         ),
