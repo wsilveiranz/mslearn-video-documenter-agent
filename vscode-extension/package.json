@@ -11,7 +11,9 @@
   "categories": [
     "Chat"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onChatParticipant:video-documenter.agent"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "chatParticipants": [
@@ -33,6 +35,10 @@
           {
             "name": "refine",
             "description": "Refine a section of generated documentation"
+          },
+          {
+            "name": "save",
+            "description": "Save generated document to a specific location"
           },
           {
             "name": "status",

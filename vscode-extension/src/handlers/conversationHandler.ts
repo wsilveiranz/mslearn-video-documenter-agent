@@ -1,31 +1,102 @@
 import * as vscode from 'vscode';
 import { BackendClient } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
+import { OutputManager } from '../utils/outputManager';
 import { handleRefine } from './refineHandler';
+import { handleSave } from './saveHandler';
+
+type ConversationIntent = 'save' | 'refine' | 'general';
+
+const SAVE_PATTERNS = [
+    /^(please\s+)?(save|export|write|copy)\s+(it\s+|the\s+(doc|document|file|markdown|md)\s+)?(to|at|in|into|as)\s+/i,
+    /^(please\s+)?(save|export)\s+(it|this|the\s+(doc|document|file|markdown|md))?\s*$/i,
+    /^(please\s+)?save\s*$/i,
+];
+
+/**
+ * Classify the user's intent using fast pattern matching.
+ * Falls back to LLM classification only for ambiguous messages.
+ */
+async function classifyIntent(
+    prompt: string,
+    model: vscode.LanguageModelChat,
+    token: vscode.CancellationToken
+): Promise<ConversationIntent> {
+    const trimmed = prompt.trim();
+
+    // Fast path: check save patterns
+    for (const pattern of SAVE_PATTERNS) {
+        if (pattern.test(trimmed)) {
+            return 'save';
+        }
+    }
+
+    // For ambiguous messages, use the LLM to classify
+    const messages = [
+        vscode.LanguageModelChatMessage.User(
+            'Classify the following user message into exactly one category. ' +
+            'The user has a generated document open.\n\n' +
+            'Categories:\n' +
+            '- "save": The user wants to save, export, download, or copy the document to a file or location\n' +
+            '- "refine": The user is providing feedback to improve, edit, or change the document content\n' +
+            '- "general": The user is asking a question, requesting help, or making a request unrelated to modifying the document\n\n' +
+            'Respond with ONLY the category name (save, refine, or general). No explanation.\n\n' +
+            `User message: "${trimmed}"`
+        ),
+    ];
+
+    try {
+        const response = await model.sendRequest(messages, {}, token);
+        let result = '';
+        for await (const fragment of response.text) {
+            result += fragment;
+        }
+
+        const classified = result.trim().toLowerCase();
+        if (classified.includes('save')) { return 'save'; }
+        if (classified.includes('general')) { return 'general'; }
+        // Default to refine for document-related feedback
+        return 'refine';
+    } catch {
+        // If LLM classification fails, fall back to refinement (preserves original behavior)
+        return 'refine';
+    }
+}
 
 export async function handleConversation(
     request: vscode.ChatRequest,
     stream: vscode.ChatResponseStream,
     token: vscode.CancellationToken,
     client: BackendClient,
-    stateManager: ConversationStateManager
+    stateManager: ConversationStateManager,
+    outputManager: OutputManager
 ): Promise<vscode.ChatResult> {
     const state = stateManager.getState();
 
-    // If a document is already generated, treat free-form text as refinement feedback
+    // If a document is generated, classify intent before routing
     if (state.currentStage === 'generated' && state.currentDocumentId) {
-        stream.markdown('*Treating your message as refinement feedback...*\n\n');
-        return handleRefine(request, stream, token, client, stateManager);
+        const intent = await classifyIntent(request.prompt, request.model, token);
+
+        switch (intent) {
+            case 'save':
+                return handleSave(request, stream, token, client, stateManager, outputManager);
+            case 'refine':
+                stream.markdown('*Treating your message as refinement feedback...*\n\n');
+                return handleRefine(request, stream, token, client, stateManager);
+            case 'general':
+                // Fall through to general conversation below
+                break;
+        }
     }
 
-    // Otherwise, use the LLM for general conversation
+    // General conversation — use the LLM
     const messages = [
         vscode.LanguageModelChatMessage.User(
             'You are the MS Learn Video Documenter agent. You help users create ' +
             'Microsoft Learn-style documentation from screen recording videos. ' +
             'You can analyze videos, generate documentation in various MS Learn formats ' +
             '(Quickstart, Tutorial, How-to, Concept, Overview), and refine generated content. ' +
-            'Available commands: /analyze, /generate, /refine, /status. ' +
+            'Available commands: /analyze, /generate, /refine, /save, /status. ' +
             'Keep responses concise and helpful.'
         ),
         vscode.LanguageModelChatMessage.User(request.prompt),
