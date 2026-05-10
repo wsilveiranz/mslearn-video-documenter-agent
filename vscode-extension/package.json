@@ -56,6 +56,26 @@
           "group": "video-documenter"
         }
       ]
+    },
+    "configuration": {
+      "title": "MS Learn Video Documenter",
+      "properties": {
+        "video-documenter.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the Video Documenter backend server"
+        },
+        "video-documenter.outputDirectory": {
+          "type": "string",
+          "default": "docs",
+          "description": "Workspace-relative directory for generated documentation output"
+        },
+        "video-documenter.autoOpenPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open markdown preview after generating a document"
+        }
+      }
     }
   },
   "scripts": {
