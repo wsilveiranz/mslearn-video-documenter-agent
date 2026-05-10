@@ -34,11 +34,20 @@ export async function handleRefine(
         stateManager.setStage('refining');
         stream.progress('Refining document...');
 
+        // Capture current revision so we can detect when the backend update lands
+        let currentRevision = 0;
+        try {
+            const current = await client.getDocument(state.currentDocumentId);
+            currentRevision = current.revision_number;
+        } catch {
+            // If we can't fetch the current revision, we'll accept the first result
+        }
+
         await client.refineDocument(state.currentDocumentId, feedback);
 
         stream.progress('Applying changes...');
 
-        // Poll for the updated document (refinement is async)
+        // Poll until revision advances (refinement is async on the backend)
         let retries = 0;
         const maxRetries = 30; // 60 seconds max at 2s intervals
         let doc: DocumentResponse | null = null;
@@ -46,11 +55,15 @@ export async function handleRefine(
         while (retries < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 2000));
             try {
-                doc = await client.getDocument(state.currentDocumentId!);
-                break;
+                const fetched = await client.getDocument(state.currentDocumentId!);
+                if (fetched.revision_number > currentRevision) {
+                    doc = fetched;
+                    break;
+                }
             } catch {
-                retries++;
+                // Document not ready yet — keep polling
             }
+            retries++;
         }
 
         if (doc) {
