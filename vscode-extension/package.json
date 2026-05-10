@@ -11,7 +11,9 @@
   "categories": [
     "Chat"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onChatParticipant:video-documenter.agent"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "chatParticipants": [
@@ -35,6 +37,10 @@
             "description": "Refine a section of generated documentation"
           },
           {
+            "name": "save",
+            "description": "Save generated document to a specific location"
+          },
+          {
             "name": "status",
             "description": "Check processing status"
           }
@@ -56,20 +62,52 @@
           "group": "video-documenter"
         }
       ]
+    },
+    "configuration": {
+      "title": "MS Learn Video Documenter",
+      "properties": {
+        "video-documenter.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the Video Documenter backend server"
+        },
+        "video-documenter.outputDirectory": {
+          "type": "string",
+          "default": "docs",
+          "description": "Workspace-relative directory for generated documentation output"
+        },
+        "video-documenter.autoOpenPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open markdown preview after generating a document"
+        }
+      }
     }
   },
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "pretest": "npm run compile",
+    "test": "mocha"
+  },
+  "ts-node": {
+    "project": "./tsconfig.test.json",
+    "transpileOnly": true
   },
   "dependencies": {
     "@vscode/chat-extension-utils": "^0.0.0-alpha.1",
     "@vscode/prompt-tsx": "^0.3.0-alpha.12"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^24.12.3",
     "@types/vscode": "^1.100.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
+    "eslint": "^10.3.0",
+    "mocha": "^11.7.5",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.2"
   }
 }

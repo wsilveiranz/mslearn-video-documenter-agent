@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -193,25 +194,25 @@ class FFmpegService:
     async def _run_ffmpeg(self, args: list[str]) -> tuple[str, str]:
         """Run a subprocess command and return (stdout, stderr). Raises on non-zero exit."""
         logger.debug("ffmpeg_command", operation="run_ffmpeg", cmd=args[0], arg_count=len(args))
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout_bytes, stderr_bytes = await proc.communicate()
-        stdout = stdout_bytes.decode("utf-8", errors="replace")
-        stderr = stderr_bytes.decode("utf-8", errors="replace")
 
-        if proc.returncode != 0:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            args,
+            capture_output=True,
+        )
+        stdout = result.stdout.decode("utf-8", errors="replace")
+        stderr = result.stderr.decode("utf-8", errors="replace")
+
+        if result.returncode != 0:
             logger.error(
                 "ffmpeg_failed",
                 operation="run_ffmpeg",
                 cmd=args[0],
-                return_code=proc.returncode,
+                return_code=result.returncode,
                 stderr=stderr[-500:],  # last 500 chars to avoid log flooding
             )
             raise RuntimeError(
-                f"{args[0]} exited with code {proc.returncode}. stderr: {stderr[-500:]}"
+                f"{args[0]} exited with code {result.returncode}. stderr: {stderr[-500:]}"
             )
 
         return stdout, stderr

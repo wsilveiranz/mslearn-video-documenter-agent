@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import structlog
@@ -16,6 +17,7 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         self._connections: dict[str, list[WebSocket]] = {}
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     async def connect(self, websocket: WebSocket, video_id: str) -> None:
         await websocket.accept()
@@ -33,8 +35,38 @@ class ConnectionManager:
                 del self._connections[video_id]
         logger.info("ws.disconnected", video_id=video_id)
 
-    async def send_progress(self, video_id: str, stage: str, progress_pct: float, detail: str = "") -> None:
-        """Broadcast progress update to all connections watching a video."""
+    def send_progress(
+        self,
+        video_id: str,
+        stage: str,
+        step: int,
+        total_steps: int,
+        detail: str = "",
+    ) -> None:
+        """Fire-and-forget: schedule a progress broadcast as a background task.
+
+        Returns immediately so the pipeline is never blocked by WebSocket I/O.
+        """
+        if video_id not in self._connections:
+            return
+
+        task = asyncio.create_task(self._broadcast(video_id, stage, step, total_steps, detail))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _broadcast(
+        self,
+        video_id: str,
+        stage: str,
+        step: int,
+        total_steps: int,
+        detail: str,
+    ) -> None:
+        """Send a step-based progress update to all connections watching a video.
+
+        Sends to all clients concurrently with a 2s timeout per client.
+        Failures are silently handled (disconnected clients are removed).
+        """
         if video_id not in self._connections:
             return
 
@@ -42,19 +74,25 @@ class ConnectionManager:
             "type": "progress",
             "video_id": video_id,
             "stage": stage,
-            "progress_pct": progress_pct,
+            "step": step,
+            "total_steps": total_steps,
             "detail": detail,
         })
 
-        disconnected: list[WebSocket] = []
-        for ws in self._connections[video_id]:
+        async def _send(ws: WebSocket) -> WebSocket | None:
             try:
-                await ws.send_text(message)
+                await asyncio.wait_for(ws.send_text(message), timeout=2.0)
+                return None
             except Exception:
-                disconnected.append(ws)
+                return ws
 
-        for ws in disconnected:
-            self.disconnect(ws, video_id)
+        results = await asyncio.gather(
+            *(_send(ws) for ws in self._connections[video_id]),
+        )
+
+        for result in results:
+            if result is not None:
+                self.disconnect(result, video_id)
 
 
 manager = ConnectionManager()

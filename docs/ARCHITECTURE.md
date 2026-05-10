@@ -495,13 +495,31 @@ backend/
 
 ```
 POST   /api/v1/videos/ingest          # Upload/register video
-GET    /api/v1/videos/{id}/status      # Check processing status
+GET    /api/v1/videos/{id}/status      # Check processing status (step-based)
 GET    /api/v1/videos/{id}/extraction  # Get extraction results
 POST   /api/v1/documents/generate      # Generate document from extraction
 POST   /api/v1/documents/{id}/refine   # Iterative refinement
 GET    /api/v1/documents/{id}          # Get generated document
-WS     /api/v1/ws/progress             # Streaming progress updates
+POST   /api/v1/classify-intent         # Classify user message intent (save/refine/general)
+WS     /ws/progress/{video_id}         # Step-based progress streaming (fire-and-forget)
 ```
+
+#### WebSocket Progress Payload
+
+Progress is **step-based** (not percentage-based). The `send_progress` method is fire-and-forget via `asyncio.create_task` — it never blocks the pipeline.
+
+```json
+{
+  "type": "progress",
+  "video_id": "abc123",
+  "stage": "extracting",
+  "step": 2,
+  "total_steps": 6,
+  "detail": "Step 2/6: Extracting transcript, scenes, and keyframes..."
+}
+```
+
+Pipeline steps: 1=Ingestion, 2=Extraction, 3=Structure, 4=Writer, 5=Editor, 6=Evaluate.
 
 ### 5.3 Configuration
 

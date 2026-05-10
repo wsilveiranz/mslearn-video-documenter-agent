@@ -114,6 +114,7 @@ class IngestionResult(BaseModel):
 class ProcessingStatus(str, Enum):
     QUEUED = "queued"
     INGESTING = "ingesting"
+    PROCESSING = "processing"
     EXTRACTING = "extracting"
     STRUCTURING = "structuring"
     WRITING = "writing"
@@ -128,11 +129,15 @@ class VideoJob(BaseModel):
 
     video_id: str
     status: ProcessingStatus = ProcessingStatus.QUEUED
-    progress_pct: float = Field(default=0.0, ge=0.0, le=100.0)
+    step: int = Field(default=0, description="Current step number (0 = not started, 1-6 = pipeline steps)")
+    total_steps: int = Field(default=6, description="Total number of pipeline steps")
     current_stage: str = ""
     error_message: str | None = None
     extraction_result: ExtractionResult | None = None
     source_path: str | None = Field(default=None, description="Staged file path after ingestion")
+    video_metadata: VideoMetadata | None = Field(
+        default=None, description="Cached metadata from ingestion to avoid re-probing"
+    )
     ingestion_video_id: str | None = Field(
         default=None, description="Video ID assigned by the ingestion agent"
     )
