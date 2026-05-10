@@ -225,6 +225,14 @@ describe('extractTargetPath', () => {
         assert.strictEqual(extractTargetPath('make the introduction shorter'), undefined);
     });
 
+    it('should return undefined for natural language with .md extension', () => {
+        assert.strictEqual(extractTargetPath('rename file to file-abc.md'), undefined);
+    });
+
+    it('should return undefined for long natural language ending in extension', () => {
+        assert.strictEqual(extractTargetPath('save the doc in a shorter format.md'), undefined);
+    });
+
     it('should return undefined for empty string', () => {
         assert.strictEqual(extractTargetPath(''), undefined);
     });

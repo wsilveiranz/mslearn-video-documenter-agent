@@ -55,8 +55,14 @@ export function extractTargetPath(prompt: string): string | undefined {
         return unquoted;
     }
 
-    // Could be just a filename like "output.md"
+    // Could be just a filename like "output.md" — but reject natural language
+    // (multiple words before the extension suggest a sentence, not a path)
     if (/\.\w+$/.test(unquoted) || unquoted.endsWith(path.sep) || unquoted.endsWith('/')) {
+        // Reject if it looks like natural language: 3+ words before the extension
+        const words = unquoted.split(/\s+/);
+        if (words.length >= 3) {
+            return undefined;
+        }
         return unquoted;
     }
 

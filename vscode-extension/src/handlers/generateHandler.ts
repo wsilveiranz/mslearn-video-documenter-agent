@@ -88,10 +88,10 @@ export async function handleGenerate(
 
         // 6. Connect WebSocket for progress
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {
-            stream.progress(msg.detail || msg.stage);
+            stream.progress(`Step ${msg.step}/${msg.total_steps}: ${msg.detail || msg.stage}`);
         });
 
-        // 7. Poll for completion
+        // 7. Poll for completion (no progress display — WebSocket handles that)
         let documentId: string | undefined;
         const startTime = Date.now();
         const timeoutMs = 600000; // 10 minutes for full pipeline
@@ -106,7 +106,6 @@ export async function handleGenerate(
 
                 try {
                     const status = await client.getVideoStatus(state.currentVideoId);
-                    stream.progress(`${status.current_stage}`);
 
                     if (status.status === 'completed' && status.document_id) {
                         documentId = status.document_id;
@@ -160,20 +159,20 @@ export async function handleGenerate(
                 `| Word count | ${doc.word_count} |\n` +
                 `| Revision | ${doc.revision_number} |\n` +
                 `| Saved to | \`${savedUri.fsPath}\` |\n\n` +
-                '---\n\n' +
-                '**Preview:**\n\n' +
-                doc.markdown_content.substring(0, 3000) +
-                (doc.markdown_content.length > 3000 ? '\n\n*... (truncated — full document opened in editor)*' : '') +
-                '\n\n---\n\n' +
                 '💡 **Next steps:**\n' +
                 '- Use `/refine` to improve specific sections\n' +
                 '- Or just type your feedback directly — I\'ll treat it as a refinement request\n'
             );
         } catch (saveError) {
-            // Document generated but save failed — still show content
+            // Document generated but save/preview failed — show content in chat as fallback
             stream.markdown(
                 `✅ **Document generated** but could not save to workspace: ${saveError instanceof Error ? saveError.message : String(saveError)}\n\n` +
-                doc.markdown_content.substring(0, 3000)
+                '---\n\n' +
+                '**Preview:**\n\n' +
+                doc.markdown_content.substring(0, 3000) +
+                (doc.markdown_content.length > 3000 ? '\n\n*... (truncated)*' : '') +
+                '\n\n---\n\n' +
+                '💡 Use `/save` to save the document manually.\n'
             );
         }
 

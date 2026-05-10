@@ -86,15 +86,15 @@ export async function handleSave(
             `| Revision | ${doc.revision_number} |\n`
         );
 
-        // Offer to open the file
-        const openAction = 'Open in editor';
-        const choice = await vscode.window.showInformationMessage(
+        // Non-blocking notification — don't await to avoid freezing the chat
+        void vscode.window.showInformationMessage(
             `Document saved to ${targetUri.fsPath}`,
-            openAction
-        );
-        if (choice === openAction) {
-            await outputManager.openDocument(targetUri);
-        }
+            'Open in editor'
+        ).then(choice => {
+            if (choice === 'Open in editor') {
+                outputManager.openDocument(targetUri!);
+            }
+        });
     } catch (error) {
         if (error instanceof BackendError) {
             stream.markdown(`❌ Could not fetch document: ${error.detail}`);
