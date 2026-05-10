@@ -49,7 +49,7 @@ export function extractTargetPath(prompt: string): string | undefined {
     // Validate it looks like a filesystem path
     const isWindowsPath = /^[a-zA-Z]:[/\\]/.test(unquoted);
     const isUnixPath = unquoted.startsWith('/');
-    const isRelativePath = unquoted.startsWith('.') || unquoted.includes(path.sep);
+    const isRelativePath = unquoted.startsWith('.') || unquoted.includes(path.sep) || unquoted.includes('/');
 
     if (isWindowsPath || isUnixPath || isRelativePath) {
         return unquoted;

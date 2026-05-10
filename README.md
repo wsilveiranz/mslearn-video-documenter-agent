@@ -250,6 +250,7 @@ Select a document type (Tutorial, Quickstart, How-to, Concept, or Overview). The
 | `/analyze <path>` | Analyze a screen recording video |
 | `/generate [type]` | Generate MS Learn documentation |
 | `/refine <feedback>` | Refine the generated document |
+| `/save [path]` | Save the generated document to a file |
 | `/status` | Check processing status |
 
 You can also right-click any video file (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`) in the Explorer and select **"Analyze with Video Documenter"**.

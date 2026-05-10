@@ -123,6 +123,11 @@ export class BackendClient {
     }
 
     connectProgress(videoId: string, onProgress: (msg: ProgressMessage) => void): Disposable {
+        // WebSocket global is available in Node.js 18+ (VS Code 1.82+)
+        if (typeof WebSocket === 'undefined') {
+            return { dispose: () => {} };
+        }
+
         const wsUrl = this.baseUrl.replace(/^http/, 'ws') + `/api/v1/ws/progress/${videoId}`;
         const ws = new WebSocket(wsUrl);
 

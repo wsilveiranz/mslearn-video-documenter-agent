@@ -33,7 +33,7 @@ Verify it starts on `http://localhost:8000`:
 
 ```bash
 curl http://localhost:8000/api/v1/health
-# Expected: {"status":"healthy","service":"video-documenter-api"}
+# Expected: {"status":"ok","service":"video-documenter"}
 ```
 
 ### 2. Launch the extension in development mode
@@ -172,14 +172,28 @@ In the Extension Development Host:
 | 2 | During pipeline generation, type `/status` | Shows current stage (e.g., "writing 60%") |
 | 3 | In a fresh session, type `/status` | "No active processing jobs" message |
 
-### TC-12: Conversation / general question
+### TC-12: Save command
+
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | After generating a doc, type `@video-documenter /save C:\temp\output.md` | Document saved to `C:\temp\output.md`, confirmation shown |
+| 2 | Type `@video-documenter /save` (no path) | File save dialog opens |
+| 3 | Type `@video-documenter save this to ~/docs/` | Intent classified as "save", document saved to resolved path |
+| 4 | Without a generated doc, type `@video-documenter /save C:\temp\out.md` | Error: "No document to save" with `/generate` instructions |
+
+**Verify:**
+- Saved file is valid Markdown matching the generated doc
+- Path with spaces works (e.g., `C:\Users\My Name\docs\`)
+- Relative paths resolve against workspace root
+
+### TC-13: Conversation / general question
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
 | 1 | Type `@video-documenter What document types do you support?` | LLM response explaining the 5 types |
 | 2 | Type `@video-documenter How do I use this extension?` | LLM response mentioning commands |
 
-### TC-13: Extension settings
+### TC-14: Extension settings
 
 | Step | Action | Expected result |
 |------|--------|-----------------|

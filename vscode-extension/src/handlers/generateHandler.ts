@@ -88,7 +88,7 @@ export async function handleGenerate(
 
         // 6. Connect WebSocket for progress
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {
-            stream.progress(`${msg.stage}: ${msg.detail} (${msg.progress_pct.toFixed(0)}%)`);
+            stream.progress(msg.detail || msg.stage);
         });
 
         // 7. Poll for completion
@@ -106,7 +106,7 @@ export async function handleGenerate(
 
                 try {
                     const status = await client.getVideoStatus(state.currentVideoId);
-                    stream.progress(`${status.current_stage} (${status.progress_pct.toFixed(0)}%)`);
+                    stream.progress(`${status.current_stage}`);
 
                     if (status.status === 'completed' && status.document_id) {
                         documentId = status.document_id;
@@ -116,8 +116,13 @@ export async function handleGenerate(
                         stream.markdown('❌ **Document generation failed.** Please check the backend logs and try again.');
                         return { metadata: { command: 'generate' } };
                     }
-                } catch {
-                    // Ignore transient polling errors
+                } catch (pollError) {
+                    if (pollError instanceof BackendError && pollError.statusCode === 404) {
+                        stateManager.setStage('analyzed');
+                        stream.markdown('❌ **Job not found.** The backend may have restarted. Please try `/analyze` again.');
+                        return { metadata: { command: 'generate' } };
+                    }
+                    // Ignore other transient polling errors
                 }
             }
         } finally {
@@ -139,6 +144,8 @@ export async function handleGenerate(
         stateManager.setStage('generated');
 
         // 10. Save to workspace and open
+        // TODO(Phase 3): Pass media files from extraction results once the
+        // /documents/{id} response includes referenced image paths.
         try {
             const savedPath = await outputManager.saveAndOpen(
                 documentId,

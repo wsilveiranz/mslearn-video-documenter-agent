@@ -71,7 +71,7 @@ export async function handleAnalyze(
 
         // 7. Connect WebSocket for real-time progress updates (best-effort)
         const progressDisposable = client.connectProgress(videoId, (msg) => {
-            stream.progress(`${msg.stage}: ${msg.detail} (${msg.progress_pct.toFixed(0)}%)`);
+            stream.progress(msg.detail || msg.stage);
         });
 
         // 8. Poll until ingestion_complete (stage 1 of 6 — progress_pct ~20%)
@@ -92,7 +92,7 @@ export async function handleAnalyze(
 
             try {
                 const status = await client.getVideoStatus(videoId);
-                stream.progress(`${status.current_stage} (${status.progress_pct.toFixed(0)}%)`);
+                stream.progress(`${status.current_stage}`);
 
                 if (status.current_stage === 'ingestion_complete') {
                     complete = true;
@@ -102,8 +102,14 @@ export async function handleAnalyze(
                     progressDisposable.dispose();
                     return { metadata: { command: 'analyze' } };
                 }
-            } catch {
-                // Ignore transient polling errors
+            } catch (pollError) {
+                if (pollError instanceof BackendError && pollError.statusCode === 404) {
+                    stateManager.setStage('idle');
+                    stream.markdown('❌ **Job not found.** The backend may have restarted. Please try `/analyze` again.');
+                    progressDisposable.dispose();
+                    return { metadata: { command: 'analyze' } };
+                }
+                // Ignore other transient polling errors
             }
         }
 

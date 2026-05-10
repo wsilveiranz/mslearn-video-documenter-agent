@@ -1,6 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
 import { getOutputDirectory, getAutoOpenPreview } from './config';
 
 export interface MediaFile {
@@ -11,6 +9,7 @@ export interface MediaFile {
 export class OutputManager {
     /**
      * Save a generated document and its media files to the workspace.
+     * Uses vscode.workspace.fs for remote workspace compatibility.
      * Returns the path of the saved markdown file.
      */
     async saveDocument(
@@ -24,31 +23,26 @@ export class OutputManager {
         }
 
         const outputDir = getOutputDirectory();
-        const baseDir = path.join(workspaceFolder.uri.fsPath, outputDir);
+        const baseDirUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir);
 
-        // Create output directory
-        if (!fs.existsSync(baseDir)) {
-            fs.mkdirSync(baseDir, { recursive: true });
-        }
+        // Create output directory (createDirectory is recursive and no-ops if exists)
+        await vscode.workspace.fs.createDirectory(baseDirUri);
 
         // Save markdown file
         const mdFileName = `${documentId}.md`;
-        const mdFilePath = path.join(baseDir, mdFileName);
-        fs.writeFileSync(mdFilePath, markdownContent, 'utf-8');
+        const mdFileUri = vscode.Uri.joinPath(baseDirUri, mdFileName);
+        await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
 
         // Save media files
         if (mediaFiles.length > 0) {
-            const mediaDir = path.join(baseDir, 'media');
-            if (!fs.existsSync(mediaDir)) {
-                fs.mkdirSync(mediaDir, { recursive: true });
-            }
+            const mediaDirUri = vscode.Uri.joinPath(baseDirUri, 'media');
+            await vscode.workspace.fs.createDirectory(mediaDirUri);
 
             for (const media of mediaFiles) {
-                const destPath = path.join(mediaDir, media.filename);
+                const destUri = vscode.Uri.joinPath(mediaDirUri, media.filename);
                 try {
-                    if (fs.existsSync(media.sourcePath)) {
-                        fs.copyFileSync(media.sourcePath, destPath);
-                    }
+                    const sourceUri = vscode.Uri.file(media.sourcePath);
+                    await vscode.workspace.fs.copy(sourceUri, destUri, { overwrite: true });
                 } catch {
                     // Log but don't fail if a media file can't be copied
                     console.warn(`Failed to copy media file: ${media.sourcePath}`);
@@ -56,7 +50,7 @@ export class OutputManager {
             }
         }
 
-        return mdFilePath;
+        return mdFileUri.fsPath;
     }
 
     /**
@@ -111,10 +105,10 @@ export class OutputManager {
         }
 
         const outputDir = getOutputDirectory();
-        const mdFilePath = path.join(workspaceFolder.uri.fsPath, outputDir, `${documentId}.md`);
+        const mdFileUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir, `${documentId}.md`);
 
-        fs.writeFileSync(mdFilePath, markdownContent, 'utf-8');
-        return mdFilePath;
+        await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
+        return mdFileUri.fsPath;
     }
 }
 

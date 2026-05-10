@@ -5,6 +5,7 @@ import { ConversationStateManager } from '../utils/conversationState';
 const STAGE_EMOJI: Record<string, string> = {
     queued: '⏳',
     ingesting: '📥',
+    ingestion: '📥',
     ingestion_complete: '✅',
     extracting: '🔍',
     structuring: '📋',
@@ -14,6 +15,7 @@ const STAGE_EMOJI: Record<string, string> = {
     completed: '✅',
     failed: '❌',
     pipeline: '⚙️',
+    refined: '✨',
 };
 
 export async function handleStatus(

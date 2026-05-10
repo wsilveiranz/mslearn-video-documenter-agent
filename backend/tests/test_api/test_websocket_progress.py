@@ -126,10 +126,10 @@ class TestRunIngestionProgress:
         assert "ingestion_complete" in stages
 
         start_call = next(c for c in calls if c.args[1] == "ingestion")
-        assert start_call.args[2] == 10.0
+        assert start_call.args[2] == 0.0
 
         complete_call = next(c for c in calls if c.args[1] == "ingestion_complete")
-        assert complete_call.args[2] == 20.0
+        assert complete_call.args[2] == 15.0
 
     @pytest.mark.asyncio
     async def test_ingestion_failure_broadcasts_failed(self, video_job):
