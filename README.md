@@ -25,7 +25,8 @@ Video → Ingestion → Extraction → Structure → Writer → Editor → Evalu
 
 Built with:
 - **Microsoft Agent Framework (MAF) v1.0** — multi-agent orchestration
-- **Azure AI Foundry** — GPT-4o/GPT-4o-mini for vision + generation
+- **Azure AI Foundry** — GPT-4o/GPT-4o-mini for vision + generation (cloud mode)
+- **GitHub Copilot models** — LLM access via VS Code Language Model API (local mode)
 - **Azure Video Indexer** — scene detection, OCR, keyframes, transcription (cloud mode)
 - **FFmpeg + PySceneDetect + Whisper** — video processing (local mode)
 - **FastAPI** — backend API with WebSocket progress streaming
@@ -39,9 +40,10 @@ Built with:
 |-------------|---------|-------|
 | Python | 3.11+ | Required |
 | FFmpeg | 6.0+ | Required for local mode |
-| Azure CLI | Latest | Required for `DefaultAzureCredential` |
-| Azure AI Foundry project | — | GPT-4o / GPT-4o-mini deployments |
-| Node.js | 18+ | Only for VS Code extension development |
+| Azure CLI | Latest | Required for cloud mode (`DefaultAzureCredential`) |
+| Azure AI Foundry project | — | Cloud mode: GPT-4o / GPT-4o-mini deployments |
+| GitHub Copilot subscription | — | Local mode: LLM access without Azure (optional) |
+| Node.js | 24+ | Only for VS Code extension development |
 
 ### Install FFmpeg
 
@@ -262,9 +264,149 @@ You can also right-click any video file (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`
 | `video-documenter.backendUrl` | `http://localhost:8000` | Backend server URL |
 | `video-documenter.outputDirectory` | `docs` | Workspace-relative output folder |
 | `video-documenter.autoOpenPreview` | `true` | Open markdown preview after generation |
+| `video-documenter.useCopilotModels` | `true` | Route LLM calls through Copilot in local mode |
+| `video-documenter.lmProxyPort` | `0` (auto) | Port for the LM Proxy server |
 
 > [!TIP]
 > See [Manual Test Plan](docs/MANUAL-TEST-PLAN.md) for a comprehensive list of test scenarios.
+
+---
+
+## Testing local mode with Copilot (no Azure credentials)
+
+In local mode, the extension can route all LLM calls through your **GitHub Copilot subscription** instead of requiring Azure AI Foundry credentials. This means you only need FFmpeg, Python, and a Copilot subscription to run the full pipeline.
+
+### Prerequisites
+
+| Requirement | Notes |
+|-------------|-------|
+| GitHub Copilot subscription | Active, signed in to VS Code |
+| VS Code with GitHub Copilot extension | Provides the language models |
+| Python 3.11+ | Backend runtime |
+| FFmpeg 6.0+ | Video processing |
+| Node.js 24+ | Extension development |
+
+> [!NOTE]
+> No Azure subscription, Azure CLI login, or `FOUNDRY_PROJECT_ENDPOINT` needed.
+
+### Step 1: Configure the backend for local + Copilot mode
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+Edit `.env` — set these values only (you can ignore all Azure settings):
+
+```dotenv
+PROCESSING_MODE=local
+WHISPER_MODEL=base
+FFMPEG_PATH=ffmpeg
+OUTPUT_DIRECTORY=./output
+
+# Copilot proxy URL — auto-configured by the extension on startup,
+# but you can set it manually if you start the backend first:
+# COPILOT_PROXY_URL=http://localhost:3001
+```
+
+Install dependencies:
+
+```bash
+pip install -e ".[local,dev]"
+```
+
+### Step 2: Start the backend
+
+```bash
+cd backend
+python -m src.main
+```
+
+Verify it's running:
+
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+### Step 3: Launch the extension (with LM Proxy)
+
+```bash
+cd vscode-extension
+npm install
+npm run compile
+```
+
+Press **F5** in VS Code to launch the Extension Development Host.
+
+On activation, the extension:
+1. Starts an **LM Proxy server** on localhost (check the output panel for the port)
+2. Notifies the backend at `POST /api/v1/config/lm-proxy` with the proxy URL
+3. The backend now routes LLM calls through Copilot models automatically
+
+You should see in the extension output:
+```
+[video-documenter] LM Proxy started on port 3001
+[video-documenter] Extension activated successfully
+```
+
+### Step 4: Verify the LM Proxy is working
+
+Check the proxy health endpoint (port may vary):
+
+```bash
+curl http://localhost:3001/health
+```
+
+Expected response:
+```json
+{
+  "status": "ok",
+  "models": ["copilot-gpt-4o", ...]
+}
+```
+
+### Step 5: Process a video
+
+In the Extension Development Host's Copilot Chat:
+
+```
+@video-documenter /analyze C:\path\to\your-video.mp4
+```
+
+Wait for analysis to complete, then:
+
+```
+@video-documenter /generate tutorial
+```
+
+The pipeline runs entirely through Copilot models — no Azure calls.
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `LM Proxy failed to start` | Ensure GitHub Copilot is installed and signed in |
+| `No Copilot models available` (503) | Check your Copilot subscription is active in VS Code |
+| `CopilotProxyUnreachableError` | Extension must be running; check the proxy port in output |
+| Backend ignores proxy | Verify `PROCESSING_MODE=local` in `.env`; check backend logs for `pipeline.using_copilot_proxy` |
+| Rate limit errors (429) | Copilot has per-user rate limits; wait and retry, or reduce keyframe count |
+
+### How it works
+
+```
+VS Code Extension                          Python Backend
+┌────────────────────────┐                 ┌──────────────────────┐
+│ LM Proxy Server        │ ◀── HTTP ────  │ CopilotProxyChatClient│
+│ localhost:3001         │                 │                      │
+│  └─ vscode.lm API     │                 │ Orchestrator checks: │
+│     └─ Copilot Models  │                 │  local + proxy_url?  │
+│       (GPT-4o, etc.)  │                 │   → Copilot client   │
+└────────────────────────┘                 └──────────────────────┘
+```
+
+- The extension's LM Proxy translates OpenAI-format HTTP requests into `vscode.lm.sendRequest()` calls
+- Supports text and vision (image) messages — keyframe analysis works through Copilot's GPT-4o
+- The backend's `CopilotProxyChatClient` is duck-type compatible with `FoundryChatClient`, so all agents work transparently
 
 ---
 
