@@ -33,7 +33,7 @@ def _ensure_ffmpeg_on_path() -> None:
     current_path = os.environ.get("PATH", "")
     if ffmpeg_dir not in current_path:
         os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path
-        logger.debug("whisper.ffmpeg_path_added", ffmpeg_dir=ffmpeg_dir)
+        logger.debug("whisper.ffmpeg_path_added", operation="ensure_ffmpeg_on_path", ffmpeg_dir=ffmpeg_dir)
 
 
 class WhisperService:

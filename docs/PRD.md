@@ -249,13 +249,14 @@ ms.service: <service-name>
 
 The agent should use these extensions where appropriate:
 
-```markdown
 # Alerts
+```markdown
 > [!NOTE]
 > [!TIP]  
 > [!IMPORTANT]
 > [!CAUTION]
 > [!WARNING]
+```
 
 # Images
 :::image type="content" source="./media/step-01.png" alt-text="Description of the screenshot":::
@@ -273,7 +274,6 @@ az resource create --name example
 # Next step buttons
 > [!div class="nextstepaction"]
 > [Next article](next-article.md)
-```
 
 ---
 
