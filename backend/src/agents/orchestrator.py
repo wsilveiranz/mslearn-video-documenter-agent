@@ -12,6 +12,7 @@ from src.config import get_settings
 from src.models.document import DocType, GeneratedDocument
 from src.models.evaluation import EvaluationReport
 from src.models.video import ExtractionResult, ProcessingMode
+from src.services.copilot_client import create_copilot_client
 
 from .editor import EditorAgent
 from .evaluate import EvaluateAgent
@@ -48,6 +49,19 @@ def create_foundry_client() -> FoundryChatClient:
     )
 
 
+def create_llm_client():
+    """Create the appropriate LLM client based on processing mode and config.
+
+    In local mode with copilot_proxy_url configured: uses Copilot LM Proxy.
+    Otherwise: uses Azure AI Foundry (requires Azure credentials).
+    """
+    settings = get_settings()
+    if settings.use_copilot_proxy:
+        logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
+        return create_copilot_client(settings.copilot_proxy_url)
+    return create_foundry_client()
+
+
 class PipelineResult:
     """Result of a full pipeline run."""
 
@@ -79,8 +93,8 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
 
     logger.info("pipeline.start", source=request.video_source, doc_type=request.doc_type, mode=mode)
 
-    # Create shared Foundry client for LLM-powered agents
-    client = create_foundry_client()
+    # Create shared LLM client (Copilot proxy in local mode, Foundry in cloud)
+    client = create_llm_client()
 
     # Stage 1: Ingestion
     logger.info("pipeline.stage", stage="ingestion")

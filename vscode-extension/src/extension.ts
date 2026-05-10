@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createChatHandler } from './chatHandler';
 import { registerAnalyzeFileCommand } from './commands/analyzeFile';
 import { LmProxyServer } from './api/lmProxyServer';
+import { getBackendUrl } from './utils/config';
 
 let lmProxyServer: LmProxyServer | undefined;
 
@@ -24,6 +25,16 @@ export function activate(context: vscode.ExtensionContext) {
             lmProxyServer = new LmProxyServer();
             lmProxyServer.start(preferredPort).then(port => {
                 console.log(`[video-documenter] LM Proxy started on port ${port}`);
+
+                // Notify backend of the proxy URL (fire-and-forget)
+                const backendUrl = getBackendUrl();
+                fetch(`${backendUrl}/api/v1/config/lm-proxy`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ proxy_url: `http://localhost:${port}` }),
+                }).catch(err => {
+                    console.warn('[video-documenter] Failed to notify backend of LM Proxy:', err);
+                });
             }).catch(err => {
                 console.warn('[video-documenter] LM Proxy failed to start:', err);
                 lmProxyServer = undefined;

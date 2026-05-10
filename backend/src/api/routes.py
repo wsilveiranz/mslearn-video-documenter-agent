@@ -72,6 +72,39 @@ class DocumentResponse(BaseModel):
     revision_number: int
 
 
+# ---- Runtime Config (ephemeral, per-session) ----
+
+_runtime_config: dict[str, str] = {}
+
+
+class LmProxyConfigRequest(BaseModel):
+    proxy_url: str
+
+
+class LmProxyConfigResponse(BaseModel):
+    status: str
+    message: str
+
+
+@router.post("/config/lm-proxy", response_model=LmProxyConfigResponse)
+async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigResponse:
+    """Register the VS Code Copilot LM Proxy URL for local-mode LLM routing."""
+    proxy_url = request.proxy_url.rstrip("/")
+    _runtime_config["lm_proxy_url"] = proxy_url
+
+    # Update the Settings singleton so the orchestrator picks it up
+    settings = get_settings()
+    if not settings.copilot_proxy_url:
+        settings.copilot_proxy_url = proxy_url
+
+    logger.info("config.lm_proxy_registered", proxy_url=proxy_url)
+
+    return LmProxyConfigResponse(
+        status="ok",
+        message="LM Proxy URL registered",
+    )
+
+
 # ---- Health ----
 
 @router.get("/health")
