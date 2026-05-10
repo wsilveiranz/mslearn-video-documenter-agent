@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
@@ -8,11 +7,12 @@ import { extractTargetPath, resolveTargetPathPure } from '../utils/intentClassif
 
 /**
  * Resolve the target path using the pure resolver + runtime checks.
+ * Note: /save targets user-specified local paths (e.g., C:\temp\),
+ * so it uses file:// URIs. For remote workspace outputs, use /generate instead.
  */
 function resolveTargetPath(targetPath: string, documentId: string): string {
     const isAbs = path.isAbsolute(targetPath);
-    const isDir = targetPath.endsWith(path.sep) || targetPath.endsWith('/') ||
-        (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory());
+    const isDir = targetPath.endsWith(path.sep) || targetPath.endsWith('/');
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
     return resolveTargetPathPure(targetPath, documentId, isAbs, isDir, workspaceRoot);
@@ -39,45 +39,41 @@ export async function handleSave(
     const prompt = request.prompt.trim();
 
     // Determine target path
-    let targetPath = extractTargetPath(prompt);
+    let targetUri: vscode.Uri | undefined;
 
-    if (!targetPath) {
+    const extracted = extractTargetPath(prompt);
+    if (extracted) {
+        const resolvedPath = resolveTargetPath(extracted, state.currentDocumentId);
+        targetUri = vscode.Uri.file(resolvedPath);
+    } else {
         // No path found in prompt — offer a file dialog
-        const uri = await vscode.window.showSaveDialog({
+        targetUri = await vscode.window.showSaveDialog({
             defaultUri: vscode.Uri.file(`${state.currentDocumentId}.md`),
             filters: { 'Markdown': ['md'], 'All Files': ['*'] },
             title: 'Save generated document',
         });
-
-        if (!uri) {
-            stream.markdown('💾 Save cancelled.');
-            return { metadata: { command: 'save' } };
-        }
-
-        targetPath = uri.fsPath;
     }
 
-    const resolvedPath = resolveTargetPath(targetPath, state.currentDocumentId);
+    if (!targetUri) {
+        stream.markdown('💾 Save cancelled.');
+        return { metadata: { command: 'save' } };
+    }
 
     try {
         // Fetch the latest document content
         stream.progress('Fetching document...');
         const doc = await client.getDocument(state.currentDocumentId);
 
-        // Ensure parent directory exists
-        const parentDir = path.dirname(resolvedPath);
-        if (!fs.existsSync(parentDir)) {
-            fs.mkdirSync(parentDir, { recursive: true });
-        }
-
-        // Write the file
-        fs.writeFileSync(resolvedPath, doc.markdown_content, 'utf-8');
+        // Ensure parent directory exists and write the file
+        const parentDirUri = vscode.Uri.joinPath(targetUri, '..');
+        await vscode.workspace.fs.createDirectory(parentDirUri);
+        await vscode.workspace.fs.writeFile(targetUri, Buffer.from(doc.markdown_content, 'utf-8'));
 
         stream.markdown(
             `✅ **Document saved**\n\n` +
             `| Field | Value |\n` +
             `|-------|-------|\n` +
-            `| Path | \`${resolvedPath}\` |\n` +
+            `| Path | \`${targetUri.fsPath}\` |\n` +
             `| Word count | ${doc.word_count} |\n` +
             `| Revision | ${doc.revision_number} |\n`
         );
@@ -85,11 +81,11 @@ export async function handleSave(
         // Offer to open the file
         const openAction = 'Open in editor';
         const choice = await vscode.window.showInformationMessage(
-            `Document saved to ${resolvedPath}`,
+            `Document saved to ${targetUri.fsPath}`,
             openAction
         );
         if (choice === openAction) {
-            await outputManager.openDocument(resolvedPath);
+            await outputManager.openDocument(targetUri);
         }
     } catch (error) {
         if (error instanceof BackendError) {

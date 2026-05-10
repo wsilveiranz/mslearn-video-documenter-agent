@@ -62,7 +62,10 @@ export async function handleAnalyze(
         stateManager.setStage('analyzing');
         stream.progress('Uploading video...');
 
-        // Use path-based ingestion — backend reads the file directly, avoiding HTTP upload overhead
+        // Use path-based ingestion — backend reads the file directly, avoiding HTTP upload overhead.
+        // NOTE: This assumes backend shares the local filesystem. For remote backends,
+        // use client.ingestVideo() (multipart upload) instead.
+        // TODO(Phase 3): Auto-detect remote backend and switch to upload mode.
         const ingestResult = await client.ingestVideoByPath(videoPath);
         const videoId = ingestResult.video_id;
 
@@ -74,7 +77,7 @@ export async function handleAnalyze(
             stream.progress(msg.detail || msg.stage);
         });
 
-        // 8. Poll until ingestion_complete (stage 1 of 6 — progress_pct ~20%)
+        // 8. Poll until ingestion_complete (step 1 of 6)
         // pollForCompletion waits for status === 'completed', but ingestion only sets
         // current_stage = 'ingestion_complete' with status still 'queued'. Use a custom loop.
         let complete = false;

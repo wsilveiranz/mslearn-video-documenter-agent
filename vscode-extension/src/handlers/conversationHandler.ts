@@ -68,7 +68,7 @@ export async function handleConversation(
                 return handleSave(request, stream, token, client, stateManager, outputManager);
             case 'refine':
                 stream.markdown('*Treating your message as refinement feedback...*\n\n');
-                return handleRefine(request, stream, token, client, stateManager);
+                return handleRefine(request, stream, token, client, stateManager, outputManager);
             case 'general':
                 // Fall through to general conversation below
                 break;

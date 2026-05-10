@@ -10,13 +10,13 @@ export class OutputManager {
     /**
      * Save a generated document and its media files to the workspace.
      * Uses vscode.workspace.fs for remote workspace compatibility.
-     * Returns the path of the saved markdown file.
+     * Returns the URI of the saved markdown file.
      */
     async saveDocument(
         documentId: string,
         markdownContent: string,
         mediaFiles: MediaFile[] = []
-    ): Promise<string> {
+    ): Promise<vscode.Uri> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder open. Please open a folder first.');
@@ -50,14 +50,13 @@ export class OutputManager {
             }
         }
 
-        return mdFileUri.fsPath;
+        return mdFileUri;
     }
 
     /**
-     * Open a markdown file in the VS Code editor.
+     * Open a document in the VS Code editor.
      */
-    async openDocument(filePath: string): Promise<vscode.TextEditor> {
-        const uri = vscode.Uri.file(filePath);
+    async openDocument(uri: vscode.Uri): Promise<vscode.TextEditor> {
         const doc = await vscode.workspace.openTextDocument(uri);
         return vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
     }
@@ -66,12 +65,10 @@ export class OutputManager {
      * Open VS Code's built-in markdown preview side-by-side.
      * Phase 3 will upgrade this to Learn Preview when Learn Authoring Pack is a dependency.
      */
-    async openPreview(filePath: string): Promise<void> {
+    async openPreview(uri: vscode.Uri): Promise<void> {
         if (!getAutoOpenPreview()) {
             return;
         }
-
-        const uri = vscode.Uri.file(filePath);
 
         // First ensure the document is open
         await vscode.workspace.openTextDocument(uri);
@@ -88,17 +85,17 @@ export class OutputManager {
         documentId: string,
         markdownContent: string,
         mediaFiles: MediaFile[] = []
-    ): Promise<string> {
-        const filePath = await this.saveDocument(documentId, markdownContent, mediaFiles);
-        await this.openDocument(filePath);
-        await this.openPreview(filePath);
-        return filePath;
+    ): Promise<vscode.Uri> {
+        const fileUri = await this.saveDocument(documentId, markdownContent, mediaFiles);
+        await this.openDocument(fileUri);
+        await this.openPreview(fileUri);
+        return fileUri;
     }
 
     /**
      * Update an existing document in the workspace (for refinements).
      */
-    async updateDocument(documentId: string, markdownContent: string): Promise<string> {
+    async updateDocument(documentId: string, markdownContent: string): Promise<vscode.Uri> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder open.');
@@ -108,7 +105,7 @@ export class OutputManager {
         const mdFileUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir, `${documentId}.md`);
 
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
-        return mdFileUri.fsPath;
+        return mdFileUri;
     }
 }
 

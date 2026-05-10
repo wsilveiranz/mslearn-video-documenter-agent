@@ -20,7 +20,7 @@ class TestConnectionManager:
         """send_progress is a no-op when no client is connected."""
         mgr = ConnectionManager()
         # Should not raise even with no connections registered
-        await mgr.send_progress("vid123", "ingestion", 10.0, "Starting...")
+        await mgr.send_progress("vid123", "ingestion", 1, 6, "Starting...")
 
     @pytest.mark.asyncio
     async def test_send_progress_delivers_message(self):
@@ -31,14 +31,15 @@ class TestConnectionManager:
         ws = AsyncMock()
         await mgr.connect(ws, "vid123")
 
-        await mgr.send_progress("vid123", "ingestion", 10.0, "Starting ingestion...")
+        await mgr.send_progress("vid123", "ingestion", 1, 6, "Starting ingestion...")
 
         ws.send_text.assert_awaited_once()
         payload = json.loads(ws.send_text.call_args[0][0])
         assert payload["type"] == "progress"
         assert payload["video_id"] == "vid123"
         assert payload["stage"] == "ingestion"
-        assert payload["progress_pct"] == 10.0
+        assert payload["step"] == 1
+        assert payload["total_steps"] == 6
         assert payload["detail"] == "Starting ingestion..."
 
     @pytest.mark.asyncio
@@ -50,7 +51,7 @@ class TestConnectionManager:
         await mgr.connect(ws, "vid123")
 
         # Should not raise; disconnected ws should be pruned
-        await mgr.send_progress("vid123", "ingestion", 10.0, "Starting...")
+        await mgr.send_progress("vid123", "ingestion", 1, 6, "Starting...")
 
         assert "vid123" not in mgr._connections
 
@@ -62,7 +63,7 @@ class TestConnectionManager:
         await mgr.connect(ws1, "vid123")
         await mgr.connect(ws2, "vid123")
 
-        await mgr.send_progress("vid123", "extracting", 30.0, "Extracting...")
+        await mgr.send_progress("vid123", "extracting", 2, 6, "Extracting...")
 
         ws1.send_text.assert_awaited_once()
         ws2.send_text.assert_awaited_once()
@@ -74,7 +75,7 @@ class TestConnectionManager:
         ws = AsyncMock()
         await mgr.connect(ws, "vid-A")
 
-        await mgr.send_progress("vid-B", "ingestion", 10.0, "Starting...")
+        await mgr.send_progress("vid-B", "ingestion", 1, 6, "Starting...")
 
         ws.send_text.assert_not_awaited()
 
@@ -91,7 +92,6 @@ class TestRunIngestionProgress:
     @pytest.mark.asyncio
     async def test_ingestion_success_broadcasts_start_and_complete(self, video_job):
         from src.models.video import VideoMetadata, VideoSourceType
-        from src.agents.ingestion import IngestionResult
 
         metadata = VideoMetadata(
             video_id="ingested-id",
@@ -125,11 +125,14 @@ class TestRunIngestionProgress:
         assert "ingestion" in stages
         assert "ingestion_complete" in stages
 
+        # Step-based progress: ingestion starts at step 1, completes at step 1
         start_call = next(c for c in calls if c.args[1] == "ingestion")
-        assert start_call.args[2] == 0.0
+        assert start_call.args[2] == 1  # step
+        assert start_call.args[3] == 6  # total_steps
 
         complete_call = next(c for c in calls if c.args[1] == "ingestion_complete")
-        assert complete_call.args[2] == 15.0
+        assert complete_call.args[2] == 1  # step
+        assert complete_call.args[3] == 6  # total_steps
 
     @pytest.mark.asyncio
     async def test_ingestion_failure_broadcasts_failed(self, video_job):

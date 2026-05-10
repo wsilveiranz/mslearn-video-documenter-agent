@@ -103,6 +103,7 @@ def parse_llm_response(raw: str) -> IntentLabel:
     # Default: treat as refinement (preserves original behaviour)
     logger.warn(
         "llm_classification_unrecognised",
+        operation="intent_classification",
         raw_response=raw,
         fallback="refine",
     )
@@ -125,7 +126,7 @@ async def classify_intent(
     # Fast path
     fast = classify_intent_fast(prompt)
     if fast is not None:
-        logger.debug("intent_classified", intent=fast.intent, confidence="pattern", prompt=prompt[:80])
+        logger.debug("intent_classified", operation="intent_classification", intent=fast.intent, confidence="pattern", prompt=prompt[:80])
         return fast
 
     # LLM fallback
@@ -140,6 +141,7 @@ async def classify_intent(
 
         logger.info(
             "intent_classified",
+            operation="intent_classification",
             intent=intent,
             confidence="llm",
             prompt=prompt[:80],
@@ -150,6 +152,7 @@ async def classify_intent(
     except Exception as e:
         logger.error(
             "intent_classification_failed",
+            operation="intent_classification",
             error=str(e),
             prompt=prompt[:80],
             fallback="refine",

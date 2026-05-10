@@ -29,7 +29,7 @@ export function createChatHandler(
         } else if (command === 'generate') {
             return handleGenerate(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'refine') {
-            return handleRefine(request, stream, token, client, stateManager);
+            return handleRefine(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'save') {
             return handleSave(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'status') {

@@ -129,7 +129,8 @@ class VideoJob(BaseModel):
 
     video_id: str
     status: ProcessingStatus = ProcessingStatus.QUEUED
-    progress_pct: float = Field(default=0.0, ge=0.0, le=100.0)
+    step: int = Field(default=0, description="Current step number (1-based)")
+    total_steps: int = Field(default=6, description="Total number of pipeline steps")
     current_stage: str = ""
     error_message: str | None = None
     extraction_result: ExtractionResult | None = None

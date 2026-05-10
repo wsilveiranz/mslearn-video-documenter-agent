@@ -147,7 +147,7 @@ export async function handleGenerate(
         // TODO(Phase 3): Pass media files from extraction results once the
         // /documents/{id} response includes referenced image paths.
         try {
-            const savedPath = await outputManager.saveAndOpen(
+            const savedUri = await outputManager.saveAndOpen(
                 documentId,
                 doc.markdown_content
             );
@@ -159,7 +159,7 @@ export async function handleGenerate(
                 `| Type | ${docType} |\n` +
                 `| Word count | ${doc.word_count} |\n` +
                 `| Revision | ${doc.revision_number} |\n` +
-                `| Saved to | \`${savedPath}\` |\n\n` +
+                `| Saved to | \`${savedUri.fsPath}\` |\n\n` +
                 '---\n\n' +
                 '**Preview:**\n\n' +
                 doc.markdown_content.substring(0, 3000) +

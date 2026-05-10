@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import structlog
@@ -33,8 +34,19 @@ class ConnectionManager:
                 del self._connections[video_id]
         logger.info("ws.disconnected", video_id=video_id)
 
-    async def send_progress(self, video_id: str, stage: str, progress_pct: float, detail: str = "") -> None:
-        """Broadcast progress update to all connections watching a video."""
+    async def send_progress(
+        self,
+        video_id: str,
+        stage: str,
+        step: int,
+        total_steps: int,
+        detail: str = "",
+    ) -> None:
+        """Broadcast a step-based progress update to all connections watching a video.
+
+        This method is fire-and-forget safe — slow or disconnected clients
+        do not block the caller.
+        """
         if video_id not in self._connections:
             return
 
@@ -42,14 +54,15 @@ class ConnectionManager:
             "type": "progress",
             "video_id": video_id,
             "stage": stage,
-            "progress_pct": progress_pct,
+            "step": step,
+            "total_steps": total_steps,
             "detail": detail,
         })
 
         disconnected: list[WebSocket] = []
         for ws in self._connections[video_id]:
             try:
-                await ws.send_text(message)
+                await asyncio.wait_for(ws.send_text(message), timeout=2.0)
             except Exception:
                 disconnected.append(ws)
 

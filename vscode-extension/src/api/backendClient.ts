@@ -11,7 +11,8 @@ export interface IngestResponse {
 export interface StatusResponse {
     video_id: string;
     status: string; // "queued" | "ingesting" | "extracting" | "completed" | "failed"
-    progress_pct: number;
+    step: number;
+    total_steps: number;
     current_stage: string;
     document_id: string | null;
 }
@@ -39,7 +40,8 @@ export interface ProgressMessage {
     type: string; // "progress"
     video_id: string;
     stage: string;
-    progress_pct: number;
+    step: number;
+    total_steps: number;
     detail: string;
 }
 

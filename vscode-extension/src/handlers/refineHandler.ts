@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
 import { BackendClient, BackendError, DocumentResponse } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
+import { OutputManager } from '../utils/outputManager';
 
 export async function handleRefine(
     request: vscode.ChatRequest,
     stream: vscode.ChatResponseStream,
     _token: vscode.CancellationToken,
     client: BackendClient,
-    stateManager: ConversationStateManager
+    stateManager: ConversationStateManager,
+    outputManager: OutputManager
 ): Promise<vscode.ChatResult> {
     const state = stateManager.getState();
 
@@ -53,6 +55,14 @@ export async function handleRefine(
 
         if (doc) {
             stateManager.setStage('generated');
+
+            // Update the workspace file with refined content
+            try {
+                await outputManager.updateDocument(state.currentDocumentId!, doc.markdown_content);
+            } catch {
+                // Non-fatal — file may not exist yet if user skipped /generate
+            }
+
             stream.markdown(
                 `✅ **Document refined** (revision ${doc.revision_number})\n\n` +
                 `**Word count:** ${doc.word_count}\n\n` +

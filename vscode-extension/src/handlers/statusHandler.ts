@@ -43,7 +43,7 @@ export async function handleStatus(
             `|-------|-------|\n` +
             `| Video ID | \`${status.video_id}\` |\n` +
             `| Stage | ${emoji} ${status.current_stage} |\n` +
-            `| Progress | ${status.progress_pct.toFixed(0)}% |\n` +
+            `| Progress | Step ${status.step} of ${status.total_steps} |\n` +
             `| Status | ${status.status} |\n` +
             (status.document_id ? `| Document | \`${status.document_id}\` |\n` : '')
         );
