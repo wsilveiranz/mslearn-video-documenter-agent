@@ -201,6 +201,72 @@ Interactive API docs available at `http://127.0.0.1:8000/docs` when the server i
 
 ---
 
+## VS Code extension (development)
+
+The `@video-documenter` Chat Participant runs inside VS Code's Copilot Chat panel. To test it locally:
+
+### 1. Start the backend
+
+```bash
+cd backend
+python -m src.main
+# Verify: curl http://localhost:8000/api/v1/health
+```
+
+### 2. Build and launch the extension
+
+```bash
+cd vscode-extension
+npm install
+npm run compile
+```
+
+Then press **F5** in VS Code (with `vscode-extension/` open) to launch the **Extension Development Host**, or run:
+
+```bash
+code --extensionDevelopmentPath=./vscode-extension --new-window
+```
+
+### 3. Use the chat participant
+
+In the Extension Development Host, open Copilot Chat and type:
+
+```
+@video-documenter /analyze C:\path\to\your-video.mp4
+```
+
+This uploads the video, extracts content, and prepares it for document generation. Then:
+
+```
+@video-documenter /generate
+```
+
+Select a document type (Tutorial, Quickstart, How-to, Concept, or Overview). The generated Markdown is saved to your workspace and opened in the editor.
+
+**Available commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/analyze <path>` | Analyze a screen recording video |
+| `/generate [type]` | Generate MS Learn documentation |
+| `/refine <feedback>` | Refine the generated document |
+| `/status` | Check processing status |
+
+You can also right-click any video file (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`) in the Explorer and select **"Analyze with Video Documenter"**.
+
+### Extension settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `video-documenter.backendUrl` | `http://localhost:8000` | Backend server URL |
+| `video-documenter.outputDirectory` | `docs` | Workspace-relative output folder |
+| `video-documenter.autoOpenPreview` | `true` | Open markdown preview after generation |
+
+> [!TIP]
+> See [Manual Test Plan](docs/MANUAL-TEST-PLAN.md) for a comprehensive list of test scenarios.
+
+---
+
 ## Running tests
 
 ```bash
@@ -226,6 +292,15 @@ pytest tests/eval/test_eval_writer.py -v -s
 
 # Full pipeline eval (runs all 6 agents end-to-end)
 pytest tests/eval/test_eval_pipeline.py -v -s
+```
+
+### VS Code extension tests
+
+```bash
+cd vscode-extension
+
+# Unit tests (fileDetection, progress, backendClient, conversationState)
+npm test
 ```
 
 ---
