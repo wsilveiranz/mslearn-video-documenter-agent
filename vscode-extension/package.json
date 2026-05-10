@@ -80,6 +80,16 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically open markdown preview after generating a document"
+        },
+        "video-documenter.useCopilotModels": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use GitHub Copilot models for document generation in local mode (requires active Copilot subscription)"
+        },
+        "video-documenter.lmProxyPort": {
+          "type": "number",
+          "default": 0,
+          "description": "Port for the LM Proxy server (0 = auto-assign). The proxy exposes Copilot models as an OpenAI-compatible API for the backend."
         }
       }
     }
