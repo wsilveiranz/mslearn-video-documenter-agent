@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 from agent_framework import Agent
-from agent_framework.foundry import FoundryChatClient
 
-from src.models.document import GeneratedDocument
 from src.models.evaluation import EvaluationReport, EvaluationScores, EvaluationSuggestion
-from src.models.video import ExtractionResult
+
+if TYPE_CHECKING:
+    from agent_framework.foundry import FoundryChatClient
+
+    from src.models.document import GeneratedDocument
+    from src.models.video import ExtractionResult
 
 logger = structlog.get_logger()
 

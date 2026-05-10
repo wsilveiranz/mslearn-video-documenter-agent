@@ -9,11 +9,13 @@ refinement feedback.
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import structlog
-from agent_framework.foundry import FoundryChatClient
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from agent_framework.foundry import FoundryChatClient
 
 logger = structlog.get_logger()
 
@@ -126,7 +128,13 @@ async def classify_intent(
     # Fast path
     fast = classify_intent_fast(prompt)
     if fast is not None:
-        logger.debug("intent_classified", operation="intent_classification", intent=fast.intent, confidence="pattern", prompt=prompt[:80])
+        logger.debug(
+            "intent_classified",
+            operation="intent_classification",
+            intent=fast.intent,
+            confidence="pattern",
+            prompt=prompt[:80],
+        )
         return fast
 
     # LLM fallback

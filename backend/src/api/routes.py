@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
@@ -14,13 +15,16 @@ from src.agents.editor import EditorAgent
 from src.agents.evaluate import EvaluateAgent
 from src.agents.extraction import ExtractionAgent
 from src.agents.ingestion import IngestionAgent
-from src.agents.orchestrator import create_foundry_client, MAX_REVISION_ITERATIONS
+from src.agents.orchestrator import MAX_REVISION_ITERATIONS, create_foundry_client
 from src.agents.structure import StructureAgent
 from src.agents.writer import WriterAgent
 from src.api.websocket import manager
 from src.config import get_settings
-from src.models.document import DocType, GeneratedDocument
+from src.models.document import DocType
 from src.models.video import ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
+
+if TYPE_CHECKING:
+    from src.models.document import GeneratedDocument
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Video Documenter"])

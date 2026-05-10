@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class ProcessingMode(str, Enum):
+class ProcessingMode(StrEnum):
     CLOUD = "cloud"
     LOCAL = "local"
 
 
-class VideoSourceType(str, Enum):
+class VideoSourceType(StrEnum):
     LOCAL_FILE = "local_file"
     BLOB_URL = "blob_url"
     YOUTUBE = "youtube"
@@ -111,7 +111,7 @@ class IngestionResult(BaseModel):
     processing_mode: ProcessingMode
 
 
-class ProcessingStatus(str, Enum):
+class ProcessingStatus(StrEnum):
     QUEUED = "queued"
     INGESTING = "ingesting"
     PROCESSING = "processing"

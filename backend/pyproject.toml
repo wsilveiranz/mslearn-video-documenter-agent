@@ -47,6 +47,9 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "A", "SIM", "TCH", "RUF"]
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
 
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"

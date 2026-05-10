@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import structlog
 from agent_framework import workflow
 from agent_framework.foundry import FoundryChatClient
@@ -9,8 +11,7 @@ from azure.identity import DefaultAzureCredential
 from pydantic import BaseModel, Field
 
 from src.config import get_settings
-from src.models.document import DocType, GeneratedDocument
-from src.models.evaluation import EvaluationReport
+from src.models.document import DocType
 from src.models.video import ExtractionResult, ProcessingMode
 from src.services.copilot_client import create_copilot_client
 
@@ -20,6 +21,10 @@ from .extraction import ExtractionAgent
 from .ingestion import IngestionAgent
 from .structure import StructureAgent
 from .writer import WriterAgent
+
+if TYPE_CHECKING:
+    from src.models.document import GeneratedDocument
+    from src.models.evaluation import EvaluationReport
 
 logger = structlog.get_logger()
 
@@ -79,12 +84,12 @@ class PipelineResult:
 @workflow
 async def run_pipeline(request: PipelineInput) -> PipelineResult:
     """Run the full video-to-documentation pipeline.
-    
+
     Pipeline: Ingestion → Extraction → Structure → Writer → Editor → Evaluate
-    
+
     Args:
         request: Pipeline input with video source, doc type, mode, and context.
-        
+
     Returns:
         PipelineResult with the generated document, evaluation, and extraction data.
     """

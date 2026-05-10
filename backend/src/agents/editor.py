@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 from agent_framework import Agent
-from agent_framework.foundry import FoundryChatClient
 
-from src.models.document import GeneratedDocument
+if TYPE_CHECKING:
+    from agent_framework.foundry import FoundryChatClient
+
+    from src.models.document import GeneratedDocument
 
 logger = structlog.get_logger()
 

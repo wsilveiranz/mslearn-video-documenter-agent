@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 from agent_framework import Content, Message
-from agent_framework.foundry import FoundryChatClient
 
-from src.models.video import Keyframe
+if TYPE_CHECKING:
+    from agent_framework.foundry import FoundryChatClient
+
+    from src.models.video import Keyframe
 
 logger = structlog.get_logger()
 
