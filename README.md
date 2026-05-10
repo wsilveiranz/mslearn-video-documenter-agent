@@ -96,40 +96,83 @@ cd backend
 cp .env.example .env
 ```
 
-Edit `.env` with your values:
+Edit `.env` for your chosen mode:
+
+### Local mode settings
+
+Local mode uses FFmpeg + Whisper for video processing and either **GitHub Copilot** or **Azure AI Foundry** for LLM calls.
+
+**Option A — Local + Copilot** (simplest, no Azure needed):
 
 ```dotenv
-# Processing mode: "local" or "cloud"
 PROCESSING_MODE=local
 
-# --- Azure AI Foundry (required for cloud mode, or local mode without Copilot) ---
+# Video processing
+WHISPER_MODEL=base
+FFMPEG_PATH=ffmpeg
+
+# LLM: Copilot models via VS Code (auto-configured by extension)
+# No FOUNDRY_* settings needed — leave them empty or remove them.
+# The extension starts a Copilot LM Proxy and notifies the backend.
+# To set manually: COPILOT_PROXY_URL=http://localhost:3001
+
+OUTPUT_DIRECTORY=./output
+```
+
+> [!TIP]
+> This is the fastest way to get started. You only need a GitHub Copilot subscription and VS Code — no Azure login, no API keys.
+
+**Option B — Local + Azure Foundry**:
+
+```dotenv
+PROCESSING_MODE=local
+
+# Video processing
+WHISPER_MODEL=base
+FFMPEG_PATH=ffmpeg
+
+# LLM: Azure AI Foundry
 FOUNDRY_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com
 FOUNDRY_MODEL=gpt-4o
 FOUNDRY_MODEL_MINI=gpt-4o-mini
 
-# --- Local mode settings ---
-WHISPER_MODEL=base
-FFMPEG_PATH=ffmpeg
-
-# --- Local mode with Copilot (no Azure needed) ---
-# Leave FOUNDRY_PROJECT_ENDPOINT empty and the VS Code extension
-# will auto-configure the Copilot LM Proxy on startup.
-# COPILOT_PROXY_URL=http://localhost:3001
-
-# Output directory
 OUTPUT_DIRECTORY=./output
 ```
 
-**Choose your LLM backend:**
+Requires `az login` for authentication.
 
-| Scenario | What to configure |
-|----------|------------------|
-| **Local + Copilot** (simplest) | Set `PROCESSING_MODE=local`, leave `FOUNDRY_PROJECT_ENDPOINT` empty. The VS Code extension auto-starts the Copilot LM Proxy — no Azure login needed. |
-| **Local + Azure Foundry** | Set `PROCESSING_MODE=local` and `FOUNDRY_PROJECT_ENDPOINT`. Run `az login`. |
-| **Cloud** (full Azure) | Set `PROCESSING_MODE=cloud` and all Azure service settings. Run `az login`. |
+### Cloud mode settings
 
-> [!NOTE]
-> Azure CLI login (`az login`) is only needed when using Azure AI Foundry or cloud-mode Azure services. Local mode with Copilot requires only a GitHub Copilot subscription in VS Code.
+Cloud mode uses Azure Video Indexer, Azure AI Speech, and Azure AI Foundry for the full pipeline.
+
+```dotenv
+PROCESSING_MODE=cloud
+
+# LLM: Azure AI Foundry
+FOUNDRY_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com
+FOUNDRY_MODEL=gpt-4o
+FOUNDRY_MODEL_MINI=gpt-4o-mini
+
+# Azure Blob Storage
+BLOB_ACCOUNT_URL=https://stvideodocumenter.blob.core.windows.net
+BLOB_CONTAINER_NAME=video-documenter
+
+# Azure AI Speech
+SPEECH_SERVICE_ENDPOINT=https://speech-video-documenter.cognitiveservices.azure.com
+SPEECH_SERVICE_REGION=eastus
+
+# Azure Video Indexer
+VIDEO_INDEXER_ACCOUNT_ID=<your-account-id>
+VIDEO_INDEXER_RESOURCE_ID=<your-arm-resource-id>
+VIDEO_INDEXER_LOCATION=trial
+
+OUTPUT_DIRECTORY=./output
+```
+
+Requires `az login` for authentication.
+
+> [!IMPORTANT]
+> Cloud mode uses `DefaultAzureCredential` — no API keys or connection strings needed. Your Azure CLI credential is used locally; Managed Identity is used in production.
 
 ---
 
