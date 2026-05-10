@@ -35,17 +35,20 @@ class ClassificationResult(BaseModel):
 
 # Fast-path regex patterns for save/export intent
 SAVE_PATTERNS: list[re.Pattern[str]] = [
+    # "save/export to <path-like>" — require a filesystem-looking destination
     re.compile(
         r"^(please\s+)?(save|export|write|copy)\s+"
         r"(it\s+|the\s+(doc|document|file|markdown|md)\s+)?"
-        r"(to|at|in|into|as)\s+",
+        r"(to|at|into)\s+[\"']?([a-zA-Z]:[/\\]|[/~.])",
         re.IGNORECASE,
     ),
+    # "save/export it" or "save the document" (bare, no destination)
     re.compile(
         r"^(please\s+)?(save|export)\s+"
         r"(it|this|the\s+(doc|document|file|markdown|md))?\s*$",
         re.IGNORECASE,
     ),
+    # bare "save" or "export"
     re.compile(r"^(please\s+)?(save|export)\s*$", re.IGNORECASE),
 ]
 

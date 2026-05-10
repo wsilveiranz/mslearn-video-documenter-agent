@@ -59,8 +59,8 @@ describe('classifyIntentFast', () => {
         assert.strictEqual(classifyIntentFast('save the markdown'), 'save');
     });
 
-    it('should classify "write it as tutorial.md" as save', () => {
-        assert.strictEqual(classifyIntentFast('write it as tutorial.md'), 'save');
+    it('should defer "write it as tutorial.md" to LLM (ambiguous verb)', () => {
+        assert.strictEqual(classifyIntentFast('write it as tutorial.md'), undefined);
     });
 
     it('should be case-insensitive', () => {
@@ -92,6 +92,32 @@ describe('classifyIntentFast', () => {
 
     it('should return undefined for whitespace-only input', () => {
         assert.strictEqual(classifyIntentFast('   '), undefined);
+    });
+
+    // --- Regression: must NOT match refinement phrased with save/write verbs ---
+
+    it('should not match "write it in a more formal tone"', () => {
+        assert.strictEqual(classifyIntentFast('write it in a more formal tone'), undefined);
+    });
+
+    it('should not match "write the document in a different style"', () => {
+        assert.strictEqual(classifyIntentFast('write the document in a different style'), undefined);
+    });
+
+    it('should not match "save the doc in a shorter format"', () => {
+        assert.strictEqual(classifyIntentFast('save the doc in a shorter format'), undefined);
+    });
+
+    it('should not match "copy it in a table format"', () => {
+        assert.strictEqual(classifyIntentFast('copy it in a table format'), undefined);
+    });
+
+    it('should not match "write it in markdown format"', () => {
+        assert.strictEqual(classifyIntentFast('write it in markdown format'), undefined);
+    });
+
+    it('should not match "save it as a bullet list"', () => {
+        assert.strictEqual(classifyIntentFast('save it as a bullet list'), undefined);
     });
 });
 

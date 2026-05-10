@@ -3,8 +3,11 @@ import * as path from 'path';
 export type ConversationIntent = 'save' | 'refine' | 'general';
 
 export const SAVE_PATTERNS = [
-    /^(please\s+)?(save|export|write|copy)\s+(it\s+|the\s+(doc|document|file|markdown|md)\s+)?(to|at|in|into|as)\s+/i,
+    // "save/export to <path-like>" — require a filesystem-looking destination after the preposition
+    /^(please\s+)?(save|export|write|copy)\s+(it\s+|the\s+(doc|document|file|markdown|md)\s+)?(to|at|into)\s+["']?([a-zA-Z]:[/\\]|[/~.])/i,
+    // "save/export it" or "save the document" (bare, no destination)
     /^(please\s+)?(save|export)\s+(it|this|the\s+(doc|document|file|markdown|md))?\s*$/i,
+    // bare "save" or "export"
     /^(please\s+)?(save|export)\s*$/i,
 ];
 

@@ -50,6 +50,13 @@ class TestClassifyIntentFast:
             "   ",
             "I want to learn about tutorials",
             "put the file on my desktop",  # ambiguous — should go to LLM
+            # Regression: refinement phrased with save/write verbs (issue #30 review)
+            "write it in a more formal tone",
+            "write the document in a different style",
+            "save the doc in a shorter format",
+            "copy it in a table format",
+            "write it in markdown format",
+            "save it as a bullet list",
         ],
     )
     def test_returns_none_for_non_save(self, prompt: str):
