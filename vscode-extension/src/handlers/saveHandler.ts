@@ -4,69 +4,18 @@ import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
+import { extractTargetPath, resolveTargetPathPure } from '../utils/intentClassification';
 
 /**
- * Extract a file-system path from the user's save request.
- * Handles prompts like "save to c:\temp\", "export to /home/user/docs", etc.
- */
-function extractTargetPath(prompt: string): string | undefined {
-    // Remove common save/export verbs to isolate the path
-    const cleaned = prompt
-        .replace(/^(please\s+)?/i, '')
-        .replace(/^(save|export|copy|write|output)\s+(it\s+|the\s+(document|doc|file|markdown|md)\s+)?/i, '')
-        .replace(/^(to|at|in|into|as)\s+/i, '')
-        .trim();
-
-    if (!cleaned) {
-        return undefined;
-    }
-
-    // Remove surrounding quotes if present
-    const unquoted = cleaned.replace(/^["']|["']$/g, '').trim();
-
-    // Validate it looks like a filesystem path
-    const isWindowsPath = /^[a-zA-Z]:[/\\]/.test(unquoted);
-    const isUnixPath = unquoted.startsWith('/');
-    const isRelativePath = unquoted.startsWith('.') || unquoted.includes(path.sep);
-
-    if (isWindowsPath || isUnixPath || isRelativePath) {
-        return unquoted;
-    }
-
-    // Could be just a filename like "output.md"
-    if (/\.\w+$/.test(unquoted) || unquoted.endsWith(path.sep) || unquoted.endsWith('/')) {
-        return unquoted;
-    }
-
-    return undefined;
-}
-
-/**
- * Resolve the target path, adding a filename if only a directory was given.
+ * Resolve the target path using the pure resolver + runtime checks.
  */
 function resolveTargetPath(targetPath: string, documentId: string): string {
-    let resolved = targetPath;
+    const isAbs = path.isAbsolute(targetPath);
+    const isDir = targetPath.endsWith(path.sep) || targetPath.endsWith('/') ||
+        (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory());
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-    // Resolve relative paths against workspace
-    if (!path.isAbsolute(resolved)) {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (workspaceFolder) {
-            resolved = path.join(workspaceFolder.uri.fsPath, resolved);
-        }
-    }
-
-    // If target is a directory (ends with separator or exists as directory), append filename
-    if (resolved.endsWith(path.sep) || resolved.endsWith('/') || 
-        (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory())) {
-        resolved = path.join(resolved, `${documentId}.md`);
-    }
-
-    // Ensure .md extension if no extension provided
-    if (!path.extname(resolved)) {
-        resolved += '.md';
-    }
-
-    return resolved;
+    return resolveTargetPathPure(targetPath, documentId, isAbs, isDir, workspaceRoot);
 }
 
 export async function handleSave(

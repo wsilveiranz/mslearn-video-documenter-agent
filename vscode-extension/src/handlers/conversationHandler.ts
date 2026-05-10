@@ -2,16 +2,9 @@ import * as vscode from 'vscode';
 import { BackendClient } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
+import { classifyIntentFast, ConversationIntent } from '../utils/intentClassification';
 import { handleRefine } from './refineHandler';
 import { handleSave } from './saveHandler';
-
-type ConversationIntent = 'save' | 'refine' | 'general';
-
-const SAVE_PATTERNS = [
-    /^(please\s+)?(save|export|write|copy)\s+(it\s+|the\s+(doc|document|file|markdown|md)\s+)?(to|at|in|into|as)\s+/i,
-    /^(please\s+)?(save|export)\s+(it|this|the\s+(doc|document|file|markdown|md))?\s*$/i,
-    /^(please\s+)?save\s*$/i,
-];
 
 /**
  * Classify the user's intent using fast pattern matching.
@@ -22,13 +15,10 @@ async function classifyIntent(
     model: vscode.LanguageModelChat,
     token: vscode.CancellationToken
 ): Promise<ConversationIntent> {
-    const trimmed = prompt.trim();
-
     // Fast path: check save patterns
-    for (const pattern of SAVE_PATTERNS) {
-        if (pattern.test(trimmed)) {
-            return 'save';
-        }
+    const fast = classifyIntentFast(prompt);
+    if (fast) {
+        return fast;
     }
 
     // For ambiguous messages, use the LLM to classify
@@ -41,7 +31,7 @@ async function classifyIntent(
             '- "refine": The user is providing feedback to improve, edit, or change the document content\n' +
             '- "general": The user is asking a question, requesting help, or making a request unrelated to modifying the document\n\n' +
             'Respond with ONLY the category name (save, refine, or general). No explanation.\n\n' +
-            `User message: "${trimmed}"`
+            `User message: "${prompt.trim()}"`
         ),
     ];
 
