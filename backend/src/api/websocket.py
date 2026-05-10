@@ -44,8 +44,8 @@ class ConnectionManager:
     ) -> None:
         """Broadcast a step-based progress update to all connections watching a video.
 
-        This method is fire-and-forget safe — slow or disconnected clients
-        do not block the caller.
+        Sends to all clients concurrently with a 2s timeout per client.
+        Never blocks the pipeline — failures are silently handled.
         """
         if video_id not in self._connections:
             return
@@ -59,15 +59,20 @@ class ConnectionManager:
             "detail": detail,
         })
 
-        disconnected: list[WebSocket] = []
-        for ws in self._connections[video_id]:
+        async def _send(ws: WebSocket) -> WebSocket | None:
             try:
                 await asyncio.wait_for(ws.send_text(message), timeout=2.0)
+                return None
             except Exception:
-                disconnected.append(ws)
+                return ws
 
-        for ws in disconnected:
-            self.disconnect(ws, video_id)
+        results = await asyncio.gather(
+            *(_send(ws) for ws in self._connections[video_id]),
+        )
+
+        for result in results:
+            if result is not None:
+                self.disconnect(result, video_id)
 
 
 manager = ConnectionManager()

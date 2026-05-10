@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
@@ -12,7 +13,9 @@ import { extractTargetPath, resolveTargetPathPure } from '../utils/intentClassif
  */
 function resolveTargetPath(targetPath: string, documentId: string): string {
     const isAbs = path.isAbsolute(targetPath);
-    const isDir = targetPath.endsWith(path.sep) || targetPath.endsWith('/');
+    // Check if path is a directory: trailing separator OR existing directory on disk
+    const isDir = targetPath.endsWith(path.sep) || targetPath.endsWith('/')
+        || (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory());
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
     return resolveTargetPathPure(targetPath, documentId, isAbs, isDir, workspaceRoot);
@@ -47,8 +50,13 @@ export async function handleSave(
         targetUri = vscode.Uri.file(resolvedPath);
     } else {
         // No path found in prompt — offer a file dialog
+        const defaultDir = vscode.workspace.workspaceFolders?.[0]?.uri;
+        const defaultName = `${state.currentDocumentId}.md`;
+        const defaultUri = defaultDir
+            ? vscode.Uri.joinPath(defaultDir, defaultName)
+            : vscode.Uri.file(defaultName);
         targetUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(`${state.currentDocumentId}.md`),
+            defaultUri,
             filters: { 'Markdown': ['md'], 'All Files': ['*'] },
             title: 'Save generated document',
         });
@@ -65,7 +73,7 @@ export async function handleSave(
         const doc = await client.getDocument(state.currentDocumentId);
 
         // Ensure parent directory exists and write the file
-        const parentDirUri = vscode.Uri.joinPath(targetUri, '..');
+        const parentDirUri = vscode.Uri.file(path.dirname(targetUri.fsPath));
         await vscode.workspace.fs.createDirectory(parentDirUri);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(doc.markdown_content, 'utf-8'));
 

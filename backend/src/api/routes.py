@@ -84,7 +84,6 @@ async def health_check() -> dict[str, str]:
 
 class ClassifyIntentRequest(BaseModel):
     message: str
-    has_document: bool = True
 
 
 @router.post("/classify-intent")
@@ -432,7 +431,9 @@ async def refine_document(
             if video_id:
                 await manager.send_progress(video_id, "refined", 2, 2, "Refinement complete")
         except Exception as exc:
-            logger.error("api.refine_failed", doc_id=document_id, error=str(exc))
+            logger.error("api.refine_failed", doc_id=document_id, error=repr(exc), exc_info=True)
+            if video_id:
+                await manager.send_progress(video_id, "failed", 0, 1, f"Refinement failed: {exc}")
 
     background_tasks.add_task(_refine)
 

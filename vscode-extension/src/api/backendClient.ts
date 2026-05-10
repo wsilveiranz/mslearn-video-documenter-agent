@@ -10,7 +10,7 @@ export interface IngestResponse {
 
 export interface StatusResponse {
     video_id: string;
-    status: string; // "queued" | "ingesting" | "extracting" | "completed" | "failed"
+    status: string; // ProcessingStatus: "queued" | "ingesting" | "processing" | "extracting" | "structuring" | "writing" | "editing" | "evaluating" | "completed" | "failed"
     step: number;
     total_steps: number;
     current_stage: string;
@@ -67,7 +67,7 @@ export class BackendClient {
     async ingestVideo(filePath: string): Promise<IngestResponse> {
         const url = `${this.baseUrl}/api/v1/videos/ingest`;
 
-        const fileBuffer = fs.readFileSync(filePath);
+        const fileBuffer = await fs.promises.readFile(filePath);
         const fileName = path.basename(filePath);
 
         const formData = new FormData();

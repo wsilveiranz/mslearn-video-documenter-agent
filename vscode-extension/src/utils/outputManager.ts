@@ -1,5 +1,18 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { getOutputDirectory, getAutoOpenPreview } from './config';
+
+/** Validate outputDirectory is relative and doesn't escape workspace. */
+function sanitizeOutputDir(dir: string): string {
+    if (path.isAbsolute(dir)) {
+        throw new Error(`outputDirectory must be a relative path (got "${dir}")`);
+    }
+    const normalized = path.normalize(dir);
+    if (normalized.startsWith('..') || normalized.includes(`${path.sep}..`)) {
+        throw new Error(`outputDirectory must not traverse outside the workspace (got "${dir}")`);
+    }
+    return normalized;
+}
 
 export interface MediaFile {
     filename: string;
@@ -22,7 +35,7 @@ export class OutputManager {
             throw new Error('No workspace folder open. Please open a folder first.');
         }
 
-        const outputDir = getOutputDirectory();
+        const outputDir = sanitizeOutputDir(getOutputDirectory());
         const baseDirUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir);
 
         // Create output directory (createDirectory is recursive and no-ops if exists)
@@ -101,8 +114,7 @@ export class OutputManager {
             throw new Error('No workspace folder open.');
         }
 
-        const outputDir = getOutputDirectory();
-        const mdFileUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir, `${documentId}.md`);
+        const outputDir = sanitizeOutputDir(getOutputDirectory());        const mdFileUri = vscode.Uri.joinPath(workspaceFolder.uri, outputDir, `${documentId}.md`);
 
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
         return mdFileUri;
