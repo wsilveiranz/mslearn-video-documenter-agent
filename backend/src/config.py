@@ -21,8 +21,14 @@ class Settings(BaseSettings):
 
     # --- Processing Mode ---
     processing_mode: Literal["cloud", "local"] = Field(
-        default="cloud",
+        default="local",
         description="Use 'cloud' for Azure services or 'local' for local-only processing",
+    )
+
+    # --- Environment ---
+    environment: Literal["development", "production"] = Field(
+        default="development",
+        description="Runtime environment — controls uvicorn reload and debug behavior",
     )
 
     # --- Azure AI Foundry ---

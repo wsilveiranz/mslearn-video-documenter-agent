@@ -51,6 +51,17 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 │    └────────────┘    └────────────┘    └────────────┘              │
 │                                                                     │
 ├─────────────────────────────────────────────────────────────────────┤
+│                       MCP SERVERS                                   │
+│                                                                     │
+│   ┌──────────────────────────────────────────────────┐              │
+│   │ Microsoft Learn MCP Server                       │              │
+│   │ https://learn.microsoft.com/api/mcp              │              │
+│   │ • microsoft_docs_search                          │              │
+│   │ • microsoft_docs_fetch                           │              │
+│   │ • microsoft_code_sample_search                   │              │
+│   └──────────────────────────────────────────────────┘              │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
 │                    AZURE AI SERVICES                                │
 │                                                                     │
 │   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │
@@ -88,6 +99,7 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 | **Language** | Python 3.10+ | Best ecosystem for video/audio processing (FFmpeg, OpenCV, PySceneDetect), ML/AI libraries, and MAF Python SDK. |
 | **API Layer** | FastAPI | High-performance async API; serves both VS Code extension and future web UI. |
 | **VS Code Extension** | TypeScript + Chat Participant API | VS Code extensions require TypeScript. Extension acts as a thin client calling the Python backend. |
+| **MCP Client** | MCP SDK (Python) | Connects agents to external MCP servers for documentation grounding. Supports Streamable HTTP and stdio transports. |
 
 ### 2.2 Azure Services (Cloud Mode)
 
@@ -99,6 +111,7 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 | **Azure OpenAI (GPT-4o Vision)** | Keyframe semantic analysis, UI state interpretation, document generation | — |
 | **Azure Blob Storage** | Video file staging, keyframe image storage | Local filesystem |
 | **Azure Container Apps** | Backend hosting (production) | Local Docker / dev server |
+| **Microsoft Learn MCP Server** | Documentation search, fetch, and code sample retrieval for agent grounding | Local fallback: embedded style rules only (no live grounding) |
 
 ### 2.3 Local / Open-Source Components
 
@@ -312,6 +325,36 @@ class EvaluateAgent:
                                 suggestions=self.generate_suggestions(scores))
 ```
 
+### 3.2 MCP Tool Integration
+
+The Structure, Writer, and Editor agents use tools from the Microsoft Learn MCP Server to ground their output in published MS Learn content.
+
+**MCP Server:** Microsoft Learn (`https://learn.microsoft.com/api/mcp`)  
+**Transport:** Streamable HTTP (production), stdio (local development via `MicrosoftDocs/mcp` repo)
+
+| MCP Tool | Used By | Purpose |
+|----------|---------|---------|
+| `microsoft_docs_search` | Structure, Writer, Editor | Search MS Learn index for related published articles |
+| `microsoft_docs_fetch` | Writer, Editor | Fetch full article content for voice/tone reference |
+| `microsoft_code_sample_search` | Writer | Find official code samples for inclusion |
+
+**Integration flow:**
+
+```
+Agent Processing Step
+    │
+    ├── Agent determines topic/service from extraction data
+    ├── Calls microsoft_docs_search for related articles
+    ├── Selects most relevant result
+    ├── Calls microsoft_docs_fetch for full content
+    ├── Extracts voice/tone/structure patterns (truncated to token budget)
+    └── Uses patterns to ground generated output
+```
+
+**Graceful degradation:** If the MCP server is unavailable, agents fall back to embedded MS Learn style rules in their system prompts. A warning is logged but processing continues.
+
+**Caching:** MCP responses are cached with configurable TTL (default: 1 hour) to reduce latency and avoid rate limits.
+
 ---
 
 ## 4. VS Code Extension Architecture
@@ -368,6 +411,33 @@ Since VS Code Chat has no native video upload, three input patterns are supporte
 | **Context menu** | Right-click .mp4 in Explorer → "Analyze with Video Documenter" | Register `menus.explorer/context` command |
 | **File picker** | `@video-documenter /analyze` (no path) | Invoke `vscode.window.showOpenDialog()` with video filters |
 
+### 4.4 Companion Extensions
+
+The Video Documenter extension integrates with three companion VS Code extensions that enhance the documentation workflow:
+
+| Extension | ID | Availability | Role |
+|-----------|-----|-------------|------|
+| **Learn Authoring Pack** | `docsmsft.docs-authoring-pack` | Public | MS Learn Markdown syntax, preview, YAML validation, templates |
+| **Content Mentor** | `msft-content.content-mentor` | Microsoft-internal | AI-powered style enforcement, metadata optimization, `@content-mentor` chat participant |
+| **Learn Authoring Assistant** | `docsmsft.learn-authoring-assistant` | Microsoft-internal | AI writing style reviewer, `/suggestEdits` in Copilot Chat |
+
+**Integration model:** Companion workflow (not programmatic API calls). The extension detects installed companions and provides contextual post-generation guidance.
+
+```
+Document Generated
+    │
+    ├── Learn Authoring Pack installed?
+    │   └── Yes → Offer Learn Preview side-by-side
+    │
+    ├── Content Mentor installed?
+    │   └── Yes → Suggest "@content-mentor" for AI review
+    │
+    └── Authoring Assistant installed?
+        └── Yes → Suggest "/suggestEdits" for style review
+```
+
+Learn Authoring Pack is registered as an `extensionDependencies` in `package.json` (public, recommended for all users). Content Mentor and Learn Authoring Assistant are Microsoft-internal only — detected but never recommended to external users.
+
 ---
 
 ## 5. Backend Architecture
@@ -393,7 +463,8 @@ backend/
 │   │   ├── speech.py                 # Azure Speech / Whisper client
 │   │   ├── vision.py                 # GPT-4o Vision analysis
 │   │   ├── blob_storage.py           # Azure Blob Storage client
-│   │   └── ffmpeg.py                 # FFmpeg wrapper
+│   │   ├── ffmpeg.py                 # FFmpeg wrapper
+│   │   └── mcp_client.py            # MCP client (Microsoft Learn docs)
 │   ├── templates/
 │   │   ├── quickstart.md             # MS Learn Quickstart template
 │   │   ├── tutorial.md               # MS Learn Tutorial template
@@ -460,6 +531,11 @@ class Settings(BaseSettings):
     # Local mode settings
     whisper_model: str = "base"  # tiny, base, small, medium, large
     ffmpeg_path: str = "ffmpeg"
+    
+    # MCP Settings
+    mcp_enabled: bool = True
+    mslearn_mcp_endpoint: str = "https://learn.microsoft.com/api/mcp"
+    mcp_cache_ttl_seconds: int = 3600
     
     # Output
     output_directory: str = "./output"
@@ -730,9 +806,14 @@ The FastAPI backend is designed for web UI integration:
 - WebSocket provides real-time progress updates
 - React + Fluent UI 2 frontend can be added without backend changes
 
-### 11.2 MCP Server (Future)
+### 11.2 MCP Integration
 
-The agent can be exposed as an MCP server, enabling:
+**As MCP Client (Phase 3):** The agent pipeline connects to external MCP servers for documentation grounding:
+- Microsoft Learn MCP Server provides search, fetch, and code sample tools
+- Agents use these tools during processing to ground output in published content
+- See §3.2 for details
+
+**As MCP Server (Phase 5 — Future):** The agent itself can be exposed as an MCP server, enabling:
 - GitHub Copilot Chat integration (any IDE)
 - GitHub.com Copilot integration
 - Third-party agent interoperability via A2A protocol

@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import structlog
-from pydantic import BaseModel, Field
-
 from agent_framework import workflow
 from agent_framework.foundry import FoundryChatClient
 from azure.identity import DefaultAzureCredential
+from pydantic import BaseModel, Field
 
 from src.config import get_settings
 from src.models.document import DocType, GeneratedDocument
 from src.models.evaluation import EvaluationReport
 from src.models.video import ExtractionResult, ProcessingMode
 
-from .ingestion import IngestionAgent
-from .extraction import ExtractionAgent
-from .structure import StructureAgent
-from .writer import WriterAgent
 from .editor import EditorAgent
 from .evaluate import EvaluateAgent
+from .extraction import ExtractionAgent
+from .ingestion import IngestionAgent
+from .structure import StructureAgent
+from .writer import WriterAgent
 
 logger = structlog.get_logger()
 
@@ -92,8 +89,18 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
 
     # Stage 2: Extraction
     logger.info("pipeline.stage", stage="extraction")
-    extraction_agent = ExtractionAgent()
+    extraction_agent = ExtractionAgent(foundry_client=client)
     extraction_result = await extraction_agent.process(ingestion_result.metadata, mode)
+
+    # Validate extraction produced meaningful data
+    if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
+        msg = (
+            "Extraction produced no transcript, scenes, or keyframes. "
+            "The pipeline cannot generate grounded documentation from empty data. "
+            "Check that the video file is valid and processing mode is correct."
+        )
+        logger.error("pipeline.empty_extraction", video_source=request.video_source, mode=mode)
+        raise RuntimeError(msg)
 
     # Stage 3: Structure
     logger.info("pipeline.stage", stage="structure")

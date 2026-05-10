@@ -249,13 +249,14 @@ ms.service: <service-name>
 
 The agent should use these extensions where appropriate:
 
-```markdown
 # Alerts
+```markdown
 > [!NOTE]
 > [!TIP]  
 > [!IMPORTANT]
 > [!CAUTION]
 > [!WARNING]
+```
 
 # Images
 :::image type="content" source="./media/step-01.png" alt-text="Description of the screenshot":::
@@ -273,7 +274,6 @@ az resource create --name example
 # Next step buttons
 > [!div class="nextstepaction"]
 > [Next article](next-article.md)
-```
 
 ---
 
@@ -292,6 +292,17 @@ az resource create --name example
 - Style guide Q&A with authoritative source links
 
 **Recommendation:** The Video Documenter agent should be designed as a **complementary tool** that generates draft content, which can then be refined using Content Mentor.
+
+**Key capabilities for Video Documenter workflow:**
+- `@content-mentor` chat participant in GitHub Copilot Chat for documentation-specific AI review
+- Markdown auto-fix for common formatting issues (lists, tables, links, alerts, spacing, images)
+- Link validation including detection of broken links, redirects, and timeouts
+- Visual TOC management for Learn documentation hierarchies
+- "Verify Against UI" capability — AI agent walks through live product UIs and compares against documentation
+
+**Integration model:** Companion workflow. The Video Documenter generates draft content, then users run Content Mentor for AI-powered validation and refinement. The VS Code extension detects Content Mentor installation and provides contextual tips.
+
+**Note:** Content Mentor (formerly DocuMentor) is maintained by Microsoft and is available as an internal Microsoft VS Code extension (`msft-content.content-mentor`).
 
 ### 9.2 Doc-Kit
 
@@ -322,6 +333,18 @@ Includes: Learn Markdown, Learn Preview, Learn YAML, Learn Article Templates, Le
 
 **Recommendation:** Require Learn Authoring Pack as a companion extension. Use Learn Preview for rendered previews of generated content.
 
+**Integration details (Phase 3):**
+- Registered as `extensionDependencies` in the Video Documenter extension's `package.json`
+- VS Code prompts users to install Learn Authoring Pack when they install Video Documenter
+- Learn Preview integration: after generating a document, offer to open Learn Preview side-by-side
+- Learn Article Templates used as a validation reference in the Evaluate Agent
+- markdownlint configuration aligned with MS Learn rules
+
+**Companion extension hierarchy:**
+1. **Learn Authoring Pack** (public, required) — baseline authoring toolkit
+2. **Content Mentor** (internal, optional) — AI documentation review and lifecycle
+3. **Learn Authoring Assistant** (internal, optional) — AI writing style enforcement
+
 ### 9.4 AI Usage Disclosure
 
 All agent-generated content MUST include the `ai-usage: ai-assisted` metadata flag:
@@ -331,6 +354,66 @@ ms.custom: ai-assisted
 ```
 
 This enables automatic AI disclosure notices on the published MS Learn page.
+
+### 9.5 Microsoft Learn MCP Server
+
+**Status:** Public, hosted, free, no authentication required  
+**Endpoint:** `https://learn.microsoft.com/api/mcp` (Streamable HTTP transport)  
+**Source:** `MicrosoftDocs/mcp` (also supports stdio for local development)  
+**Docs:** `https://learn.microsoft.com/training/support/mcp`
+
+The Microsoft Learn MCP Server exposes trusted, up-to-date Microsoft Learn documentation to MCP-compatible agents. It is designed to reduce hallucinations by grounding model outputs in official Microsoft content.
+
+**MCP Tools:**
+
+| Tool | Capability |
+|------|-----------|
+| `microsoft_docs_search` | Search the Microsoft Learn documentation index; returns titles, sections, and URLs |
+| `microsoft_docs_fetch` | Fetch the full content of a specific Microsoft Learn article |
+| `microsoft_code_sample_search` | Search for official code samples within Learn docs |
+
+**Content scope:**
+- ✅ Public Microsoft Learn documentation (Azure, Power Platform, Microsoft 365, .NET, etc.)
+- ✅ Official Learn code samples embedded in docs
+- ❌ Training modules, learning paths, exams
+
+**Integration strategy:** The Video Documenter agents use MCP tools as live reference during processing:
+- **Structure Agent** searches for related published articles to inform outline structure
+- **Writer Agent** fetches published article examples for voice/tone grounding
+- **Editor Agent** references published docs for style consistency checks
+
+**Note:** "Microsoft Docs MCP" and "Microsoft Learn MCP" refer to the same server — Microsoft Docs was merged into Microsoft Learn.
+
+**Recommendation:** Integrate as live tools available to agents during processing (Phase 3). Implement caching and graceful degradation for availability.
+
+### 9.6 Microsoft Learn Authoring Assistant
+
+**Status:** Available in VS Code Marketplace (Microsoft-internal only)  
+**Extension ID:** `docsmsft.learn-authoring-assistant`
+
+The Microsoft Learn Authoring Assistant is an AI-powered VS Code extension that helps authors improve the quality and style of Microsoft Learn content. It works with GitHub Copilot Chat to analyze Learn Markdown files using a custom AI model.
+
+**Key capabilities:**
+- Detect grammar, clarity, and voice issues in MS Learn content
+- Enforce rules from the Microsoft Writing Style Guide
+- Suggest edits directly in the editor via a "Suggested edits" pane
+- Explanations of which style rules were applied, with links to official guidance
+- Preview branding rule that checks product/technology names against Microsoft's corporate taxonomy
+
+**How it differs from Content Mentor:**
+
+| Dimension | Content Mentor | Learn Authoring Assistant |
+|-----------|---------------|--------------------------|
+| Focus | Documentation lifecycle (metadata, links, validation, UI verification) | Editorial quality (grammar, voice, style, branding) |
+| AI features | `@content-mentor` chat participant | `/suggestEdits` in Copilot Chat |
+| Markdown tooling | Auto-fix for formatting | None |
+| Link validation | Yes | No |
+| Metadata optimization | Yes | No |
+| Writing style enforcement | Yes (partial) | Yes (primary focus) |
+
+**Integration model:** Companion workflow. After document generation, Microsoft-internal users can invoke `/suggestEdits` in Copilot Chat for AI-powered style review. The VS Code extension detects installation and provides contextual tips.
+
+**Recommendation:** Document the companion workflow. The extension is Microsoft-internal only, so do not create hard dependencies or recommend to external users.
 
 ---
 
@@ -356,6 +439,8 @@ This enables automatic AI disclosure notices on the published MS Learn page.
 | Doc-Kit evaluate agent has reliability issues (per internal assessment) | Medium | Medium | Build custom evaluation using MS Learn templates as rubrics |
 | Azure AI Foundry model availability varies by region | Medium | Low | Support model flexibility; allow fallback to GPT-4o-mini |
 | VS Code Chat Participant cannot natively accept video file uploads | Medium | High | Implement file picker dialog and context menu integration patterns |
+| Microsoft Learn MCP Server may be unavailable or rate-limited | Medium | Low | Implement response caching (1-hour TTL), graceful degradation (agents continue with embedded style rules), structured logging for monitoring |
+| Content Mentor and Learn Authoring Assistant are Microsoft-internal only | Low | N/A (by design) | Treat as companion workflow only; detect presence conditionally; never recommend to external users; no hard dependencies |
 
 ---
 
@@ -368,10 +453,12 @@ This enables automatic AI disclosure notices on the published MS Learn page.
 | Azure AI Speech | External service | Available |
 | Azure Blob Storage | External service | Available |
 | VS Code Chat Participant API | Platform API | Stable (v1.100+) |
-| Content Mentor extension | Internal tool | Available |
+| Content Mentor extension | Internal tool | Available (Microsoft-internal) |
 | FFmpeg | Open source | Available |
 | PySceneDetect | Open source | Available |
 | Microsoft Agent Framework v1.0 | Framework | Available |
+| Microsoft Learn MCP Server | External service (MCP) | Available (public, free, no auth) |
+| Learn Authoring Assistant extension | Internal tool | Available (Microsoft-internal) |
 
 ---
 

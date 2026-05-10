@@ -32,6 +32,14 @@ class DocumentSection(BaseModel):
     heading: str = Field(description="Section heading (sentence case)")
     level: int = Field(ge=1, le=4, description="Heading level: 1=H1, 2=H2, etc.")
     content_hint: str = Field(default="", description="Brief description of expected content")
+    section_type: str = Field(
+        default="",
+        description="Section type from structure agent (e.g., 'step', 'prerequisites', 'placeholder')",
+    )
+    is_placeholder: bool = Field(
+        default=False,
+        description="True if this section is not grounded in video content and needs TODO-marked content",
+    )
     source_scenes: list[str] = Field(default_factory=list, description="Scene IDs that map to this section")
     source_transcript_ranges: list[tuple[float, float]] = Field(
         default_factory=list, description="(start, end) timestamp ranges from transcript"

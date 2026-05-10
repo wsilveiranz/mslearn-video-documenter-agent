@@ -49,11 +49,21 @@ Desktop.ini
 # Azure
 .azure/
 
+# Azurite (local Azure Storage emulator)
+__azurite_*
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
 .mypy_cache/
+backend/tests/eval/output/
 
 # Logs
 *.log
+
+# Misc
+/test_videos/*.*

@@ -132,3 +132,10 @@ class VideoJob(BaseModel):
     current_stage: str = ""
     error_message: str | None = None
     extraction_result: ExtractionResult | None = None
+    source_path: str | None = Field(default=None, description="Staged file path after ingestion")
+    ingestion_video_id: str | None = Field(
+        default=None, description="Video ID assigned by the ingestion agent"
+    )
+    document_id: str | None = Field(
+        default=None, description="Document ID populated when pipeline completes"
+    )

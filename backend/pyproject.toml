@@ -62,4 +62,8 @@ markers = [
     "local: tests for local-mode processing",
     "integration: integration tests requiring external services",
     "slow: slow tests (>10s)",
+    "eval: agent evaluation tests (require real services)",
+    "style: rule-based MS Learn style compliance checks",
+    "grounding: transcript-to-document grounding checks",
+    "unit: fast unit tests for graders and utilities",
 ]
