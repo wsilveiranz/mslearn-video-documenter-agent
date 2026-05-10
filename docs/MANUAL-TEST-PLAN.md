@@ -168,8 +168,8 @@ In the Extension Development Host:
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
-| 1 | After analyzing a video, type `@video-documenter /status` | Status table with Video ID, stage, progress %, status |
-| 2 | During pipeline generation, type `/status` | Shows current stage (e.g., "writing 60%") |
+| 1 | After analyzing a video, type `@video-documenter /status` | Status table with Video ID, stage, step/total_steps, status |
+| 2 | During pipeline generation, type `/status` | Shows current stage and step (e.g., "extracting — step 2/6") |
 | 3 | In a fresh session, type `/status` | "No active processing jobs" message |
 
 ### TC-12: Save command

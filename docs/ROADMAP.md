@@ -161,10 +161,12 @@ Phase 3: Tool & Extension ──▶ Phase 4: Cloud & Quality ──▶ Phase 5: 
 #### 2.1 Backend API (FastAPI)
 - Implement FastAPI application with endpoints:
   - `POST /api/v1/videos/ingest` — upload video, return video_id
-  - `GET /api/v1/videos/{id}/status` — processing status
+  - `GET /api/v1/videos/{id}/status` — processing status (step-based)
   - `POST /api/v1/documents/generate` — trigger generation
   - `GET /api/v1/documents/{id}` — retrieve generated document
-- Add WebSocket endpoint for streaming progress updates
+  - `POST /api/v1/documents/{id}/refine` — iterative refinement
+  - `POST /api/v1/classify-intent` — classify user message intent (save/refine/general)
+- Add WebSocket endpoint for step-based progress streaming (fire-and-forget, never blocks pipeline)
 - Add CORS configuration for VS Code extension
 
 #### 2.2 Extension → Backend Communication
@@ -191,6 +193,8 @@ Phase 3: Tool & Extension ──▶ Phase 4: Cloud & Quality ──▶ Phase 5: 
 - `/analyze` — Start video analysis
 - `/generate` — Generate document (after analysis)
 - `/refine` — Enter refinement mode for current document
+- `/save` — Save generated document to a specific location
+- `/status` — Check processing status
 
 ### Deliverable
 - Fully functional VS Code Chat Participant
