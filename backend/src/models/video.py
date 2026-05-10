@@ -114,6 +114,7 @@ class IngestionResult(BaseModel):
 class ProcessingStatus(str, Enum):
     QUEUED = "queued"
     INGESTING = "ingesting"
+    PROCESSING = "processing"
     EXTRACTING = "extracting"
     STRUCTURING = "structuring"
     WRITING = "writing"
@@ -133,6 +134,9 @@ class VideoJob(BaseModel):
     error_message: str | None = None
     extraction_result: ExtractionResult | None = None
     source_path: str | None = Field(default=None, description="Staged file path after ingestion")
+    video_metadata: VideoMetadata | None = Field(
+        default=None, description="Cached metadata from ingestion to avoid re-probing"
+    )
     ingestion_video_id: str | None = Field(
         default=None, description="Video ID assigned by the ingestion agent"
     )

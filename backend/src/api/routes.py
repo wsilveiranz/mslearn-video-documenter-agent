@@ -129,6 +129,7 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
         # Store ingestion output separately — keep job.video_id stable
         job.ingestion_video_id = result.video_id
         job.source_path = result.metadata.source_path
+        job.video_metadata = result.metadata
 
         logger.info("api.ingestion_complete", video_id=video_id, ingestion_id=result.video_id)
         await manager.send_progress(video_id, "ingestion_complete", 15.0, "Step 1/6: Ingestion complete ✓")
@@ -165,9 +166,16 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
         )
 
         extraction_agent = ExtractionAgent(foundry_client=client)
-        ingestion_agent = IngestionAgent()
-        ingestion_result = await ingestion_agent.process(job.source_path or "", mode)
-        extraction_result = await extraction_agent.process(ingestion_result.metadata, mode)
+
+        # Reuse cached metadata from ingestion to avoid re-probing the video
+        if job.video_metadata is not None:
+            video_metadata = job.video_metadata
+        else:
+            ingestion_agent = IngestionAgent()
+            ingestion_result = await ingestion_agent.process(job.source_path or "", mode)
+            video_metadata = ingestion_result.metadata
+
+        extraction_result = await extraction_agent.process(video_metadata, mode)
 
         if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
             raise RuntimeError("Extraction produced no transcript, scenes, or keyframes.")
