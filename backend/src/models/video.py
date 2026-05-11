@@ -30,6 +30,7 @@ class VideoMetadata(BaseModel):
     resolution_height: int = Field(ge=0)
     fps: float = Field(ge=0)
     file_size_bytes: int = Field(ge=0)
+    has_audio: bool = Field(default=True, description="Whether the video contains an audio stream")
     blob_url: str | None = Field(default=None, description="Azure Blob Storage URL after upload")
 
 

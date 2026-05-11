@@ -117,6 +117,7 @@ export class BackendProcessManager implements vscode.Disposable {
                 HOST: resolvedHost,
                 PORT: String(port),
                 PROCESSING_MODE: 'local',
+                PYTHONIOENCODING: 'utf-8',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });

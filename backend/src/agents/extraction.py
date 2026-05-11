@@ -62,23 +62,32 @@ class ExtractionAgent:
         frames_dir = work_dir / "frames"
         frames_dir.mkdir(exist_ok=True)
 
-        # Extract audio
+        # Extract audio (if present)
         ffmpeg = FFmpegService(settings)
         audio_path = work_dir / "audio.wav"
-        try:
-            await ffmpeg.extract_audio(metadata.source_path, audio_path)
-        except Exception as e:
-            logger.error("extraction.audio_failed", video_id=video_id, error=str(e))
-            raise
+        has_audio = metadata.has_audio
+        if has_audio:
+            try:
+                await ffmpeg.extract_audio(metadata.source_path, audio_path)
+            except Exception as e:
+                logger.warning("extraction.audio_failed", video_id=video_id, error=str(e))
+                has_audio = False
+        else:
+            logger.info("extraction.no_audio_stream", video_id=video_id)
 
-        # Run transcription and scene detection concurrently
+        # Run transcription (if audio extracted) and scene detection concurrently
         whisper = WhisperService(settings.whisper_model)
         scene_detector = SceneDetectionService()
 
-        transcript_task = asyncio.to_thread(whisper.transcribe, audio_path)
-        scenes_task = asyncio.to_thread(scene_detector.detect_scenes, metadata.source_path)
+        tasks: dict[str, asyncio.Task] = {}
+        if has_audio:
+            tasks["transcript"] = asyncio.ensure_future(asyncio.to_thread(whisper.transcribe, audio_path))
+        tasks["scenes"] = asyncio.ensure_future(asyncio.to_thread(scene_detector.detect_scenes, metadata.source_path))
 
-        transcript, scenes = await asyncio.gather(transcript_task, scenes_task, return_exceptions=True)
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+        transcript = tasks["transcript"].result() if "transcript" in tasks else []
+        scenes = tasks["scenes"].result()
 
         if isinstance(transcript, BaseException):
             logger.error("extraction.transcription_failed", video_id=video_id, error=str(transcript))

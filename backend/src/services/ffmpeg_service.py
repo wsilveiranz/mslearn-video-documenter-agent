@@ -50,6 +50,7 @@ class FFmpegService:
             (s for s in data.get("streams", []) if s.get("codec_type") == "video"),
             {},
         )
+        has_audio = any(s.get("codec_type") == "audio" for s in data.get("streams", []))
         fmt = data.get("format", {})
 
         duration = float(fmt.get("duration") or video_stream.get("duration", 0))
@@ -85,6 +86,7 @@ class FFmpegService:
             resolution_height=height,
             fps=fps,
             file_size_bytes=file_size,
+            has_audio=has_audio,
         )
 
     async def extract_audio(
