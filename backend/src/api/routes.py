@@ -255,19 +255,23 @@ async def _run_extraction(video_id: str) -> None:
         extraction_result = await extraction_agent.process(video_metadata, mode)
 
         if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
-            logger.warning(
+            logger.error(
                 "api.extraction_empty",
                 video_id=video_id,
                 operation="extraction",
                 detail="Extraction produced no transcript, scenes, or keyframes",
             )
+            job.status = ProcessingStatus.FAILED
+            job.error_message = "Extraction produced no transcript, scenes, or keyframes. The video may be unreadable or unsupported."
+            manager.send_progress(video_id, "failed", 2, 6, "Extraction failed: no content could be extracted from the video.")
+            return
+        else:
+            job.extraction_result = extraction_result
+            job.current_stage = "extraction_complete"
+            job.status = ProcessingStatus.QUEUED
 
-        job.extraction_result = extraction_result
-        job.current_stage = "extraction_complete"
-        job.status = ProcessingStatus.QUEUED
-
-        logger.info("api.extraction_complete", video_id=video_id)
-        manager.send_progress(video_id, "extraction_complete", 2, 6, "Step 2/6: Extraction complete ✓")
+            logger.info("api.extraction_complete", video_id=video_id)
+            manager.send_progress(video_id, "extraction_complete", 2, 6, "Step 2/6: Extraction complete ✓")
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)

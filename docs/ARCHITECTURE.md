@@ -1026,7 +1026,7 @@ Per Microsoft internal strategy docs and the MAF FAQ:
 
 | Our Requirement | Addressed By |
 |----------------|-------------|
-| 6-agent pipeline orchestration (Ingestion → Extraction → Quality Assessment → Structure → Writer → Editor → Evaluate) | **MAF** — graph-based agent coordination |
+| 7-agent pipeline orchestration (Ingestion → Extraction → Quality Assessment → Structure → Writer → Editor → Evaluate) | **MAF** — graph-based agent coordination |
 | Iterative refinement with human-in-the-loop | **MAF** — native HITL support + checkpointing |
 | Local development with only GPT-4o dependency | **MAF** — runs locally without Foundry runtime |
 | Production deployment on Azure | **Foundry Agent Service** — managed microVM runtime |

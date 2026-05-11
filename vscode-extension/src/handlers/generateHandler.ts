@@ -115,17 +115,32 @@ export async function handleGenerate(
         } : undefined;
 
         // Load supplementary context from stored references on-demand
+        const MAX_REF_FILE_BYTES = 100 * 1024;  // 100 KB per file
+        const MAX_TOTAL_REF_BYTES = 500 * 1024; // 500 KB total
         let refContext = '';
         const docRefs = stateManager.getSupplementaryDocRefs();
         if (docRefs.length > 0) {
             const contents: string[] = [];
+            let totalBytes = 0;
+            let totalCapReached = false;
             for (const refPath of docRefs) {
                 try {
                     const uri = vscode.Uri.file(refPath);
                     const bytes = await vscode.workspace.fs.readFile(uri);
-                    const text = Buffer.from(bytes).toString('utf-8');
                     const basename = path.basename(refPath);
+                    let text = Buffer.from(bytes).toString('utf-8');
+                    if (bytes.length > MAX_REF_FILE_BYTES) {
+                        text = text.slice(0, MAX_REF_FILE_BYTES) + '\n[… truncated — file exceeds 100 KB limit]';
+                        stream.progress(`Ref doc truncated (exceeds 100 KB): ${basename}`);
+                    }
+                    totalBytes += text.length;
                     contents.push(`--- ${basename} ---\n${text}`);
+                    if (totalBytes >= MAX_TOTAL_REF_BYTES) {
+                        contents.push('\n[… remaining ref docs skipped — total exceeds 500 KB limit]');
+                        stream.progress('Some ref docs skipped — total ref doc size exceeds 500 KB limit.');
+                        totalCapReached = true;
+                        break;
+                    }
                 } catch {
                     // Skip files that can't be read (may have been moved/deleted)
                 }

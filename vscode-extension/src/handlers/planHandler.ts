@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager, DocumentMetadata } from '../utils/conversationState';
 import { detectVideoPath } from '../utils/fileDetection';
