@@ -28,7 +28,8 @@ export class OutputManager {
     async saveDocument(
         documentId: string,
         markdownContent: string,
-        mediaFiles: MediaFile[] = []
+        mediaFiles: MediaFile[] = [],
+        filename?: string,
     ): Promise<vscode.Uri> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
@@ -41,8 +42,8 @@ export class OutputManager {
         // Create output directory (createDirectory is recursive and no-ops if exists)
         await vscode.workspace.fs.createDirectory(baseDirUri);
 
-        // Save markdown file
-        const mdFileName = `${documentId}.md`;
+        // Save markdown file (use provided filename or fall back to documentId)
+        const mdFileName = filename ?? `${documentId}.md`;
         const mdFileUri = vscode.Uri.joinPath(baseDirUri, mdFileName);
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
 
@@ -97,9 +98,10 @@ export class OutputManager {
     async saveAndOpen(
         documentId: string,
         markdownContent: string,
-        mediaFiles: MediaFile[] = []
+        mediaFiles: MediaFile[] = [],
+        filename?: string,
     ): Promise<vscode.Uri> {
-        const fileUri = await this.saveDocument(documentId, markdownContent, mediaFiles);
+        const fileUri = await this.saveDocument(documentId, markdownContent, mediaFiles, filename);
         await this.openDocument(fileUri);
         await this.openPreview(fileUri);
         return fileUri;

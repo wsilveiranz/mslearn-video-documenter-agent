@@ -34,9 +34,17 @@ export async function handleGenerate(
     let docType: string | undefined;
     const promptLower = request.prompt.toLowerCase().trim();
 
-    // Try to detect doc type from prompt text
-    for (const dt of DOC_TYPES) {
-        if (promptLower.includes(dt.value)) {
+    // Try to detect doc type from prompt text (flexible matching)
+    const docTypePatterns: Array<{ value: string; patterns: RegExp[] }> = [
+        { value: 'quickstart', patterns: [/\bquick\s*-?\s*start\b/] },
+        { value: 'tutorial', patterns: [/\btutorial\b/] },
+        { value: 'how-to', patterns: [/\bhow[\s-]*to\b/] },
+        { value: 'concept', patterns: [/\bconcept\b/] },
+        { value: 'overview', patterns: [/\boverview\b/] },
+    ];
+
+    for (const dt of docTypePatterns) {
+        if (dt.patterns.some(p => p.test(promptLower))) {
             docType = dt.value;
             break;
         }
@@ -67,8 +75,19 @@ export async function handleGenerate(
     // 3. Extract supplementary context from prompt (everything that isn't the doc type keyword)
     let supplementaryContext = request.prompt.trim();
     // Remove the doc type keyword if present
-    for (const dt of DOC_TYPES) {
-        supplementaryContext = supplementaryContext.replace(new RegExp(dt.value, 'gi'), '').trim();
+    for (const dt of docTypePatterns) {
+        for (const pattern of dt.patterns) {
+            supplementaryContext = supplementaryContext.replace(new RegExp(pattern.source, 'gi'), '').trim();
+        }
+    }
+
+    // 4. Extract desired filename from prompt (e.g., "use foo.md as the file name")
+    let desiredFilename: string | undefined;
+    const filenameMatch = supplementaryContext.match(
+        /(?:use|save\s+(?:as|to)|file\s*name\s*(?:should\s+be)?|name\s+(?:it|the\s+file))\s+(\S+\.md)\b/i
+    ) ?? supplementaryContext.match(/\b([\w-]+\.md)\b/i);
+    if (filenameMatch) {
+        desiredFilename = filenameMatch[1];
     }
 
     // 4. Check cancellation
@@ -148,7 +167,9 @@ export async function handleGenerate(
         try {
             const savedUri = await outputManager.saveAndOpen(
                 documentId,
-                doc.markdown_content
+                doc.markdown_content,
+                [],
+                desiredFilename,
             );
             stream.markdown(
                 `✅ **${docType.charAt(0).toUpperCase() + docType.slice(1)} document generated!**\n\n` +
