@@ -5,6 +5,8 @@ from __future__ import annotations
 import tempfile
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
@@ -14,13 +16,16 @@ from src.agents.editor import EditorAgent
 from src.agents.evaluate import EvaluateAgent
 from src.agents.extraction import ExtractionAgent
 from src.agents.ingestion import IngestionAgent
-from src.agents.orchestrator import create_foundry_client, MAX_REVISION_ITERATIONS
+from src.agents.orchestrator import MAX_REVISION_ITERATIONS, create_llm_client
 from src.agents.structure import StructureAgent
 from src.agents.writer import WriterAgent
 from src.api.websocket import manager
 from src.config import get_settings
-from src.models.document import DocType, GeneratedDocument
+from src.models.document import DocType
 from src.models.video import ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
+
+if TYPE_CHECKING:
+    from src.models.document import GeneratedDocument
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Video Documenter"])
@@ -72,6 +77,43 @@ class DocumentResponse(BaseModel):
     revision_number: int
 
 
+
+class LmProxyConfigRequest(BaseModel):
+    proxy_url: str
+    proxy_secret: str = ""
+
+
+class LmProxyConfigResponse(BaseModel):
+    status: str
+    message: str
+
+
+@router.post("/config/lm-proxy", response_model=LmProxyConfigResponse)
+async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigResponse:
+    """Register the VS Code Copilot LM Proxy URL for local-mode LLM routing."""
+    proxy_url = request.proxy_url.rstrip("/")
+
+    # Only allow localhost connections for security
+    parsed = urlparse(proxy_url)
+    if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        raise HTTPException(
+            status_code=400,
+            detail="LM Proxy URL must be a localhost address (http://localhost, http://127.0.0.1, or http://[::1])",
+        )
+
+    # Always update — the proxy port may change between extension restarts
+    settings = get_settings()
+    settings.copilot_proxy_url = proxy_url
+    settings.copilot_proxy_secret = request.proxy_secret
+
+    logger.info("config.lm_proxy_registered", proxy_url=proxy_url)
+
+    return LmProxyConfigResponse(
+        status="ok",
+        message="LM Proxy URL registered",
+    )
+
+
 # ---- Health ----
 
 @router.get("/health")
@@ -98,7 +140,7 @@ async def classify_intent_endpoint(request: ClassifyIntentRequest) -> dict:
 
     # LLM classification
     try:
-        client = create_foundry_client()
+        client = create_llm_client()
         result = await classify_intent(request.message, client)
         return result.model_dump()
     except Exception as e:
@@ -159,9 +201,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
     try:
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
-        client = create_foundry_client()
-
-        # Step 2/6: Extraction
+        client = create_llm_client(mode)
         job.status = ProcessingStatus.PROCESSING
         job.current_stage = "extracting"
         job.step = 2
@@ -412,12 +452,12 @@ async def refine_document(
                 break
 
         try:
-            from src.agents.orchestrator import create_foundry_client
+            from src.agents.orchestrator import create_llm_client
 
             if video_id:
                 manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
 
-            client = create_foundry_client()
+            client = create_llm_client()
             editor = EditorAgent(client)
             refined = await editor.process(doc, feedback=request.feedback)
 

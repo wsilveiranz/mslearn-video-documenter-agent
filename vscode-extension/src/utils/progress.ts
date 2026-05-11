@@ -1,5 +1,3 @@
-import * as vscode from 'vscode';
-
 export interface PipelineStage {
     name: string;
     status: 'pending' | 'running' | 'done' | 'error';

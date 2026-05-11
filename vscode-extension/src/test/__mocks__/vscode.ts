@@ -3,7 +3,7 @@
 
 export const workspace = {
     getConfiguration: (_section: string) => ({
-        get: <T>(_key: string, defaultValue: T): T => defaultValue,
+        get: <T>(_key: string, defaultValue?: T): T | undefined => defaultValue,
     }),
     workspaceFolders: undefined as unknown,
     openTextDocument: async () => ({}),
@@ -13,6 +13,14 @@ export const window = {
     showTextDocument: async () => ({}),
     showOpenDialog: async () => undefined,
     showQuickPick: async () => undefined,
+    showErrorMessage: async (..._args: unknown[]): Promise<unknown> => undefined,
+    createOutputChannel: (_name: string) => ({
+        appendLine: (_msg: string) => {},
+        append: (_msg: string) => {},
+        show: () => {},
+        dispose: () => {},
+        clear: () => {},
+    }),
 };
 
 export const commands = {
@@ -32,4 +40,8 @@ export const LanguageModelChatMessage = {
 
 export const chat = {
     createChatParticipant: () => ({ iconPath: null }),
+};
+
+export const extensions = {
+    getExtension: (_id: string) => undefined as unknown,
 };

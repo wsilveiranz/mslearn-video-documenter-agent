@@ -5,13 +5,17 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 from agent_framework import Agent
-from agent_framework.foundry import FoundryChatClient
 
 from src.models.document import DocType, DocumentOutline, GeneratedDocument
-from src.models.video import ExtractionResult
+
+if TYPE_CHECKING:
+    from agent_framework.foundry import FoundryChatClient
+
+    from src.models.video import ExtractionResult
 
 logger = structlog.get_logger()
 

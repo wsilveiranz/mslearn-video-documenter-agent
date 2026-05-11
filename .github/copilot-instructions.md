@@ -323,15 +323,81 @@ Plans should be optimised for **fleet mode** (parallel subagent execution) by de
 - **Provide full context per todo** — each task description must include enough detail for an independent subagent to execute without cross-referencing other todos. **Every todo must specify which GitHub issue it closes** (e.g., "Closes #12") so the sub-agent includes it in the commit message
 - **Mark true dependencies explicitly** in `todo_deps` — only add a dependency when one todo genuinely cannot start until another completes (e.g., data models must exist before agent uses them)
 - **Include an issue-to-todo mapping table** in every plan
-- **Assign a model per todo** — each todo in the plan must include a recommended model (🟢/🟡/🔴 from the Model Selection guide)
+
+### Model Assignment Per Task — MANDATORY
+
+Since all plans are optimised for fleet mode by default (see above), model selection **MUST** always be embedded directly in each task description — not only when the user explicitly requests `/fleet`. Sub-agents do NOT receive copilot-instructions or global context — model guidance that lives only in a summary section will be lost during subagent invocation.
+
+**Rules (strictly enforced):**
+
+1. **Every task MUST include an explicit model assignment** — no task may omit the model.
+2. **The model must be stated inside the task description itself** — not only in a global "Recommended Model" section.
+3. **Repeat the model requirement in the task instruction** to ensure it is preserved during prompt rewriting. Model instructions are part of the execution instruction, not a separate metadata note.
+4. **Do NOT rely on global model guidance alone** — it must be localised per task.
+5. **Use the Model Complexity Map** (see [Model Selection](#model-selection)) to assign the appropriate model based on task complexity.
+6. **Plans intended for `/fleet` must be directly usable** as input without requiring additional model instructions to be injected.
+7. **Prefer redundancy over brevity** for model instructions — it is better to repeat the model requirement than risk it being dropped.
+
+**Required task format:**
+
+Each task in a fleet plan must follow this structure:
+
+```
+Task: <short task name>
+Description:
+  - Clearly describe the work to be done
+  - Explicitly state the model to use (e.g., "Use claude-sonnet-4.6 to implement the service client")
+  - Ensure the model instruction is part of the execution instruction, not a separate note
+  - Include the GitHub issue reference (e.g., "Closes #12")
+```
+
+**Examples:**
+
+❌ BAD — model is separated from execution context (will be lost in subagent prompt):
+```
+Task: Design architecture
+Model: claude-opus-4.6
+Description: Define system design including components, boundaries, and trade-offs.
+```
+
+✅ GOOD — model is embedded in the execution instruction:
+```
+Task: Design architecture
+Description:
+  Use claude-opus-4.6 to perform deep architectural analysis and define system design,
+  including components, boundaries, and trade-offs. The model choice is claude-opus-4.6
+  because this is a complex (🔴) multi-component design task. Closes #7.
+```
+
+❌ BAD — model only in global section, not in task:
+```
+## Tasks
+1. Implement extraction agent — extract keyframes and transcript
+2. Write unit tests for extraction
+
+## Recommended Models
+- Task 1: claude-sonnet-4.6
+- Task 2: claude-haiku-4.5
+```
+
+✅ GOOD — model stated in each task description:
+```
+## Tasks
+1. Implement extraction agent — Use claude-sonnet-4.6 to implement the extraction agent
+   that extracts keyframes and transcript via FFmpeg + PySceneDetect. Medium complexity (🟡).
+   Closes #14.
+2. Write unit tests for extraction — Use claude-haiku-4.5 to write pytest unit tests
+   for the extraction agent. Simple complexity (🟢). Closes #15.
+```
 
 ### Sub-Agent Rules (mandatory — sub-agents do NOT receive copilot-instructions)
 
 The orchestrator must include the following in every sub-agent prompt:
 
 1. **Commit rules**: The GitHub issue number, `Fixes #N` format, and `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer
-2. **MS Learn style rules**: If the sub-agent generates or modifies prompts/templates, include the voice principles and formatting rules from this document
-3. **Logging requirement**: Use `structlog`, never raw `print()`
+2. **Model assignment**: The specific model to use for the task, as determined by the Model Complexity Map. This MUST be part of the task description text, not a separate parameter — sub-agents lose context that isn't in their prompt
+3. **MS Learn style rules**: If the sub-agent generates or modifies prompts/templates, include the voice principles and formatting rules from this document
+4. **Logging requirement**: Use `structlog`, never raw `print()`
 
 ### Post-Fleet Verification
 

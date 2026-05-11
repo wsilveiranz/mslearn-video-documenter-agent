@@ -15,3 +15,11 @@ export function getOutputDirectory(): string {
 export function getAutoOpenPreview(): boolean {
     return getConfig().get<boolean>('autoOpenPreview', true);
 }
+
+export function getAutoStartBackend(): boolean {
+    return getConfig().get<boolean>('autoStartBackend', true);
+}
+
+export function getBackendPath(): string {
+    return getConfig().get<string>('backendPath', '');
+}

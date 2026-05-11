@@ -62,23 +62,37 @@ class ExtractionAgent:
         frames_dir = work_dir / "frames"
         frames_dir.mkdir(exist_ok=True)
 
-        # Extract audio
+        # Extract audio (if present)
         ffmpeg = FFmpegService(settings)
         audio_path = work_dir / "audio.wav"
-        try:
-            await ffmpeg.extract_audio(metadata.source_path, audio_path)
-        except Exception as e:
-            logger.error("extraction.audio_failed", video_id=video_id, error=str(e))
-            raise
+        has_audio = metadata.has_audio
+        if has_audio:
+            try:
+                await ffmpeg.extract_audio(metadata.source_path, audio_path)
+            except Exception as e:
+                logger.warning("extraction.audio_failed", video_id=video_id, error=str(e))
+                has_audio = False
+        else:
+            logger.info("extraction.no_audio_stream", video_id=video_id)
 
-        # Run transcription and scene detection concurrently
+        # Run transcription (if audio extracted) and scene detection concurrently
         whisper = WhisperService(settings.whisper_model)
         scene_detector = SceneDetectionService()
 
-        transcript_task = asyncio.to_thread(whisper.transcribe, audio_path)
-        scenes_task = asyncio.to_thread(scene_detector.detect_scenes, metadata.source_path)
+        # Build task list with stable ordering
+        coros = []
+        task_keys = []
+        if has_audio:
+            coros.append(asyncio.to_thread(whisper.transcribe, audio_path))
+            task_keys.append("transcript")
+        coros.append(asyncio.to_thread(scene_detector.detect_scenes, metadata.source_path))
+        task_keys.append("scenes")
 
-        transcript, scenes = await asyncio.gather(transcript_task, scenes_task, return_exceptions=True)
+        results = await asyncio.gather(*coros, return_exceptions=True)
+        result_map = dict(zip(task_keys, results))
+
+        transcript = result_map.get("transcript", [])
+        scenes = result_map["scenes"]
 
         if isinstance(transcript, BaseException):
             logger.error("extraction.transcription_failed", video_id=video_id, error=str(transcript))

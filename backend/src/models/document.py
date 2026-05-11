@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class DocType(str, Enum):
+class DocType(StrEnum):
     QUICKSTART = "quickstart"
     TUTORIAL = "tutorial"
     HOWTO = "how-to"

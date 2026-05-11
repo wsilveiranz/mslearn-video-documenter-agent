@@ -201,6 +201,14 @@ Phase 3: Tool & Extension ──▶ Phase 4: Cloud & Quality ──▶ Phase 5: 
 - Conversational flow: upload → analyze → choose type → generate → refine
 - Files saved to workspace with proper structure
 
+#### 2.6 Copilot LM Proxy (local mode) ✅ **DONE**
+- Extension hosts an OpenAI-compatible HTTP proxy (`lmProxyServer.ts`) that translates to `vscode.lm` API calls
+- Backend `CopilotProxyChatClient` routes LLM requests through the proxy in local mode
+- Orchestrator `create_llm_client()` selects Copilot or Foundry client based on configuration
+- Handshake endpoint `POST /api/v1/config/lm-proxy` allows the extension to register the proxy URL at startup
+- Configuration: `copilot_proxy_url`, `copilot_proxy_model`, `use_copilot_proxy` (computed), `useCopilotModels` (extension setting)
+- **Result:** Local development works with zero Azure credentials — only a GitHub Copilot subscription is needed
+
 ---
 
 ## Phase 3: Tool & Extension Integration

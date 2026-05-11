@@ -123,6 +123,64 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 | **OpenAI Whisper** | Local speech-to-text transcription | MIT | ✅ |
 | **yt-dlp** | YouTube/Stream video download | Unlicense | ✅ |
 | **Pillow** | Image annotation (step numbers, highlights) | MIT-like | ✅ |
+| **Copilot LM Proxy** | Local-mode LLM access via VS Code Language Model API | — | N/A (requires VS Code) |
+
+### 2.4 Copilot LM Proxy (local mode)
+
+**Purpose:** Eliminates the Azure AI Foundry credential requirement for local development by routing LLM calls through the user's existing GitHub Copilot subscription via the VS Code Language Model API.
+
+#### How it works
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      VS Code Extension                        │
+│                                                               │
+│  Chat Participant ──▶ BackendClient ──HTTP──┐                 │
+│                                             │                 │
+│  LM Proxy Server (localhost:PORT)           │                 │
+│    POST /v1/chat/completions     ◀──────────┘                 │
+│    GET  /health                                               │
+│      │                                                        │
+│      ├── vscode.lm.selectChatModels() → GPT-4o etc.          │
+│      └── model.sendRequest(messages) → streaming text         │
+│                                                               │
+└──────────────────────┬────────────────────────────────────────┘
+                       │ HTTP (localhost, local mode only)
+                       │
+┌──────────────────────┴────────────────────────────────────────┐
+│                 Python Backend (local mode)                     │
+│                                                                │
+│  Orchestrator → create_llm_client()                            │
+│    ├── if use_copilot_proxy → CopilotProxyChatClient           │
+│    │     (OpenAI-compat HTTP to LM Proxy)                      │
+│    └── else → FoundryChatClient (Azure AI Foundry)             │
+│                                                                │
+│  POST /api/v1/config/lm-proxy                                 │
+│    (receives proxy URL from extension on startup)              │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+1. **Extension starts proxy:** The VS Code extension launches an HTTP server (`lmProxyServer.ts`) on a random available port, exposing an OpenAI-compatible `POST /v1/chat/completions` endpoint.
+2. **Handshake:** The extension sends the proxy URL to the backend via `POST /api/v1/config/lm-proxy`. The backend stores it in `Settings.copilot_proxy_url`.
+3. **Orchestrator routing:** `create_llm_client()` checks `Settings.use_copilot_proxy`. If the proxy URL is set and the mode is `local`, it returns a `CopilotProxyChatClient`; otherwise it falls back to `FoundryChatClient`.
+4. **Request translation:** The proxy server translates OpenAI-format requests into `vscode.lm` API calls (`selectChatModels()` → `sendRequest()`), streaming the response back as standard SSE chunks.
+
+#### Configuration
+
+| Setting | Location | Description |
+|---------|----------|-------------|
+| `copilot_proxy_url` | Backend `Settings` | Set automatically via handshake; e.g. `http://localhost:54321` |
+| `copilot_proxy_model` | Backend `Settings` | Model name to request from Copilot (default: `copilot-auto`) |
+| `use_copilot_proxy` | Backend `Settings` (computed) | `True` when `processing_mode == "local"` and `copilot_proxy_url` is set |
+| `useCopilotModels` | Extension `settings.json` | User-facing toggle to enable/disable the LM Proxy |
+
+#### Limitations
+
+- **Rate limits:** Subject to GitHub Copilot rate limits, which vary by subscription tier.
+- **Model availability:** Available models depend on the user's Copilot subscription and what VS Code exposes via `vscode.lm`.
+- **Extension dependency:** The VS Code extension must be running for the proxy to be available; the backend cannot use Copilot models headlessly.
+- **Local mode only:** The proxy is not used in cloud/production mode — Azure AI Foundry is used instead.
 
 ---
 
@@ -380,7 +438,19 @@ vscode-video-documenter/
 └── tsconfig.json
 ```
 
-### 4.2 Chat Participant Registration
+### 4.2 Extension activation lifecycle
+
+When the extension activates, it orchestrates the full startup sequence:
+
+1. **Register chat participant** — `@video-documenter` becomes available immediately
+2. **Start Python backend** — spawns `python -m src.main` as a child process (if `autoStartBackend` is enabled)
+3. **Health check** — polls `GET /api/v1/health` every 500ms until the backend responds (30s timeout)
+4. **Start LM Proxy** — creates an OpenAI-compatible HTTP server backed by Copilot models
+5. **Connect** — notifies the backend of the LM Proxy URL via `POST /api/v1/config/lm-proxy`
+
+The extension detects if a backend is already running on the configured port and skips spawning in that case, allowing developers to run the backend manually for debugging.
+
+### 4.3 Chat Participant Registration
 
 ```json
 {
@@ -401,7 +471,7 @@ vscode-video-documenter/
 }
 ```
 
-### 4.3 Video File Input Patterns
+### 4.4 Video File Input Patterns
 
 Since VS Code Chat has no native video upload, three input patterns are supported:
 
@@ -411,7 +481,7 @@ Since VS Code Chat has no native video upload, three input patterns are supporte
 | **Context menu** | Right-click .mp4 in Explorer → "Analyze with Video Documenter" | Register `menus.explorer/context` command |
 | **File picker** | `@video-documenter /analyze` (no path) | Invoke `vscode.window.showOpenDialog()` with video filters |
 
-### 4.4 Companion Extensions
+### 4.5 Companion Extensions
 
 The Video Documenter extension integrates with three companion VS Code extensions that enhance the documentation workflow:
 
@@ -550,6 +620,12 @@ class Settings(BaseSettings):
     whisper_model: str = "base"  # tiny, base, small, medium, large
     ffmpeg_path: str = "ffmpeg"
     
+    # Copilot LM Proxy (local mode — set via handshake, see §2.4)
+    copilot_proxy_url: str = ""       # e.g. http://localhost:54321
+    copilot_proxy_model: str = "copilot-auto"
+    # use_copilot_proxy is a computed property:
+    #   True when processing_mode == "local" and copilot_proxy_url is set
+    
     # MCP Settings
     mcp_enabled: bool = True
     mslearn_mcp_endpoint: str = "https://learn.microsoft.com/api/mcp"
@@ -648,7 +724,9 @@ class Settings(BaseSettings):
 │                                     │
 │  VS Code                            │
 │  ├── Video Documenter Extension     │
-│  │   └── @video-documenter chat     │
+│  │   ├── @video-documenter chat     │
+│  │   └── LM Proxy Server (:PORT)   │
+│  │        (OpenAI-compat endpoint)  │
 │  │                                  │
 │  └── Terminal                       │
 │      └── Python Backend (FastAPI)   │
@@ -658,11 +736,13 @@ class Settings(BaseSettings):
 │                                     │
 │  ─── Calls ──▶ Azure AI Foundry    │
 │                (GPT-4o only)        │
+│  ─── OR ────▶ LM Proxy → Copilot  │
+│                (no Azure creds)     │
 └─────────────────────────────────────┘
 ```
 
 In local mode:
-- Only Azure AI Foundry (GPT-4o) requires a cloud connection
+- Only Azure AI Foundry (GPT-4o) requires a cloud connection — **or** the Copilot LM Proxy can be used instead (see §2.4), eliminating Azure credentials entirely
 - Video processing uses FFmpeg + PySceneDetect locally
 - Transcription can use local Whisper or Azure Speech
 - No Azure Blob Storage needed (files stay on disk)

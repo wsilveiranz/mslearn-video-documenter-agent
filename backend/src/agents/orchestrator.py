@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import structlog
 from agent_framework import workflow
 from agent_framework.foundry import FoundryChatClient
@@ -9,9 +11,9 @@ from azure.identity import DefaultAzureCredential
 from pydantic import BaseModel, Field
 
 from src.config import get_settings
-from src.models.document import DocType, GeneratedDocument
-from src.models.evaluation import EvaluationReport
+from src.models.document import DocType
 from src.models.video import ExtractionResult, ProcessingMode
+from src.services.copilot_client import create_copilot_client
 
 from .editor import EditorAgent
 from .evaluate import EvaluateAgent
@@ -19,6 +21,10 @@ from .extraction import ExtractionAgent
 from .ingestion import IngestionAgent
 from .structure import StructureAgent
 from .writer import WriterAgent
+
+if TYPE_CHECKING:
+    from src.models.document import GeneratedDocument
+    from src.models.evaluation import EvaluationReport
 
 logger = structlog.get_logger()
 
@@ -48,6 +54,45 @@ def create_foundry_client() -> FoundryChatClient:
     )
 
 
+def create_llm_client(processing_mode: ProcessingMode | None = None):
+    """Create the appropriate LLM client based on processing mode and config.
+
+    Rules:
+    - ``processing_mode="cloud"`` → always Azure AI Foundry, ignoring proxy config.
+    - ``processing_mode="local"`` and ``copilot_proxy_url`` configured → Copilot LM Proxy.
+    - No mode supplied → falls back to ``settings.use_copilot_proxy`` (existing behaviour).
+    """
+    settings = get_settings()
+
+    if processing_mode == ProcessingMode.CLOUD:
+        logger.info("pipeline.using_foundry", reason="processing_mode=cloud")
+        return create_foundry_client()
+
+    if processing_mode == ProcessingMode.LOCAL and settings.copilot_proxy_url:
+        logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
+        return create_copilot_client(
+            settings.copilot_proxy_url,
+            model=settings.copilot_proxy_model,
+            secret=settings.copilot_proxy_secret,
+        )
+
+    if processing_mode == ProcessingMode.LOCAL and not settings.copilot_proxy_url:
+        logger.warning(
+            "pipeline.local_mode_no_proxy",
+            reason="processing_mode=local but copilot_proxy_url is not configured; falling back to Foundry",
+        )
+
+    # Default: honour global settings flag (no explicit mode supplied)
+    if settings.use_copilot_proxy:
+        logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
+        return create_copilot_client(
+            settings.copilot_proxy_url,
+            model=settings.copilot_proxy_model,
+            secret=settings.copilot_proxy_secret,
+        )
+    return create_foundry_client()
+
+
 class PipelineResult:
     """Result of a full pipeline run."""
 
@@ -65,12 +110,12 @@ class PipelineResult:
 @workflow
 async def run_pipeline(request: PipelineInput) -> PipelineResult:
     """Run the full video-to-documentation pipeline.
-    
+
     Pipeline: Ingestion → Extraction → Structure → Writer → Editor → Evaluate
-    
+
     Args:
         request: Pipeline input with video source, doc type, mode, and context.
-        
+
     Returns:
         PipelineResult with the generated document, evaluation, and extraction data.
     """
@@ -79,8 +124,8 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
 
     logger.info("pipeline.start", source=request.video_source, doc_type=request.doc_type, mode=mode)
 
-    # Create shared Foundry client for LLM-powered agents
-    client = create_foundry_client()
+    # Create shared LLM client — pass resolved mode so cloud requests always use Foundry
+    client = create_llm_client(mode)
 
     # Stage 1: Ingestion
     logger.info("pipeline.stage", stage="ingestion")

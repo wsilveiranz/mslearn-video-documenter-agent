@@ -71,6 +71,21 @@ class Settings(BaseSettings):
     )
     ffmpeg_path: str = Field(default="ffmpeg", description="Path to FFmpeg binary")
 
+    # --- Local Mode: Copilot LM Proxy ---
+    copilot_proxy_url: str = Field(
+        default="",
+        description="URL of the VS Code Copilot LM Proxy (e.g., http://localhost:3001). "
+        "When set and processing_mode is 'local', LLM calls route through Copilot instead of Azure Foundry.",
+    )
+    copilot_proxy_model: str = Field(
+        default="copilot-auto",
+        description="Model name to request from the Copilot proxy (copilot-auto for best available)",
+    )
+    copilot_proxy_secret: str = Field(
+        default="",
+        description="Shared secret for authenticating requests to the Copilot LM Proxy",
+    )
+
     # --- Output ---
     output_directory: str = Field(default="./output", description="Directory for generated documents")
 
@@ -100,6 +115,11 @@ class Settings(BaseSettings):
     @property
     def is_local_mode(self) -> bool:
         return self.processing_mode == "local"
+
+    @property
+    def use_copilot_proxy(self) -> bool:
+        """Whether to use Copilot LM Proxy for LLM calls (local mode with proxy configured)."""
+        return self.is_local_mode and bool(self.copilot_proxy_url)
 
     def get_azure_credential(self):
         """Get Azure credential for service authentication.

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BackendClient } from './api/backendClient';
-import { ConversationStateManager, createStateManager } from './utils/conversationState';
-import { OutputManager, createOutputManager } from './utils/outputManager';
+import { createStateManager } from './utils/conversationState';
+import { createOutputManager } from './utils/outputManager';
 import { handleAnalyze } from './handlers/analyzeHandler';
 import { handleGenerate } from './handlers/generateHandler';
 import { handleRefine } from './handlers/refineHandler';
