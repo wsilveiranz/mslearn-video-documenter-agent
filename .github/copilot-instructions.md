@@ -326,7 +326,7 @@ Plans should be optimised for **fleet mode** (parallel subagent execution) by de
 
 ### Model Assignment Per Task — MANDATORY
 
-When generating plans or task breakdowns intended for `/fleet` execution, the model selection **MUST** be embedded directly in each task description. Sub-agents do NOT receive copilot-instructions or global context — model guidance that lives only in a summary section will be lost during subagent invocation.
+Since all plans are optimised for fleet mode by default (see above), model selection **MUST** always be embedded directly in each task description — not only when the user explicitly requests `/fleet`. Sub-agents do NOT receive copilot-instructions or global context — model guidance that lives only in a summary section will be lost during subagent invocation.
 
 **Rules (strictly enforced):**
 
