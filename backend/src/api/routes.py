@@ -94,12 +94,19 @@ class LmProxyConfigResponse(BaseModel):
 async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigResponse:
     """Register the VS Code Copilot LM Proxy URL for local-mode LLM routing."""
     proxy_url = request.proxy_url.rstrip("/")
+
+    # Only allow localhost connections for security
+    if not (proxy_url.startswith("http://localhost") or proxy_url.startswith("http://127.0.0.1")):
+        raise HTTPException(
+            status_code=400,
+            detail="LM Proxy URL must be a localhost address (http://localhost or http://127.0.0.1)",
+        )
+
     _runtime_config["lm_proxy_url"] = proxy_url
 
-    # Update the Settings singleton so the orchestrator picks it up
+    # Always update — the proxy port may change between extension restarts
     settings = get_settings()
-    if not settings.copilot_proxy_url:
-        settings.copilot_proxy_url = proxy_url
+    settings.copilot_proxy_url = proxy_url
 
     logger.info("config.lm_proxy_registered", proxy_url=proxy_url)
 

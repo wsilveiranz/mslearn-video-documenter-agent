@@ -63,7 +63,7 @@ def create_llm_client():
     settings = get_settings()
     if settings.use_copilot_proxy:
         logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
-        return create_copilot_client(settings.copilot_proxy_url)
+        return create_copilot_client(settings.copilot_proxy_url, model=settings.copilot_proxy_model)
     return create_foundry_client()
 
 
