@@ -4,6 +4,11 @@
   "description": "Analyzes screen recordings and generates MS Learn-style documentation",
   "version": "0.1.0",
   "publisher": "video-documenter",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wsilveiranz/mslearn-video-documenter-agent"
+  },
   "engines": {
     "vscode": "^1.100.0",
     "node": ">=24.0.0"

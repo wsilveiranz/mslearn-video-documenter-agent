@@ -47,7 +47,7 @@ jobs:
 
       - name: Package VSIX
         working-directory: vscode-extension
-        run: npx vsce package --out ../release/
+        run: npx vsce package --out ../release/ --allow-missing-repository --skip-license
 
       - name: Clean up bundled backend
         run: rm -rf vscode-extension/backend

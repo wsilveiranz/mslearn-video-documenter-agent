@@ -98,7 +98,7 @@ if (-not (Test-Path $releaseDir)) {
 # 5. Package VSIX
 Write-Host "[5/6] Packaging VSIX..." -ForegroundColor Yellow
 Push-Location $extensionDir
-npx vsce package --out (Join-Path $releaseDir '/')
+npx vsce package --out (Join-Path $releaseDir '/') --allow-missing-repository --skip-license
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
     # Clean up bundled backend on failure
