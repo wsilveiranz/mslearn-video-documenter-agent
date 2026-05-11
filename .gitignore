@@ -67,3 +67,6 @@ backend/tests/eval/output/
 
 # Misc
 /test_videos/*.*
+
+# Release artifacts
+release/
