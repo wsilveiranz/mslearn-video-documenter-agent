@@ -108,9 +108,10 @@ class TestRunPipeline:
         mock_create_client,
     ):
         """Test that all 6 pipeline stages execute in order."""
-        # Settings
+        # Settings — use cloud mode so pipeline always routes to Foundry client
         settings = MagicMock()
-        settings.processing_mode = "local"
+        settings.processing_mode = "cloud"
+        settings.copilot_proxy_url = ""
         mock_settings.return_value = settings
 
         # Foundry client
@@ -184,7 +185,8 @@ class TestRunPipeline:
     ):
         """Test that the pipeline re-edits when evaluation fails."""
         settings = MagicMock()
-        settings.processing_mode = "local"
+        settings.processing_mode = "cloud"
+        settings.copilot_proxy_url = ""
         mock_settings.return_value = settings
         mock_create_client.return_value = MagicMock()
 

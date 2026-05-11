@@ -76,6 +76,12 @@ def create_llm_client(processing_mode: ProcessingMode | None = None):
             secret=settings.copilot_proxy_secret,
         )
 
+    if processing_mode == ProcessingMode.LOCAL and not settings.copilot_proxy_url:
+        logger.warning(
+            "pipeline.local_mode_no_proxy",
+            reason="processing_mode=local but copilot_proxy_url is not configured; falling back to Foundry",
+        )
+
     # Default: honour global settings flag (no explicit mode supplied)
     if settings.use_copilot_proxy:
         logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
