@@ -154,15 +154,16 @@ export class LmProxyServer {
     private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
         const url = req.url ?? '/';
 
-        // Validate shared secret
-        const authHeader = req.headers['authorization'] ?? '';
-        if (authHeader !== `Bearer ${this.secret}`) {
-            sendJson(res, 401, makeErrorJson('Unauthorized: invalid or missing secret', 'authentication_error'));
+        // Health check is unauthenticated — it only returns status info
+        if (req.method === 'GET' && url === '/health') {
+            this.handleHealth(res);
             return;
         }
 
-        if (req.method === 'GET' && url === '/health') {
-            this.handleHealth(res);
+        // Validate shared secret for all other endpoints
+        const authHeader = req.headers['authorization'] ?? '';
+        if (authHeader !== `Bearer ${this.secret}`) {
+            sendJson(res, 401, makeErrorJson('Unauthorized: invalid or missing secret', 'authentication_error'));
             return;
         }
 
