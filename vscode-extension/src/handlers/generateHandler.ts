@@ -88,7 +88,7 @@ export async function handleGenerate(
 
         // 6. Connect WebSocket for progress
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {
-            stream.progress(`Step ${msg.step}/${msg.total_steps}: ${msg.detail || msg.stage}`);
+            stream.progress(msg.detail || `Step ${msg.step}/${msg.total_steps}: ${msg.stage}`);
         });
 
         // 7. Poll for completion (no progress display — WebSocket handles that)
