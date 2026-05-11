@@ -1,216 +1,229 @@
 import * as assert from 'assert';
-import { MockChildProcess, __setExecSync, __setSpawn, __reset } from './__mocks__/childProcess';
-import { extensions } from './__mocks__/vscode';
+import {
+    MockChildProcess,
+    __setExecSync,
+    __setSpawn,
+    __setExec,
+    __reset,
+} from './__mocks__/childProcess';
+import * as vscodeMock from './__mocks__/vscode';
 import { BackendProcessManager } from '../services/backendProcessManager';
 
-// Stub global fetch for health-check tests
 const originalFetch = globalThis.fetch;
+const originalShowErrorMessage = vscodeMock.window.showErrorMessage;
+
+/** Configure execSync so only the given python name succeeds. */
+function pythonOnPath(name: 'python3' | 'python' = 'python3') {
+    __setExecSync((cmd: string) => {
+        if (cmd === `${name} --version`) return 'Python 3.12.0';
+        throw new Error('not found');
+    });
+}
 
 describe('BackendProcessManager', () => {
     let manager: BackendProcessManager;
 
     beforeEach(() => {
         __reset();
-        manager = new BackendProcessManager();
-        // Default: no external backend running
         globalThis.fetch = () => Promise.reject(new Error('ECONNREFUSED'));
+        vscodeMock.window.showErrorMessage = originalShowErrorMessage;
+        manager = new BackendProcessManager();
     });
 
     afterEach(async () => {
         manager.dispose();
         globalThis.fetch = originalFetch;
+        vscodeMock.window.showErrorMessage = originalShowErrorMessage;
     });
 
-    describe('constructor', () => {
-        it('should create an output channel', () => {
-            const channel = manager.getOutputChannel();
-            assert.ok(channel);
-            assert.ok(typeof channel.appendLine === 'function');
-        });
+    // ── isRunning ──────────────────────────────────────────────────────────
 
-        it('should not be running initially', () => {
+    describe('isRunning', () => {
+        it('should return false when no process has been started', () => {
             assert.strictEqual(manager.isRunning(), false);
         });
     });
 
-    describe('start()', () => {
-        it('should spawn python with correct arguments', async () => {
-            let spawnedCmd = '';
-            let spawnedArgs: string[] = [];
-            let spawnedOpts: Record<string, unknown> = {};
+    // ── start ──────────────────────────────────────────────────────────────
 
-            // Make python3 discoverable
-            __setExecSync((cmd: string) => {
-                if (cmd === 'python3 --version') { return 'Python 3.11.0'; }
-                throw new Error('not found');
-            });
-
-            __setSpawn((cmd, args, opts) => {
-                spawnedCmd = cmd;
-                spawnedArgs = args ?? [];
-                spawnedOpts = (opts ?? {}) as Record<string, unknown>;
-                return new MockChildProcess();
-            });
-
-            await manager.start('/path/to/backend', 8000, '127.0.0.1');
-
-            assert.strictEqual(spawnedCmd, 'python3');
-            assert.deepStrictEqual(spawnedArgs, ['-m', 'src.main']);
-            assert.strictEqual(spawnedOpts['cwd'], '/path/to/backend');
-            const env = spawnedOpts['env'] as Record<string, string>;
-            assert.strictEqual(env['HOST'], '127.0.0.1');
-            assert.strictEqual(env['PORT'], '8000');
-            assert.strictEqual(env['PROCESSING_MODE'], 'local');
-        });
-
-        it('should default host to 127.0.0.1', async () => {
-            let spawnedOpts: Record<string, unknown> = {};
-
-            __setExecSync((cmd: string) => {
-                if (cmd === 'python3 --version') { return 'Python 3.11.0'; }
-                throw new Error('not found');
-            });
-
-            __setSpawn((_cmd, _args, opts) => {
-                spawnedOpts = (opts ?? {}) as Record<string, unknown>;
-                return new MockChildProcess();
-            });
-
-            await manager.start('/path/to/backend', 8000);
-
-            const env = spawnedOpts['env'] as Record<string, string>;
-            assert.strictEqual(env['HOST'], '127.0.0.1');
-        });
-
-        it('should report running after successful start', async () => {
-            __setExecSync((cmd: string) => {
-                if (cmd === 'python3 --version') { return 'Python 3.11.0'; }
-                throw new Error('not found');
-            });
-
-            await manager.start('/path/to/backend', 8000);
-            assert.strictEqual(manager.isRunning(), true);
-        });
-
-        it('should not spawn twice if already running', async () => {
-            let spawnCount = 0;
-
-            __setExecSync((cmd: string) => {
-                if (cmd === 'python3 --version') { return 'Python 3.11.0'; }
-                throw new Error('not found');
-            });
-
-            __setSpawn(() => {
-                spawnCount++;
-                return new MockChildProcess();
-            });
-
-            await manager.start('/path/to/backend', 8000);
-            await manager.start('/path/to/backend', 8000);
-
-            assert.strictEqual(spawnCount, 1);
-        });
-
-        it('should detect external backend and skip spawn', async () => {
-            let spawnCalled = false;
-
-            // External backend is healthy
+    describe('start', () => {
+        it('should detect an external backend via /api/v1/health and skip spawn', async () => {
             globalThis.fetch = () =>
                 Promise.resolve(new Response('{"status":"ok"}', { status: 200 }));
 
+            let spawnCalled = false;
             __setSpawn(() => {
                 spawnCalled = true;
                 return new MockChildProcess();
             });
 
-            await manager.start('/path/to/backend', 8000);
+            await manager.start('/backend', 8000);
 
-            assert.strictEqual(spawnCalled, false);
             assert.strictEqual(manager.isRunning(), true);
+            assert.strictEqual(spawnCalled, false);
         });
 
-        it('should try python after python3 fails', async () => {
-            let resolvedInterpreter = '';
+        it('should show an error when no Python interpreter is found', async () => {
+            let errorMsg = '';
+            vscodeMock.window.showErrorMessage = async (...args: unknown[]) => {
+                errorMsg = String(args[0]);
+                return undefined;
+            };
 
-            __setExecSync((cmd: string) => {
-                if (cmd === 'python3 --version') { throw new Error('not found'); }
-                if (cmd === 'python --version') { return 'Python 3.11.0'; }
-                throw new Error('not found');
-            });
+            // Default mock: execSync always throws → no python found
+            await manager.start('/backend', 8000);
 
-            __setSpawn((cmd) => {
-                resolvedInterpreter = cmd;
+            assert.strictEqual(manager.isRunning(), false);
+            assert.ok(errorMsg.includes('Python'), 'error message should mention Python');
+        });
+
+        it('should spawn python with correct arguments and env', async () => {
+            let capturedCmd = '';
+            let capturedArgs: string[] = [];
+            let capturedOpts: Record<string, unknown> = {};
+
+            pythonOnPath('python3');
+            __setSpawn((cmd, args, opts) => {
+                capturedCmd = cmd;
+                capturedArgs = args ?? [];
+                capturedOpts = (opts ?? {}) as Record<string, unknown>;
                 return new MockChildProcess();
             });
 
-            await manager.start('/path/to/backend', 8000);
-            assert.strictEqual(resolvedInterpreter, 'python');
-        });
+            await manager.start('C:\\my\\backend', 9000, '0.0.0.0');
 
-        it('should handle no Python found gracefully', async () => {
-            // All Python lookups fail, no VS Code Python extension
-            (extensions as { getExtension: unknown }).getExtension = () => undefined;
+            assert.strictEqual(capturedCmd, 'python3');
+            assert.deepStrictEqual(capturedArgs, ['-m', 'src.main']);
+            assert.strictEqual(capturedOpts['cwd'], 'C:\\my\\backend');
 
-            __setExecSync(() => {
-                throw new Error('not found');
-            });
-
-            // Should not throw — shows error message instead
-            await manager.start('/path/to/backend', 8000);
-            assert.strictEqual(manager.isRunning(), false);
-        });
-    });
-
-    describe('stop()', () => {
-        it('should kill the process on stop', async () => {
-            __setExecSync((cmd: string) => {
-                if (cmd === 'python3 --version') { return 'Python 3.11.0'; }
-                throw new Error('not found');
-            });
-
-            const mockChild = new MockChildProcess();
-            __setSpawn(() => mockChild);
-
-            await manager.start('/path/to/backend', 8000);
+            const env = capturedOpts['env'] as Record<string, string>;
+            assert.strictEqual(env['HOST'], '0.0.0.0');
+            assert.strictEqual(env['PORT'], '9000');
+            assert.strictEqual(env['PROCESSING_MODE'], 'local');
             assert.strictEqual(manager.isRunning(), true);
-
-            await manager.stop();
-            assert.strictEqual(manager.isRunning(), false);
         });
 
-        it('should skip stop for external backend', async () => {
-            // External backend is healthy
+        it('should use 127.0.0.1 as default host', async () => {
+            let healthUrl = '';
+            globalThis.fetch = ((url: string) => {
+                healthUrl = url;
+                return Promise.reject(new Error('ECONNREFUSED'));
+            }) as typeof fetch;
+
+            pythonOnPath();
+            __setSpawn(() => new MockChildProcess());
+
+            await manager.start('/backend', 8000);
+
+            assert.strictEqual(healthUrl, 'http://127.0.0.1:8000/api/v1/health');
+        });
+
+        it('should not spawn a second process when already running', async () => {
+            let spawnCount = 0;
+            pythonOnPath();
+            __setSpawn(() => {
+                spawnCount++;
+                return new MockChildProcess();
+            });
+
+            await manager.start('/backend', 8000);
+            await manager.start('/backend', 8000);
+
+            assert.strictEqual(spawnCount, 1);
+        });
+
+        it('should fall back to python when python3 is not available', async () => {
+            let capturedCmd = '';
+            __setExecSync((cmd: string) => {
+                if (cmd === 'python --version') return 'Python 3.12.0';
+                throw new Error('not found');
+            });
+            __setSpawn((cmd) => {
+                capturedCmd = cmd;
+                return new MockChildProcess();
+            });
+
+            await manager.start('/backend', 8000);
+
+            assert.strictEqual(capturedCmd, 'python');
+        });
+
+        it('should not spawn when external backend already responds on health', async () => {
             globalThis.fetch = () =>
                 Promise.resolve(new Response('{"status":"ok"}', { status: 200 }));
 
-            await manager.start('/path/to/backend', 8000);
+            await manager.start('/backend', 8000);
             assert.strictEqual(manager.isRunning(), true);
 
-            // stop() should be a no-op — just resets the flag
+            // Calling start again is a no-op (already-running guard)
+            await manager.start('/backend', 8000);
+            assert.strictEqual(manager.isRunning(), true);
+        });
+    });
+
+    // ── stop ───────────────────────────────────────────────────────────────
+
+    describe('stop', () => {
+        it('should skip kill when backend is externally managed', async () => {
+            globalThis.fetch = () =>
+                Promise.resolve(new Response('{"status":"ok"}', { status: 200 }));
+            await manager.start('/backend', 8000);
+
+            let execCalled = false;
+            __setExec((_cmd: string, cb?: (...args: unknown[]) => void) => {
+                execCalled = true;
+                cb?.();
+            });
+
             await manager.stop();
+
+            assert.strictEqual(execCalled, false);
             assert.strictEqual(manager.isRunning(), false);
         });
 
-        it('should be safe to call stop when not running', async () => {
-            // Should not throw
+        it('should kill a managed process', async () => {
+            const mockChild = new MockChildProcess();
+            pythonOnPath();
+            __setSpawn(() => mockChild);
+
+            await manager.start('/backend', 8000);
+            assert.strictEqual(manager.isRunning(), true);
+
+            await manager.stop();
+
+            assert.strictEqual(mockChild.killed, true);
+            assert.strictEqual(manager.isRunning(), false);
+        });
+
+        it('should be a no-op when nothing is running', async () => {
             await manager.stop();
             assert.strictEqual(manager.isRunning(), false);
         });
     });
 
-    describe('dispose()', () => {
-        it('should stop the process and dispose the output channel', async () => {
-            __setExecSync((cmd: string) => {
-                if (cmd === 'python3 --version') { return 'Python 3.11.0'; }
-                throw new Error('not found');
-            });
+    // ── getOutputChannel ───────────────────────────────────────────────────
 
-            await manager.start('/path/to/backend', 8000);
-            manager.dispose();
+    describe('getOutputChannel', () => {
+        it('should return an output channel with appendLine', () => {
+            const ch = manager.getOutputChannel();
+            assert.ok(ch);
+            assert.strictEqual(typeof ch.appendLine, 'function');
+        });
+    });
 
-            // After dispose, isRunning may still briefly be true since stop is async,
-            // but the channel should be disposed
-            assert.ok(manager.getOutputChannel());
+    // ── dispose ────────────────────────────────────────────────────────────
+
+    describe('dispose', () => {
+        it('should dispose the output channel', () => {
+            const fresh = new BackendProcessManager();
+            let disposed = false;
+            fresh.getOutputChannel().dispose = () => {
+                disposed = true;
+            };
+
+            fresh.dispose();
+
+            assert.strictEqual(disposed, true);
         });
     });
 });
