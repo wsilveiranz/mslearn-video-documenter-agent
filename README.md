@@ -359,10 +359,10 @@ You should see in the extension output:
 
 ### Step 3: Verify the LM Proxy is working
 
-Check the proxy health endpoint (port may vary):
+Check the proxy health endpoint (port may vary). The LM Proxy requires an `Authorization: Bearer <secret>` header for all endpoints, including `/health`. Use the same LM Proxy secret configured by the extension when it starts the proxy.
 
 ```bash
-curl http://localhost:3001/health
+curl -H "Authorization: Bearer <your-lm-proxy-secret>" http://localhost:3001/health
 ```
 
 Expected response:
