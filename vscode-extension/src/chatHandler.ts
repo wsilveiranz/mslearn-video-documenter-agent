@@ -4,6 +4,7 @@ import { createStateManager } from './utils/conversationState';
 import { createOutputManager } from './utils/outputManager';
 import { handleAnalyze } from './handlers/analyzeHandler';
 import { handleGenerate } from './handlers/generateHandler';
+import { handlePlan } from './handlers/planHandler';
 import { handleRefine } from './handlers/refineHandler';
 import { handleSave } from './handlers/saveHandler';
 import { handleStatus } from './handlers/statusHandler';
@@ -24,7 +25,9 @@ export function createChatHandler(
     ): Promise<vscode.ChatResult> => {
         const command = request.command;
 
-        if (command === 'analyze') {
+        if (command === 'plan') {
+            return handlePlan(request, stream, token, client, stateManager);
+        } else if (command === 'analyze') {
             return handleAnalyze(request, stream, token, client, stateManager);
         } else if (command === 'generate') {
             return handleGenerate(request, stream, token, client, stateManager, outputManager);

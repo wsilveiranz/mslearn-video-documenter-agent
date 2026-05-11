@@ -25,6 +25,10 @@
         "isSticky": true,
         "commands": [
           {
+            "name": "plan",
+            "description": "Plan documentation: select video, collect metadata, and analyze"
+          },
+          {
             "name": "analyze",
             "description": "Analyze a screen recording video"
           },
