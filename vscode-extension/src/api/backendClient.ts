@@ -21,6 +21,7 @@ export interface StatusResponse {
         keyframes: number;
         has_vision_descriptions: boolean;
     } | null;
+    data_quality: DataQualityResponse | null;
 }
 
 export interface GenerateResponse {
@@ -35,6 +36,17 @@ export interface DocumentResponse {
     markdown_content: string;
     word_count: number;
     revision_number: number;
+}
+
+export interface DataQualityResponse {
+    quality_level: 'rich' | 'adequate' | 'thin' | 'minimal';
+    transcript_assessment: string;
+    visual_assessment: string;
+    coverage_gaps: string[];
+    warnings: string[];
+    recommendations: string[];
+    grounding_confidence: number;
+    raw_metrics: Record<string, unknown>;
 }
 
 export interface HealthResponse {
@@ -119,6 +131,10 @@ export class BackendClient {
 
     async getExtractionResults(videoId: string): Promise<Record<string, unknown>> {
         return this.get<Record<string, unknown>>(`/videos/${videoId}/extraction`);
+    }
+
+    async assessQuality(videoId: string): Promise<DataQualityResponse> {
+        return this.post<DataQualityResponse>(`/videos/${videoId}/assess-quality`, {});
     }
 
     async generateDocument(

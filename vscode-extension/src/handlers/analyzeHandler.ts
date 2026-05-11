@@ -203,9 +203,9 @@ export async function handleAnalyze(
         // Ingestion + Extraction complete — update state
         stateManager.setStage('analyzed');
 
-        // Fetch extraction summary
+        // Fetch extraction summary and quality assessment
         let extractionRows = '';
-        let thinDataWarning = '';
+        let qualityWarning = '';
         try {
             const finalStatus = await client.getVideoStatus(videoId);
             if (finalStatus.extraction_summary) {
@@ -215,11 +215,30 @@ export async function handleAnalyze(
                     `| Scenes | ${es.scenes} detected |\n` +
                     `| Keyframes | ${es.keyframes} captured |\n` +
                     `| Vision analysis | ${es.has_vision_descriptions ? '✓' : '✗ (no descriptions)'} |\n`;
-                
-                if (es.transcript_segments === 0 && !es.has_vision_descriptions) {
-                    thinDataWarning = '\n⚠️ **Limited extraction data:** No transcript was found and vision analysis produced no descriptions. ' +
-                        'Consider using `/plan` to provide supplementary documentation for better results.\n';
+            }
+
+            // Run quality assessment
+            try {
+                const quality = await client.assessQuality(videoId);
+                const confidence = Math.round(quality.grounding_confidence * 100);
+                extractionRows += `| Data quality | **${quality.quality_level}** (${confidence}% grounding confidence) |\n`;
+
+                if (quality.quality_level === 'minimal' || quality.quality_level === 'thin') {
+                    const warnings = quality.warnings.map(w => `> - ${w}`).join('\n');
+                    const recommendations = quality.recommendations.map(r => `> - ${r}`).join('\n');
+                    qualityWarning = 
+                        `\n⚠️ **Data quality: ${quality.quality_level}** — ` +
+                        `The extraction data may be insufficient for fully grounded documentation.\n\n` +
+                        (quality.warnings.length > 0 ? `> **Warnings:**\n${warnings}\n\n` : '') +
+                        (quality.recommendations.length > 0 ? `> **Recommendations:**\n${recommendations}\n\n` : '');
+                } else if (quality.quality_level === 'adequate') {
+                    const recommendations = quality.recommendations.map(r => `> - ${r}`).join('\n');
+                    qualityWarning = quality.recommendations.length > 0
+                        ? `\n💡 **Tips to improve quality:**\n${recommendations}\n\n`
+                        : '';
                 }
+            } catch {
+                // Quality assessment failed — non-fatal, continue without it
             }
         } catch {
             // Non-fatal
@@ -236,7 +255,7 @@ export async function handleAnalyze(
             `📝 Ready to generate documentation. Choose a document type:\n\n` +
             '```\n@video-documenter /generate\n```\n\n' +
             'Available types: **Quickstart**, **Tutorial**, **How-to**, **Concept**, **Overview**' +
-            thinDataWarning
+            qualityWarning
         );
 
     } catch (error) {

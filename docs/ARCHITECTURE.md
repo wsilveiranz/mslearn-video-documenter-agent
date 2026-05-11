@@ -44,6 +44,7 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 │    │  Ingestion  │───▶│ Extraction │───▶│  Structure  │             │
 │    │   Agent     │    │   Agent    │    │   Agent     │             │
 │    └────────────┘    └────────────┘    └──────┬─────┘              │
+│      ↓ Quality Assessment Agent (side-step after Extraction)        │
 │                                               │                     │
 │    ┌────────────┐    ┌────────────┐    ┌──────▼─────┐              │
 │    │  Evaluate   │◀──│   Editor   │◀──│   Writer    │              │
@@ -190,11 +191,19 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 
 The pipeline follows a design inspired by **Doc-Kit** (Microsoft Foundry's internal 4-agent documentation pipeline) adapted for video-first content.
 
-```
-Video Input ──▶ [1. Ingestion] ──▶ [2. Extraction] ──▶ [3. Structure] ──▶ [4. Writer] ──▶ [5. Editor] ──▶ [6. Evaluate] ──▶ Output
-                                                                                              ▲                    │
-                                                                                              │    Refinement Loop  │
-                                                                                              └────────────────────┘
+```mermaid
+flowchart LR
+    input([Video Input]) --> ingest[1. Ingestion]
+    ingest --> extract[2. Extraction]
+    extract --> structure[3. Structure]
+    extract -.->|side-step| qa[Quality\nAssessment]
+    structure --> writer[4. Writer]
+    writer --> editor[5. Editor]
+    editor --> evaluate[6. Evaluate]
+    evaluate --> output([Output])
+    qa -.->|quality_report| writer
+    qa -.->|quality_report| evaluate
+    editor -->|Refinement Loop| writer
 ```
 
 #### Agent 1: Ingestion Agent
@@ -282,6 +291,38 @@ class ExtractionResult:
     video_metadata: VideoMetadata           # duration, resolution, fps
 ```
 
+#### Quality Assessment Agent (side-step)
+
+**Responsibility:** LLM-based evaluation of extraction data quality and grounding potential. Called via a dedicated API endpoint — runs as a non-blocking side-step after Extraction, not inline in the pipeline.
+
+| Input | Processing | Output |
+|-------|-----------|--------|
+| `ExtractionResult` | Sends extraction data to GPT-4o with quality assessment prompt | `DataQualityReport` |
+
+**Quality levels:**
+
+| Level | Description |
+|-------|-------------|
+| `rich` | Comprehensive transcript, keyframes, OCR — ideal for generation |
+| `adequate` | Sufficient data for most document types |
+| `thin` | Limited data; Writer Agent applies guardrails (shorter output, hedged language, gap notifications) |
+| `minimal` | Insufficient for reliable generation; user is warned |
+
+```python
+@dataclass
+class DataQualityReport:
+    quality_level: Literal["rich", "adequate", "thin", "minimal"]
+    transcript_assessment: str    # Qualitative assessment of transcript quality and completeness
+    visual_assessment: str        # Qualitative assessment of keyframe/OCR quality
+    coverage_gaps: list[str]      # Topics or steps with insufficient extraction data
+    warnings: list[str]           # Issues that may affect generation quality
+    recommendations: list[str]    # Actions to improve data quality before generation
+    grounding_confidence: float   # 0.0–1.0: confidence that generated content can be grounded
+    raw_metrics: dict             # Quantitative extraction metrics (word count, frame count, etc.)
+```
+
+**When called:** Via `POST /api/v1/videos/{video_id}/assess-quality`. The `DataQualityReport` is cached on the video job and passed to the Writer Agent (thin-data guardrails) and the Evaluate Agent (grounding dimension scoring).
+
 #### Agent 3: Structure Agent
 
 **Responsibility:** Map extracted content to an MS Learn document structure.
@@ -320,6 +361,7 @@ Uses GPT-4o with a carefully crafted system prompt that encodes:
 - Document-type-specific formatting rules
 - YAML frontmatter requirements
 - MS Learn Markdown extension syntax
+- Thin-data guardrails when `DataQualityReport.quality_level` is `thin` or `minimal` (shorter output, hedged language, explicit coverage gap notifications)
 
 ```python
 WRITER_SYSTEM_PROMPT = """
@@ -365,18 +407,21 @@ Scores the document on:
 - **Technical Accuracy:** Does text match what's shown in video? (0.0–1.0)
 - **Style Compliance:** Does it follow MS Learn voice/tone? (0.0–1.0)
 - **Readability:** Is it scannable, concise, well-structured? (0.0–1.0)
+- **Grounding:** Is document content traceable to extraction evidence? (0.0–1.0)
 
 ```python
 class EvaluateAgent:
-    async def evaluate(self, document: str, extraction: ExtractionResult) -> EvaluationReport:
+    async def evaluate(self, document: str, extraction: ExtractionResult,
+                       quality_report: DataQualityReport | None = None) -> EvaluationReport:
         scores = {
             "completeness": await self.check_completeness(document, extraction),
             "accuracy": await self.check_accuracy(document, extraction),
             "style": await self.check_style(document),
-            "readability": await self.check_readability(document)
+            "readability": await self.check_readability(document),
+            "grounding": await self.check_grounding(document, extraction, quality_report)
         }
         
-        overall = sum(scores.values()) / len(scores)
+        overall = sum(scores.values()) / len(scores)  # average of 5 dimensions
         passed = overall >= 0.7 and all(s >= 0.5 for s in scores.values())
         
         return EvaluationReport(scores=scores, overall=overall, passed=passed,
@@ -524,6 +569,7 @@ backend/
 │   │   ├── orchestrator.py           # MAF orchestrator (pipeline routing)
 │   │   ├── ingestion.py              # Video ingestion agent
 │   │   ├── extraction.py             # Video analysis agent
+│   │   ├── quality_assessment.py     # Data quality assessment agent (side-step)
 │   │   ├── structure.py              # Document structure agent
 │   │   ├── writer.py                 # Content generation agent
 │   │   ├── editor.py                 # Refinement agent
@@ -545,11 +591,13 @@ backend/
 │   │   ├── writer_system.md          # Writer agent system prompt
 │   │   ├── editor_system.md          # Editor agent system prompt
 │   │   ├── evaluate_system.md        # Evaluate agent system prompt
-│   │   └── structure_system.md       # Structure agent system prompt
+│   │   ├── structure_system.md       # Structure agent system prompt
+│   │   └── quality_assessment_system.md  # Quality Assessment agent system prompt
 │   ├── models/
 │   │   ├── video.py                  # Video/extraction data models
 │   │   ├── document.py               # Document/outline data models
-│   │   └── evaluation.py             # Evaluation report models
+│   │   ├── evaluation.py             # Evaluation report models
+│   │   └── quality.py                # DataQualityReport model
 │   └── api/
 │       ├── routes.py                 # API route definitions
 │       └── websocket.py              # WebSocket for streaming progress
@@ -564,14 +612,15 @@ backend/
 ### 5.2 API Endpoints
 
 ```
-POST   /api/v1/videos/ingest          # Upload/register video
-GET    /api/v1/videos/{id}/status      # Check processing status (step-based)
-GET    /api/v1/videos/{id}/extraction  # Get extraction results
-POST   /api/v1/documents/generate      # Generate document from extraction
-POST   /api/v1/documents/{id}/refine   # Iterative refinement
-GET    /api/v1/documents/{id}          # Get generated document
-POST   /api/v1/classify-intent         # Classify user message intent (save/refine/general)
-WS     /ws/progress/{video_id}         # Step-based progress streaming (fire-and-forget)
+POST   /api/v1/videos/ingest                    # Upload/register video
+GET    /api/v1/videos/{id}/status               # Check processing status; includes data_quality when assessed
+GET    /api/v1/videos/{id}/extraction           # Get extraction results
+POST   /api/v1/videos/{id}/assess-quality       # Assess extraction data quality; returns DataQualityReport
+POST   /api/v1/documents/generate               # Generate document from extraction
+POST   /api/v1/documents/{id}/refine            # Iterative refinement
+GET    /api/v1/documents/{id}                   # Get generated document
+POST   /api/v1/classify-intent                  # Classify user message intent (save/refine/general)
+WS     /ws/progress/{video_id}                  # Step-based progress streaming (fire-and-forget)
 ```
 
 #### WebSocket Progress Payload
@@ -635,6 +684,19 @@ class Settings(BaseSettings):
     output_directory: str = "./output"
 ```
 
+### 5.4 Data models
+
+Key data models are defined in `backend/src/models/`:
+
+| Model | File | Description |
+|-------|------|-------------|
+| `ExtractionResult` | `video.py` | Transcript, scenes, keyframes, OCR, entities from video analysis |
+| `DocumentOutline` | `document.py` | Structured outline mapping video content to MS Learn template |
+| `EvaluationReport` | `evaluation.py` | 5-dimension quality scores + overall + pass/fail decision |
+| `DataQualityReport` | `quality.py` | Extraction data quality assessment; feeds Writer guardrails and Evaluate grounding |
+
+`EvaluationReport.overall` is the average of all 5 scoring dimensions. `EvaluationReport.passed` is `True` when `overall >= 0.7` and all individual dimensions score `>= 0.5`.
+
 ---
 
 ## 6. Data Flow
@@ -662,6 +724,11 @@ class Settings(BaseSettings):
    ├── For each keyframe: call GPT-4o Vision for UI analysis
    └── Return: ExtractionResult
 
+4a. QUALITY ASSESSMENT (optional, via separate API call):
+    ├── POST /api/v1/videos/{id}/assess-quality
+    ├── LLM evaluates ExtractionResult for quality and grounding potential
+    └── Return: DataQualityReport (quality_level, grounding_confidence, coverage_gaps, ...)
+
 5. ORCHESTRATOR → USER:
    └── "Video analyzed! I found 8 scenes and 15 key steps.
         What type of MS Learn document would you like?
@@ -681,6 +748,7 @@ class Settings(BaseSettings):
    ├── Write each section using MS Learn voice/tone
    ├── Insert screenshots with :::image::: syntax
    ├── Add appropriate callouts (> [!NOTE], > [!TIP])
+   ├── Apply thin-data guardrails if DataQualityReport.quality_level is thin or minimal
    └── Return: Full Markdown document
 
 9. EDITOR AGENT:
@@ -690,8 +758,8 @@ class Settings(BaseSettings):
    └── Return: Edited Markdown
 
 10. EVALUATE AGENT:
-    ├── Score: completeness=0.92, accuracy=0.88, style=0.95, readability=0.90
-    └── Return: EvaluationReport (PASSED, overall=0.91)
+    ├── Score: completeness=0.92, accuracy=0.88, style=0.95, readability=0.90, grounding=0.87
+    └── Return: EvaluationReport (PASSED, overall=0.90)
 
 11. ORCHESTRATOR → USER:
     ├── Stream document preview in chat
@@ -804,6 +872,7 @@ Different agents use different models based on task requirements:
 | Agent | Recommended Model | Fallback Model | Rationale |
 |-------|------------------|----------------|-----------|
 | **Extraction (Vision)** | GPT-4o | GPT-4o-mini | Vision tasks need highest quality |
+| **Quality Assessment** | GPT-4o | GPT-4o-mini | Grounding assessment requires strong reasoning |
 | **Structure** | GPT-4o-mini | Phi-4 | Lightweight reasoning task |
 | **Writer** | GPT-4o | GPT-4o-mini | Complex creative generation |
 | **Editor** | GPT-4o-mini | Phi-4 | Targeted edits, lower complexity |
@@ -957,7 +1026,7 @@ Per Microsoft internal strategy docs and the MAF FAQ:
 
 | Our Requirement | Addressed By |
 |----------------|-------------|
-| 6-agent pipeline orchestration (Ingestion → Extraction → Structure → Writer → Editor → Evaluate) | **MAF** — graph-based agent coordination |
+| 6-agent pipeline orchestration (Ingestion → Extraction → Quality Assessment → Structure → Writer → Editor → Evaluate) | **MAF** — graph-based agent coordination |
 | Iterative refinement with human-in-the-loop | **MAF** — native HITL support + checkpointing |
 | Local development with only GPT-4o dependency | **MAF** — runs locally without Foundry runtime |
 | Production deployment on Azure | **Foundry Agent Service** — managed microVM runtime |

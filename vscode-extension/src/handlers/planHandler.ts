@@ -368,11 +368,11 @@ export async function handlePlan(
             return { metadata: { command: 'plan' } };
         }
 
-        // Fetch extraction summary for display
+        // Fetch extraction summary and quality assessment
         let extractionInfo = '';
-        let finalStatus: Awaited<ReturnType<typeof client.getVideoStatus>> | null = null;
+        let qualityWarning = '';
         try {
-            finalStatus = await client.getVideoStatus(videoId);
+            const finalStatus = await client.getVideoStatus(videoId);
             if (finalStatus.extraction_summary) {
                 const es = finalStatus.extraction_summary;
                 extractionInfo =
@@ -381,17 +381,33 @@ export async function handlePlan(
                     `| Keyframes | ${es.keyframes} captured |\n` +
                     `| Vision analysis | ${es.has_vision_descriptions ? '✓' : '✗ (no descriptions)'} |\n`;
             }
+
+            // Run quality assessment
+            try {
+                const quality = await client.assessQuality(videoId);
+                const confidence = Math.round(quality.grounding_confidence * 100);
+                extractionInfo += `| Data quality | **${quality.quality_level}** (${confidence}% grounding confidence) |\n`;
+
+                if (quality.quality_level === 'minimal' || quality.quality_level === 'thin') {
+                    const warnings = quality.warnings.map(w => `> - ${w}`).join('\n');
+                    const recommendations = quality.recommendations.map(r => `> - ${r}`).join('\n');
+                    qualityWarning = 
+                        `\n\n⚠️ **Data quality: ${quality.quality_level}** — ` +
+                        `The extraction data may be insufficient for fully grounded documentation.\n\n` +
+                        (quality.warnings.length > 0 ? `> **Warnings:**\n${warnings}\n\n` : '') +
+                        (quality.recommendations.length > 0 ? `> **Recommendations:**\n${recommendations}\n\n` : '');
+                } else if (quality.quality_level === 'adequate') {
+                    const recommendations = quality.recommendations.map(r => `> - ${r}`).join('\n');
+                    qualityWarning = quality.recommendations.length > 0
+                        ? `\n\n💡 **Tips to improve quality:**\n${recommendations}\n\n`
+                        : '';
+                }
+            } catch {
+                // Quality assessment failed — non-fatal, continue without it
+            }
         } catch {
             // Non-fatal — just skip extraction info in summary
         }
-
-        const thinDataWarning = (finalStatus?.extraction_summary &&
-            finalStatus.extraction_summary.transcript_segments === 0 &&
-            !finalStatus.extraction_summary.has_vision_descriptions)
-            ? '\n\n⚠️ **Limited extraction data:** No transcript was found and vision analysis produced no descriptions. ' +
-              'The video may be silent or the vision model may not be available. ' +
-              'Consider providing supplementary documentation to improve document quality.\n'
-            : '';
 
         // Step 10: Store state + show summary
         const metadata: DocumentMetadata = {
@@ -429,7 +445,7 @@ export async function handlePlan(
             `| ms.service | ${msService || '_(not set)_'} |\n` +
             `| Customer intent | ${customerIntent || '_(not set)_'} |\n` +
             `| Reference docs | ${refDocsInfo} |\n\n` +
-            '📝 Use `/generate` to create the document with these settings.\n' + thinDataWarning
+            '📝 Use `/generate` to create the document with these settings.\n' + qualityWarning
         );
 
     } catch (error) {

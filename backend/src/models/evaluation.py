@@ -12,19 +12,22 @@ class EvaluationScores(BaseModel):
     accuracy: float = Field(ge=0.0, le=1.0, description="Does text match what's shown in video?")
     style_compliance: float = Field(ge=0.0, le=1.0, description="Does it follow MS Learn voice/tone?")
     readability: float = Field(ge=0.0, le=1.0, description="Is it scannable, concise, well-structured?")
+    grounding: float = Field(default=0.5, ge=0.0, le=1.0, description="Is content traceable to extraction evidence?")
 
     @property
     def overall(self) -> float:
         """Average of all dimension scores."""
-        scores = [self.completeness, self.accuracy, self.style_compliance, self.readability]
+        scores = [self.completeness, self.accuracy, self.style_compliance, self.readability, self.grounding]
         return sum(scores) / len(scores)
 
     @property
     def passed(self) -> bool:
         """True if overall >= 0.7 and no dimension below 0.5."""
-        return self.overall >= 0.7 and all(
-            s >= 0.5 for s in [self.completeness, self.accuracy, self.style_compliance, self.readability]
-        )
+        all_scores = [
+            self.completeness, self.accuracy, self.style_compliance,
+            self.readability, self.grounding,
+        ]
+        return self.overall >= 0.7 and all(s >= 0.5 for s in all_scores)
 
 
 class EvaluationSuggestion(BaseModel):

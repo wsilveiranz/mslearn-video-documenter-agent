@@ -70,6 +70,7 @@ class StatusResponse(BaseModel):
     current_stage: str
     document_id: str | None = None
     extraction_summary: dict | None = None
+    data_quality: dict | None = None
 
 
 class DocumentResponse(BaseModel):
@@ -313,7 +314,7 @@ async def _run_pipeline(
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Writing document...")
 
         writer_agent = WriterAgent(client)
-        document = await writer_agent.process(outline, extraction_result)
+        document = await writer_agent.process(outline, extraction_result, quality_report=job.quality_report)
 
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Draft complete ✓")
 
@@ -333,7 +334,7 @@ async def _run_pipeline(
         manager.send_progress(video_id, "evaluating", 6, 6, "Step 6/6: Quality evaluation...")
 
         evaluate_agent = EvaluateAgent(client)
-        evaluation = await evaluate_agent.process(document, extraction_result)
+        evaluation = await evaluate_agent.process(document, extraction_result, quality_report=job.quality_report)
 
         # Revision loop — keep step at 6 (still in evaluate phase)
         iteration = 1
@@ -346,7 +347,7 @@ async def _run_pipeline(
                 f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions
             )
             document = await editor_agent.process(document, feedback=feedback)
-            evaluation = await evaluate_agent.process(document, extraction_result)
+            evaluation = await evaluate_agent.process(document, extraction_result, quality_report=job.quality_report)
 
         # Done
         result_doc_id = document.document_id
@@ -449,6 +450,7 @@ async def get_video_status(video_id: str) -> StatusResponse:
         current_stage=job.current_stage,
         document_id=job.document_id,
         extraction_summary=extraction_summary,
+        data_quality=job.quality_report.model_dump() if job.quality_report is not None else None,
     )
 
 
@@ -490,6 +492,46 @@ async def get_extraction_results(video_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Extraction not yet complete")
 
     return job.extraction_result.model_dump()
+
+
+@router.post("/videos/{video_id}/assess-quality")
+async def assess_quality(video_id: str) -> dict:
+    """Run LLM-based quality assessment on extraction data."""
+    job = _video_jobs.get(video_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Video job '{video_id}' not found")
+
+    if job.extraction_result is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Extraction not yet complete for video '{video_id}'. Run extraction first.",
+        )
+
+    # Return cached report if available
+    if job.quality_report is not None:
+        logger.info("api.assess_quality_cached", video_id=video_id)
+        return job.quality_report.model_dump()
+
+    logger.info("api.assess_quality", video_id=video_id)
+
+    try:
+        from src.agents.orchestrator import create_llm_client
+        from src.agents.quality import QualityAssessmentAgent
+
+        client = create_llm_client()
+        quality_agent = QualityAssessmentAgent(client)
+        report = await quality_agent.process(job.extraction_result)
+
+        job.quality_report = report
+        return report.model_dump()
+    except Exception as exc:
+        logger.error(
+            "api.assess_quality_failed",
+            video_id=video_id,
+            error=repr(exc),
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=f"Quality assessment failed: {exc}") from exc
 
 
 # ---- Document Endpoints ----

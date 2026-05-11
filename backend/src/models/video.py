@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -125,6 +126,22 @@ class ProcessingStatus(StrEnum):
     FAILED = "failed"
 
 
+class DataQualityReport(BaseModel):
+    """LLM-generated assessment of extraction data quality and grounding potential."""
+
+    quality_level: Literal["rich", "adequate", "thin", "minimal"]
+    transcript_assessment: str = Field(description="LLM assessment of transcript quality and coherence")
+    visual_assessment: str = Field(description="LLM assessment of visual evidence sufficiency")
+    coverage_gaps: list[str] = Field(default_factory=list, description="Areas with no extraction evidence")
+    warnings: list[str] = Field(default_factory=list, description="User-facing warnings about data quality")
+    recommendations: list[str] = Field(default_factory=list, description="Actionable suggestions to improve quality")
+    grounding_confidence: float = Field(
+        ge=0.0, le=1.0,
+        description="Overall confidence that extraction data can ground a full document",
+    )
+    raw_metrics: dict = Field(default_factory=dict, description="Deterministic counts for reference")
+
+
 class VideoJob(BaseModel):
     """Tracks the overall processing state of a video."""
 
@@ -144,4 +161,7 @@ class VideoJob(BaseModel):
     )
     document_id: str | None = Field(
         default=None, description="Document ID populated when pipeline completes"
+    )
+    quality_report: DataQualityReport | None = Field(
+        default=None, description="LLM-generated quality assessment of extraction data"
     )
