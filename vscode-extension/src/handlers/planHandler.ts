@@ -292,6 +292,89 @@ export async function handlePlan(
             return { metadata: { command: 'plan' } };
         }
 
+        // Step 9: Run extraction
+        stream.progress('Analyzing video content...');
+
+        try {
+            await client.extractVideo(videoId);
+        } catch (extractError) {
+            if (extractError instanceof BackendError) {
+                stream.markdown(`⚠️ **Extraction could not be started:** ${extractError.detail}\n\n`);
+            }
+        }
+
+        const extractProgressDisposable = client.connectProgress(videoId, (msg) => {
+            stream.progress(msg.detail || msg.stage);
+        });
+
+        let extractionComplete = false;
+        const extractStartTime = Date.now();
+        const extractTimeoutMs = 600000; // 10 minutes for extraction (includes transcription + vision)
+
+        while (!extractionComplete && Date.now() - extractStartTime < extractTimeoutMs) {
+            if (token.isCancellationRequested) {
+                extractProgressDisposable.dispose();
+                stateManager.setStage('idle');
+                return { metadata: { command: 'plan' } };
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            try {
+                const status = await client.getVideoStatus(videoId);
+                stream.progress(`${status.current_stage}`);
+
+                if (status.current_stage === 'extraction_complete') {
+                    extractionComplete = true;
+                } else if (status.status === 'failed') {
+                    stateManager.setStage('idle');
+                    stream.markdown('❌ **Extraction failed.** Please check the backend logs.');
+                    extractProgressDisposable.dispose();
+                    return { metadata: { command: 'plan' } };
+                }
+            } catch (pollError) {
+                if (pollError instanceof BackendError && pollError.statusCode === 404) {
+                    stateManager.setStage('idle');
+                    stream.markdown('❌ **Job not found.** The backend may have restarted. Please try `/plan` again.');
+                    extractProgressDisposable.dispose();
+                    return { metadata: { command: 'plan' } };
+                }
+            }
+        }
+
+        extractProgressDisposable.dispose();
+
+        if (!extractionComplete) {
+            stateManager.setStage('idle');
+            stream.markdown('⚠️ **Extraction timed out.** Use `/status` to check progress.');
+            return { metadata: { command: 'plan' } };
+        }
+
+        // Fetch extraction summary for display
+        let extractionInfo = '';
+        let finalStatus: Awaited<ReturnType<typeof client.getVideoStatus>> | null = null;
+        try {
+            finalStatus = await client.getVideoStatus(videoId);
+            if (finalStatus.extraction_summary) {
+                const es = finalStatus.extraction_summary;
+                extractionInfo =
+                    `| Transcript | ${es.transcript_segments} segment(s) |\n` +
+                    `| Scenes | ${es.scenes} detected |\n` +
+                    `| Keyframes | ${es.keyframes} captured |\n` +
+                    `| Vision analysis | ${es.has_vision_descriptions ? '✓' : '✗ (no descriptions)'} |\n`;
+            }
+        } catch {
+            // Non-fatal — just skip extraction info in summary
+        }
+
+        const thinDataWarning = (finalStatus?.extraction_summary &&
+            finalStatus.extraction_summary.transcript_segments === 0 &&
+            !finalStatus.extraction_summary.has_vision_descriptions)
+            ? '\n\n⚠️ **Limited extraction data:** No transcript was found and vision analysis produced no descriptions. ' +
+              'The video may be silent or the vision model may not be available. ' +
+              'Consider providing supplementary documentation to improve document quality.\n'
+            : '';
+
         // Step 10: Store state + show summary
         const metadata: DocumentMetadata = {
             author: author || '',
@@ -320,6 +403,7 @@ export async function handlePlan(
             `|-------|-------|\n` +
             `| Video | \`${videoPath}\` |\n` +
             `| Video ID | \`${videoId}\` |\n` +
+            extractionInfo +
             `| Type | ${docType} |\n` +
             `| Filename | ${desiredFilename ? `\`${desiredFilename}\`` : '_(auto-generated)_'} |\n` +
             `| Author | ${author || '_(not set)_'} |\n` +
@@ -327,7 +411,7 @@ export async function handlePlan(
             `| ms.service | ${msService || '_(not set)_'} |\n` +
             `| Customer intent | ${customerIntent || '_(not set)_'} |\n` +
             `| Reference docs | ${refDocsInfo} |\n\n` +
-            '📝 Use `/generate` to create the document with these settings.\n'
+            '📝 Use `/generate` to create the document with these settings.\n' + thinDataWarning
         );
 
     } catch (error) {

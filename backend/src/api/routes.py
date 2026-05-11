@@ -69,6 +69,7 @@ class StatusResponse(BaseModel):
     total_steps: int
     current_stage: str
     document_id: str | None = None
+    extraction_summary: dict | None = None
 
 
 class DocumentResponse(BaseModel):
@@ -202,23 +203,23 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
                 logger.warning("api.temp_cleanup_failed", path=source)
 
 
-async def _run_pipeline(
-    video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None,
-) -> None:
-    """Run the full pipeline in the background with per-stage progress updates."""
-    job = _video_jobs.get(video_id)
-    if job is None:
-        return
-
+async def _run_extraction(video_id: str) -> None:
+    """Run content extraction in the background and update the video job."""
+    job = _video_jobs[video_id]
     try:
-        settings = get_settings()
-        mode = ProcessingMode(settings.processing_mode)
-        client = create_llm_client(mode)
+        if job.current_stage not in ("ingestion_complete", "extraction_complete"):
+            raise RuntimeError(
+                f"Cannot extract: video job is at stage '{job.current_stage}', expected 'ingestion_complete'"
+            )
+
         job.status = ProcessingStatus.PROCESSING
         job.current_stage = "extracting"
         job.step = 2
         manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extracting transcript, scenes, and keyframes...")
 
+        settings = get_settings()
+        mode = ProcessingMode(settings.processing_mode)
+        client = create_llm_client(mode)
         extraction_agent = ExtractionAgent(foundry_client=client)
 
         # Reuse cached metadata from ingestion to avoid re-probing the video
@@ -232,10 +233,69 @@ async def _run_pipeline(
         extraction_result = await extraction_agent.process(video_metadata, mode)
 
         if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
-            raise RuntimeError("Extraction produced no transcript, scenes, or keyframes.")
+            logger.warning(
+                "api.extraction_empty",
+                video_id=video_id,
+                operation="extraction",
+                detail="Extraction produced no transcript, scenes, or keyframes",
+            )
 
         job.extraction_result = extraction_result
-        manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extraction complete ✓")
+        job.current_stage = "extraction_complete"
+        job.status = ProcessingStatus.QUEUED
+
+        logger.info("api.extraction_complete", video_id=video_id)
+        manager.send_progress(video_id, "extraction_complete", 2, 6, "Step 2/6: Extraction complete ✓")
+    except Exception as exc:
+        job.status = ProcessingStatus.FAILED
+        job.error_message = str(exc)
+        logger.error("api.extraction_failed", video_id=video_id, error=repr(exc), exc_info=True)
+        manager.send_progress(video_id, "failed", job.step, 6, str(exc))
+
+
+async def _run_pipeline(
+    video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None,
+) -> None:
+    """Run the full pipeline in the background with per-stage progress updates."""
+    job = _video_jobs.get(video_id)
+    if job is None:
+        return
+
+    try:
+        settings = get_settings()
+        mode = ProcessingMode(settings.processing_mode)
+        client = create_llm_client(mode)
+        job.status = ProcessingStatus.PROCESSING
+
+        # Check if extraction was already done (e.g., by /extract endpoint)
+        if job.extraction_result is not None:
+            extraction_result = job.extraction_result
+            logger.info("pipeline.using_cached_extraction", video_id=video_id)
+            manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Using cached extraction ✓")
+        else:
+            job.current_stage = "extracting"
+            job.step = 2
+            manager.send_progress(
+                video_id, "extracting", 2, 6, "Step 2/6: Extracting transcript, scenes, and keyframes...",
+            )
+
+            extraction_agent = ExtractionAgent(foundry_client=client)
+
+            # Reuse cached metadata from ingestion to avoid re-probing the video
+            if job.video_metadata is not None:
+                video_metadata = job.video_metadata
+            else:
+                ingestion_agent = IngestionAgent()
+                ingestion_result = await ingestion_agent.process(job.source_path or "", mode)
+                video_metadata = ingestion_result.metadata
+
+            extraction_result = await extraction_agent.process(video_metadata, mode)
+
+            if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
+                raise RuntimeError("Extraction produced no transcript, scenes, or keyframes.")
+
+            job.extraction_result = extraction_result
+            manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extraction complete ✓")
 
         # Step 3/6: Structure
         job.current_stage = "structuring"
@@ -372,6 +432,15 @@ async def get_video_status(video_id: str) -> StatusResponse:
     if job is None:
         raise HTTPException(status_code=404, detail=f"Video job '{video_id}' not found")
 
+    extraction_summary = None
+    if job.extraction_result is not None:
+        extraction_summary = {
+            "transcript_segments": len(job.extraction_result.transcript),
+            "scenes": len(job.extraction_result.scenes),
+            "keyframes": len(job.extraction_result.keyframes),
+            "has_vision_descriptions": any(kf.ui_description for kf in job.extraction_result.keyframes),
+        }
+
     return StatusResponse(
         video_id=job.video_id,
         status=job.status,
@@ -379,6 +448,34 @@ async def get_video_status(video_id: str) -> StatusResponse:
         total_steps=job.total_steps,
         current_stage=job.current_stage,
         document_id=job.document_id,
+        extraction_summary=extraction_summary,
+    )
+
+
+@router.post("/videos/{video_id}/extract", response_model=GenerateResponse)
+async def extract_video(video_id: str, background_tasks: BackgroundTasks) -> GenerateResponse:
+    """Trigger content extraction (transcript, scenes, keyframes) for an ingested video."""
+    job = _video_jobs.get(video_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Video job '{video_id}' not found")
+
+    if job.status == ProcessingStatus.FAILED:
+        raise HTTPException(status_code=400, detail=f"Video job '{video_id}' has failed: {job.error_message}")
+
+    # Allow re-extraction or first-time extraction
+    if job.current_stage not in ("ingestion_complete", "extraction_complete"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Video job '{video_id}' is not ready for extraction (stage: {job.current_stage})",
+        )
+
+    logger.info("api.extract", video_id=video_id)
+    background_tasks.add_task(_run_extraction, video_id)
+
+    return GenerateResponse(
+        document_id="pending",
+        status="queued",
+        message="Extraction queued.",
     )
 
 
@@ -407,10 +504,10 @@ async def generate_document(request: GenerateRequest, background_tasks: Backgrou
     if job.status == ProcessingStatus.FAILED:
         raise HTTPException(status_code=400, detail=f"Video job '{request.video_id}' has failed: {job.error_message}")
 
-    if job.current_stage != "ingestion_complete":
+    if job.current_stage not in ("ingestion_complete", "extraction_complete"):
         raise HTTPException(
             status_code=400,
-            detail=f"Video job '{request.video_id}' ingestion is not yet complete (stage: {job.current_stage})",
+            detail=f"Video job '{request.video_id}' is not ready for generation (stage: {job.current_stage})",
         )
 
     logger.info("api.generate", video_id=request.video_id, doc_type=request.doc_type)

@@ -15,6 +15,12 @@ export interface StatusResponse {
     total_steps: number;
     current_stage: string;
     document_id: string | null;
+    extraction_summary: {
+        transcript_segments: number;
+        scenes: number;
+        keyframes: number;
+        has_vision_descriptions: boolean;
+    } | null;
 }
 
 export interface GenerateResponse {
@@ -105,6 +111,10 @@ export class BackendClient {
 
     async getVideoStatus(videoId: string): Promise<StatusResponse> {
         return this.get<StatusResponse>(`/videos/${videoId}/status`);
+    }
+
+    async extractVideo(videoId: string): Promise<GenerateResponse> {
+        return this.post<GenerateResponse>(`/videos/${videoId}/extract`, {});
     }
 
     async getExtractionResults(videoId: string): Promise<Record<string, unknown>> {

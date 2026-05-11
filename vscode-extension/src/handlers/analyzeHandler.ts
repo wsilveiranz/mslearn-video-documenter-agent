@@ -124,19 +124,101 @@ export async function handleAnalyze(
             return { metadata: { command: 'analyze' } };
         }
 
-        // 9. Ingestion complete — update state
+        // Step 3: Run extraction
+        stream.progress('Analyzing video content...');
+
+        try {
+            await client.extractVideo(videoId);
+        } catch (extractError) {
+            if (extractError instanceof BackendError) {
+                stream.markdown(`⚠️ **Extraction could not be started:** ${extractError.detail}\n\n`);
+            }
+        }
+
+        const extractProgressDisposable = client.connectProgress(videoId, (msg) => {
+            stream.progress(msg.detail || msg.stage);
+        });
+
+        let extractionComplete = false;
+        const extractStartTime = Date.now();
+        const extractTimeoutMs = 600000; // 10 minutes
+
+        while (!extractionComplete && Date.now() - extractStartTime < extractTimeoutMs) {
+            if (token.isCancellationRequested) {
+                extractProgressDisposable.dispose();
+                stateManager.setStage('idle');
+                return { metadata: { command: 'analyze' } };
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            try {
+                const status = await client.getVideoStatus(videoId);
+                stream.progress(`${status.current_stage}`);
+
+                if (status.current_stage === 'extraction_complete') {
+                    extractionComplete = true;
+                } else if (status.status === 'failed') {
+                    stateManager.setStage('idle');
+                    stream.markdown('❌ **Extraction failed.** Please check the backend logs.');
+                    extractProgressDisposable.dispose();
+                    return { metadata: { command: 'analyze' } };
+                }
+            } catch (pollError) {
+                if (pollError instanceof BackendError && pollError.statusCode === 404) {
+                    stateManager.setStage('idle');
+                    stream.markdown('❌ **Job not found.** The backend may have restarted. Please try `/analyze` again.');
+                    extractProgressDisposable.dispose();
+                    return { metadata: { command: 'analyze' } };
+                }
+            }
+        }
+
+        extractProgressDisposable.dispose();
+
+        if (!extractionComplete) {
+            stateManager.setStage('idle');
+            stream.markdown('⚠️ **Extraction timed out.** Use `/status` to check progress.');
+            return { metadata: { command: 'analyze' } };
+        }
+
+        // Ingestion + Extraction complete — update state
         stateManager.setStage('analyzed');
 
-        // 10. Show success message
+        // Fetch extraction summary
+        let extractionRows = '';
+        let thinDataWarning = '';
+        try {
+            const finalStatus = await client.getVideoStatus(videoId);
+            if (finalStatus.extraction_summary) {
+                const es = finalStatus.extraction_summary;
+                extractionRows = 
+                    `| Transcript | ${es.transcript_segments} segment(s) |\n` +
+                    `| Scenes | ${es.scenes} detected |\n` +
+                    `| Keyframes | ${es.keyframes} captured |\n` +
+                    `| Vision analysis | ${es.has_vision_descriptions ? '✓' : '✗ (no descriptions)'} |\n`;
+                
+                if (es.transcript_segments === 0 && !es.has_vision_descriptions) {
+                    thinDataWarning = '\n⚠️ **Limited extraction data:** No transcript was found and vision analysis produced no descriptions. ' +
+                        'Consider using `/plan` to provide supplementary documentation for better results.\n';
+                }
+            }
+        } catch {
+            // Non-fatal
+        }
+
         stream.markdown(
             `✅ **Video analyzed successfully!**\n\n` +
             `| Field | Value |\n` +
             `|-------|-------|\n` +
             `| Video | \`${videoPath}\` |\n` +
-            `| Video ID | \`${videoId}\` |\n\n` +
+            `| Video ID | \`${videoId}\` |\n` +
+            extractionRows +
+            `\n` +
             `📝 Ready to generate documentation. Choose a document type:\n\n` +
             '```\n@video-documenter /generate\n```\n\n' +
-            'Available types: **Quickstart**, **Tutorial**, **How-to**, **Concept**, **Overview**'
+            'Available types: **Quickstart**, **Tutorial**, **How-to**, **Concept**, **Overview**' +
+            thinDataWarning
         );
 
     } catch (error) {
