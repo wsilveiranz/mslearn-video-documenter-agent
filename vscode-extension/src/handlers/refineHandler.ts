@@ -70,21 +70,24 @@ export async function handleRefine(
             stateManager.setStage('generated');
 
             // Update the workspace file with refined content
+            let savedPath: string | undefined;
             try {
-                await outputManager.updateDocument(state.currentDocumentId!, doc.markdown_content);
+                const savedUri = await outputManager.updateDocument(state.currentDocumentId!, doc.markdown_content);
+                savedPath = savedUri.fsPath;
             } catch {
                 // Non-fatal — file may not exist yet if user skipped /generate
             }
 
-            stream.markdown(
+            const summary =
                 `✅ **Document refined** (revision ${doc.revision_number})\n\n` +
-                `**Word count:** ${doc.word_count}\n\n` +
-                '---\n\n' +
-                doc.markdown_content.substring(0, 2000) +
-                (doc.markdown_content.length > 2000
-                    ? '\n\n*... (truncated in chat — full document saved to workspace)*'
-                    : '')
-            );
+                `| Field | Value |\n` +
+                `|-------|-------|\n` +
+                `| Word count | ${doc.word_count} |\n` +
+                `| Revision | ${doc.revision_number} |\n` +
+                (savedPath ? `| Saved to | \`${savedPath}\` |\n` : '') +
+                '\n💡 Check the updated document in the editor. Use `/refine` again for further changes.\n';
+
+            stream.markdown(summary);
         } else {
             stateManager.setStage('generated');
             stream.markdown(
