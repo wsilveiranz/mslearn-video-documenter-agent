@@ -11,7 +11,7 @@ from azure.identity import DefaultAzureCredential
 from pydantic import BaseModel, Field
 
 from src.config import get_settings
-from src.models.document import DocType
+from src.models.document import DocType, DocumentMetadata
 from src.models.video import ExtractionResult, ProcessingMode
 from src.services.copilot_client import create_copilot_client
 
@@ -41,6 +41,9 @@ class PipelineInput(BaseModel):
     )
     supplementary_context: str = Field(
         default="", description="Additional context (README, API specs, etc.)"
+    )
+    metadata: DocumentMetadata | None = Field(
+        default=None, description="User-provided frontmatter metadata"
     )
 
 
@@ -150,7 +153,7 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
     # Stage 3: Structure
     logger.info("pipeline.stage", stage="structure")
     structure_agent = StructureAgent(client)
-    outline = await structure_agent.process(extraction_result, request.doc_type, request.supplementary_context)
+    outline = await structure_agent.process(extraction_result, request.doc_type, request.supplementary_context, request.metadata)
 
     # Stage 4: Writer
     logger.info("pipeline.stage", stage="writer")

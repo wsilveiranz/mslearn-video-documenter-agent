@@ -21,7 +21,7 @@ from src.agents.structure import StructureAgent
 from src.agents.writer import WriterAgent
 from src.api.websocket import manager
 from src.config import get_settings
-from src.models.document import DocType
+from src.models.document import DocType, DocumentMetadata
 from src.models.services import AZURE_SERVICES
 from src.models.video import ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
 
@@ -49,6 +49,7 @@ class GenerateRequest(BaseModel):
     video_id: str
     doc_type: DocType
     supplementary_context: str = ""
+    metadata: DocumentMetadata | None = None
 
 
 class GenerateResponse(BaseModel):
@@ -201,7 +202,7 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
                 logger.warning("api.temp_cleanup_failed", path=source)
 
 
-async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context: str) -> None:
+async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None) -> None:
     """Run the full pipeline in the background with per-stage progress updates."""
     job = _video_jobs.get(video_id)
     if job is None:
@@ -240,7 +241,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
         manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Creating document outline...")
 
         structure_agent = StructureAgent(client)
-        outline = await structure_agent.process(extraction_result, doc_type, supplementary_context)
+        outline = await structure_agent.process(extraction_result, doc_type, supplementary_context, metadata)
 
         manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Outline ready ✓")
 
@@ -413,7 +414,7 @@ async def generate_document(request: GenerateRequest, background_tasks: Backgrou
     logger.info("api.generate", video_id=request.video_id, doc_type=request.doc_type)
 
     background_tasks.add_task(
-        _run_pipeline, request.video_id, request.doc_type, request.supplementary_context
+        _run_pipeline, request.video_id, request.doc_type, request.supplementary_context, request.metadata
     )
 
     return GenerateResponse(

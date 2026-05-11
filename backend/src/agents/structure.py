@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import structlog
 from agent_framework import Agent
 
-from src.models.document import DocType, DocumentOutline, DocumentSection, Frontmatter, Screenshot
+from src.models.document import DocType, DocumentMetadata, DocumentOutline, DocumentSection, Frontmatter, Screenshot
 
 if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
@@ -47,7 +47,11 @@ class StructureAgent:
             logger.warning("structure.prompt_not_found", path=str(prompt_path))
 
     async def process(
-        self, extraction: ExtractionResult, doc_type: DocType, supplementary_context: str = ""
+        self,
+        extraction: ExtractionResult,
+        doc_type: DocType,
+        supplementary_context: str = "",
+        metadata: DocumentMetadata | None = None,
     ) -> DocumentOutline:
         """Create a document outline from extraction results.
 
@@ -55,13 +59,14 @@ class StructureAgent:
             extraction: Structured data extracted from the video.
             doc_type: The MS Learn document type to generate.
             supplementary_context: Additional context from user (README, API specs, etc.).
+            metadata: Optional user-provided frontmatter values (author, ms_author, etc.).
 
         Returns:
             DocumentOutline with sections, screenshots, and frontmatter skeleton.
         """
         logger.info("structure.start", doc_type=doc_type, scenes=len(extraction.scenes))
 
-        user_message = self._build_user_message(extraction, doc_type, supplementary_context)
+        user_message = self._build_user_message(extraction, doc_type, supplementary_context, metadata)
 
         agent = Agent(
             client=self._client,
@@ -71,7 +76,7 @@ class StructureAgent:
 
         response_text = await self._run_agent(agent, user_message)
 
-        outline = self._parse_outline(response_text, extraction, doc_type)
+        outline = self._parse_outline(response_text, extraction, doc_type, metadata)
         outline = self._attach_screenshots(outline, extraction)
 
         logger.info(
@@ -87,7 +92,11 @@ class StructureAgent:
     # ------------------------------------------------------------------
 
     def _build_user_message(
-        self, extraction: ExtractionResult, doc_type: DocType, supplementary_context: str
+        self,
+        extraction: ExtractionResult,
+        doc_type: DocType,
+        supplementary_context: str,
+        metadata: DocumentMetadata | None = None,
     ) -> str:
         """Build the user message summarising the extraction data for the LLM."""
         transcript_text = " ".join(seg.text for seg in extraction.transcript)
@@ -125,6 +134,19 @@ class StructureAgent:
 
         if supplementary_context:
             parts.append(f"## Supplementary context\n{supplementary_context}")
+
+        if metadata:
+            meta_parts = []
+            if metadata.author:
+                meta_parts.append(f"- author: {metadata.author}")
+            if metadata.ms_author:
+                meta_parts.append(f"- ms_author: {metadata.ms_author}")
+            if metadata.ms_service:
+                meta_parts.append(f"- ms_service: {metadata.ms_service}")
+            if metadata.customer_intent:
+                meta_parts.append(f"- customer_intent: {metadata.customer_intent}")
+            if meta_parts:
+                parts.append("## User-provided metadata\n" + "\n".join(meta_parts))
 
         parts.append(
             "## Required output\n"
@@ -165,7 +187,8 @@ class StructureAgent:
         return json.loads(text.strip())
 
     def _parse_outline(
-        self, response_text: str, extraction: ExtractionResult, doc_type: DocType
+        self, response_text: str, extraction: ExtractionResult, doc_type: DocType,
+        metadata: DocumentMetadata | None = None,
     ) -> DocumentOutline:
         """Parse the LLM JSON response into a DocumentOutline."""
         try:
@@ -176,7 +199,7 @@ class StructureAgent:
                 operation="parse_outline",
                 error=str(exc),
             )
-            return self._minimal_outline(doc_type)
+            return self._minimal_outline(doc_type, metadata)
 
         try:
             title = data.get("title", f"{doc_type.value.capitalize()} article")
@@ -195,6 +218,17 @@ class StructureAgent:
                 ms_date=datetime.now().strftime("%m/%d/%Y"),
                 ai_usage="ai-assisted",
             )
+
+            # Override with user-provided metadata when available
+            if metadata:
+                if metadata.author:
+                    frontmatter.author = metadata.author
+                if metadata.ms_author:
+                    frontmatter.ms_author = metadata.ms_author
+                if metadata.ms_service:
+                    frontmatter.ms_service = metadata.ms_service
+                if metadata.customer_intent:
+                    frontmatter.customer_intent = metadata.customer_intent
 
             sections: list[DocumentSection] = []
             for raw_section in data.get("sections", []):
@@ -243,21 +277,31 @@ class StructureAgent:
                 operation="parse_outline",
                 error=str(exc),
             )
-            return self._minimal_outline(doc_type)
+            return self._minimal_outline(doc_type, metadata)
 
-    def _minimal_outline(self, doc_type: DocType) -> DocumentOutline:
+    def _minimal_outline(self, doc_type: DocType, metadata: DocumentMetadata | None = None) -> DocumentOutline:
         """Return a minimal fallback outline when LLM response cannot be parsed."""
         logger.warning("structure.using_minimal_fallback", operation="minimal_outline", doc_type=doc_type)
         ms_topic = _MS_TOPIC_MAP.get(doc_type, doc_type.value)
+        frontmatter = Frontmatter(
+            title=f"{doc_type.value.capitalize()} article",
+            description=f"A {doc_type.value} article generated from video content.",
+            ms_topic=ms_topic,
+            ms_date=datetime.now().strftime("%m/%d/%Y"),
+            ai_usage="ai-assisted",
+        )
+        if metadata:
+            if metadata.author:
+                frontmatter.author = metadata.author
+            if metadata.ms_author:
+                frontmatter.ms_author = metadata.ms_author
+            if metadata.ms_service:
+                frontmatter.ms_service = metadata.ms_service
+            if metadata.customer_intent:
+                frontmatter.customer_intent = metadata.customer_intent
         return DocumentOutline(
             doc_type=doc_type,
-            frontmatter=Frontmatter(
-                title=f"{doc_type.value.capitalize()} article",
-                description=f"A {doc_type.value} article generated from video content.",
-                ms_topic=ms_topic,
-                ms_date=datetime.now().strftime("%m/%d/%Y"),
-                ai_usage="ai-assisted",
-            ),
+            frontmatter=frontmatter,
             sections=[
                 DocumentSection(heading="Introduction", level=2, content_hint="Overview of the topic"),
                 DocumentSection(heading="Prerequisites", level=2, content_hint="What you need before starting"),
