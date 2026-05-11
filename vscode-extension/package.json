@@ -100,6 +100,16 @@
           "type": "string",
           "default": "",
           "description": "Path to the backend directory. Leave empty to auto-detect from the monorepo layout (backend/ next to vscode-extension/)."
+        },
+        "video-documenter.author": {
+          "type": "string",
+          "default": "",
+          "description": "Default GitHub username for the document author (pre-fills in /plan)"
+        },
+        "video-documenter.msAuthor": {
+          "type": "string",
+          "default": "",
+          "description": "Default Microsoft alias for ms.author (pre-fills in /plan)"
         }
       }
     }
