@@ -62,9 +62,14 @@ export class BackendProcessManager implements vscode.Disposable {
     private _process: ChildProcess | undefined;
     private _externalProcess = false;
     private _outputChannel: vscode.OutputChannel;
+    private _exitHandler: (() => void) | undefined;
 
     constructor() {
         this._outputChannel = vscode.window.createOutputChannel('Video Documenter Backend');
+
+        // Safety net: synchronously kill child process on extension host exit
+        this._exitHandler = () => this._killSync();
+        process.on('exit', this._exitHandler);
     }
 
     /**
@@ -140,6 +145,23 @@ export class BackendProcessManager implements vscode.Disposable {
             const reason = signal ? `signal ${signal}` : `exit code ${code ?? 'unknown'}`;
             this._outputChannel.appendLine(`[BackendProcessManager] Backend process exited (${reason}).`);
             this._process = undefined;
+
+            // Notify user on unexpected exit (non-zero code, not killed by us)
+            if (code !== null && code !== 0) {
+                void vscode.window
+                    .showWarningMessage(
+                        `Video Documenter: Backend exited unexpectedly (${reason}).`,
+                        'Open Output',
+                        'Restart',
+                    )
+                    .then((action) => {
+                        if (action === 'Open Output') {
+                            this._outputChannel.show();
+                        } else if (action === 'Restart') {
+                            void this.start(backendPath, port, host);
+                        }
+                    });
+            }
         });
 
         this._process = child;
@@ -201,11 +223,45 @@ export class BackendProcessManager implements vscode.Disposable {
 
     /** Dispose the manager — stops the backend and cleans up the output channel. */
     dispose(): void {
-        void this.stop();
+        // Remove the process.exit safety-net listener
+        if (this._exitHandler) {
+            process.removeListener('exit', this._exitHandler);
+            this._exitHandler = undefined;
+        }
+
+        // Synchronously kill child to guarantee cleanup during VS Code shutdown
+        this._killSync();
         this._outputChannel.dispose();
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
+
+    /**
+     * Synchronously kill the managed child process and its tree.
+     * Used in `dispose()` and `process.on('exit')` where async work is unreliable.
+     */
+    private _killSync(): void {
+        const child = this._process;
+        if (!child || child.killed) {
+            this._process = undefined;
+            return;
+        }
+
+        const pid = child.pid;
+        this._outputChannel.appendLine(
+            `[BackendProcessManager] Killing backend process tree (PID ${pid ?? '?'})…`,
+        );
+
+        child.kill();
+        if (pid !== undefined && process.platform === 'win32') {
+            try {
+                execSync(`taskkill /T /F /PID ${pid}`, { stdio: 'ignore' });
+            } catch {
+                // Process may have already exited
+            }
+        }
+        this._process = undefined;
+    }
 
     /** Probe the health endpoint. Returns `true` when the backend responds 200. */
     private async isHealthy(host: string, port: number): Promise<boolean> {

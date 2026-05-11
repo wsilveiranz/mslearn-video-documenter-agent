@@ -225,5 +225,19 @@ describe('BackendProcessManager', () => {
 
             assert.strictEqual(disposed, true);
         });
+
+        it('should kill managed process synchronously on dispose', async () => {
+            const mockChild = new MockChildProcess();
+            pythonOnPath();
+            __setSpawn(() => mockChild);
+
+            await manager.start('/backend', 8000);
+            assert.strictEqual(manager.isRunning(), true);
+
+            manager.dispose();
+
+            assert.strictEqual(mockChild.killed, true);
+            assert.strictEqual(manager.isRunning(), false);
+        });
     });
 });
