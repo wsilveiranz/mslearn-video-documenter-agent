@@ -85,13 +85,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
                 // Notify backend of the proxy URL only after health is confirmed
                 if (backendHealthy || !getAutoStartBackend()) {
-                    fetch(`${backendUrl}/api/v1/config/lm-proxy`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ proxy_url: `http://localhost:${proxyPort}`, proxy_secret: lmProxyServer.getSecret() }),
-                    }).catch(err => {
+                    try {
+                        const handshakeRes = await fetch(`${backendUrl}/api/v1/config/lm-proxy`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ proxy_url: `http://localhost:${proxyPort}`, proxy_secret: lmProxyServer.getSecret() }),
+                        });
+                        if (!handshakeRes.ok) {
+                            console.warn(`[video-documenter] LM proxy handshake returned HTTP ${handshakeRes.status} — local-mode calls may not work`);
+                        }
+                    } catch (err) {
                         console.warn('[video-documenter] Failed to notify backend of LM Proxy:', err);
-                    });
+                    }
                 }
             } catch (err) {
                 console.warn('[video-documenter] LM Proxy failed to start:', err);
@@ -107,6 +112,11 @@ export async function activate(context: vscode.ExtensionContext) {
         console.log('[video-documenter] Extension activated successfully');
     } catch (error) {
         console.error('[video-documenter] Activation failed:', error);
+        // Clean up stray backend process if activation fails after startup
+        if (backendManager) {
+            await backendManager.stop();
+            backendManager = undefined;
+        }
         throw error;
     }
 }
