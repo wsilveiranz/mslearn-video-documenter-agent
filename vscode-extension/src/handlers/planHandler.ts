@@ -2,8 +2,49 @@ import * as vscode from 'vscode';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager, DocumentMetadata } from '../utils/conversationState';
 import { detectVideoPath } from '../utils/fileDetection';
-import { DOC_TYPES } from '../constants/docTypes';
+import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { AZURE_SERVICE_ITEMS, AzureServiceItem } from '../constants/azureServices';
+
+/**
+ * Attempt to detect a doc type from the user's prompt text.
+ * Returns the matched value (e.g., 'tutorial') or undefined.
+ */
+function detectDocType(prompt: string): string | undefined {
+    const lower = prompt.toLowerCase().trim();
+    for (const dt of DOC_TYPE_PATTERNS) {
+        if (dt.patterns.some(p => p.test(lower))) {
+            return dt.value;
+        }
+    }
+    return fuzzyMatchDocType(lower);
+}
+
+/**
+ * Attempt to detect an ms.service slug from the user's prompt text
+ * by matching against known service slugs and display names.
+ */
+function detectService(prompt: string): string | undefined {
+    const lower = prompt.toLowerCase();
+    // Check service slugs and display names (skip the last "Other" entry)
+    for (const item of AZURE_SERVICE_ITEMS) {
+        if (!item.value) { continue; } // skip "Other"
+        if (lower.includes(item.value)) { return item.value; }
+        // Also match display name without the emoji prefix
+        const displayLower = item.label.replace(/^[^\w]+/, '').toLowerCase().trim();
+        if (displayLower && lower.includes(displayLower)) { return item.value; }
+    }
+    return undefined;
+}
+
+/**
+ * Attempt to detect a desired output filename (*.md) from the prompt.
+ */
+function detectFilename(prompt: string): string | undefined {
+    const match = prompt.match(
+        /(?:use|save\s+(?:as|to)|file\s*name\s*(?:should\s+be)?|name\s+(?:it|the\s+file))\s+(\S+\.md)\b/i
+    ) ?? prompt.match(/\b([\w-]+\.md)\b/i);
+    return match ? match[1].replace(/^["']+|["']+$/g, '') : undefined;
+}
 
 export async function handlePlan(
     request: vscode.ChatRequest,
@@ -12,10 +53,12 @@ export async function handlePlan(
     client: BackendClient,
     stateManager: ConversationStateManager
 ): Promise<vscode.ChatResult> {
+    const promptText = request.prompt;
+
     // Step 1: Video file
     stream.markdown('📋 **Let\'s plan your documentation!**\n\n');
 
-    let videoPath = detectVideoPath(request.prompt);
+    let videoPath = detectVideoPath(promptText);
 
     if (!videoPath) {
         const result = await vscode.window.showOpenDialog({
@@ -35,20 +78,41 @@ export async function handlePlan(
         return { metadata: { command: 'plan' } };
     }
 
-    // Step 2: Document type
+    // Step 2: Document type — try to infer from prompt, fall back to picker
     if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
 
-    const docTypeSelection = await vscode.window.showQuickPick(
-        DOC_TYPES.map(dt => ({ label: dt.label, description: dt.description, value: dt.value })),
-        { placeHolder: 'What type of MS Learn document should I generate?', title: 'Document Type' }
-    );
-    if (!docTypeSelection) {
-        stream.markdown('📝 Planning cancelled.');
-        return { metadata: { command: 'plan' } };
+    let docType = detectDocType(promptText);
+    if (!docType) {
+        const docTypeSelection = await vscode.window.showQuickPick(
+            DOC_TYPES.map(dt => ({ label: dt.label, description: dt.description, value: dt.value })),
+            { placeHolder: 'What type of MS Learn document should I generate?', title: 'Document Type' }
+        );
+        if (!docTypeSelection) {
+            stream.markdown('📝 Planning cancelled.');
+            return { metadata: { command: 'plan' } };
+        }
+        docType = (docTypeSelection as { value: string }).value;
     }
-    const docType = (docTypeSelection as { value: string }).value;
 
-    // Step 3: Author (GitHub ID)
+    // Step 3: Output filename
+    if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
+
+    let desiredFilename = detectFilename(promptText);
+    if (!desiredFilename) {
+        desiredFilename = await vscode.window.showInputBox({
+            prompt: 'Output filename for the generated document (e.g., deploy-web-app.md)',
+            placeHolder: 'my-article.md',
+            title: 'Output Filename',
+            validateInput: (value) => {
+                if (value && !value.endsWith('.md')) {
+                    return 'Filename must end with .md';
+                }
+                return undefined;
+            },
+        }) ?? '';
+    }
+
+    // Step 4: Author (GitHub ID)
     if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
 
     const config = vscode.workspace.getConfiguration('video-documenter');
@@ -65,7 +129,7 @@ export async function handlePlan(
         return { metadata: { command: 'plan' } };
     }
 
-    // Step 4: MS Author (Microsoft alias)
+    // Step 5: MS Author (Microsoft alias)
     if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
 
     const defaultMsAuthor = config.get<string>('msAuthor', '');
@@ -81,36 +145,39 @@ export async function handlePlan(
         return { metadata: { command: 'plan' } };
     }
 
-    // Step 5: MS Service (from list)
+    // Step 6: MS Service — try to infer from prompt, fall back to picker
     if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
 
-    const serviceSelection = await vscode.window.showQuickPick(AZURE_SERVICE_ITEMS, {
-        placeHolder: 'Which Azure service does this document cover?',
-        title: 'Azure Service (ms.service)',
-        matchOnDescription: true,
-        matchOnDetail: true,
-    });
-    if (!serviceSelection) {
-        stream.markdown('📝 Planning cancelled.');
-        return { metadata: { command: 'plan' } };
-    }
-
-    let msService = (serviceSelection as AzureServiceItem).value;
-
+    let msService = detectService(promptText);
     if (!msService) {
-        const customService = await vscode.window.showInputBox({
-            prompt: 'Enter a custom ms.service slug (e.g., azure-my-service)',
-            placeHolder: 'azure-service-name',
-            title: 'Custom Service Slug',
+        const serviceSelection = await vscode.window.showQuickPick(AZURE_SERVICE_ITEMS, {
+            placeHolder: 'Which Azure service does this document cover?',
+            title: 'Azure Service (ms.service)',
+            matchOnDescription: true,
+            matchOnDetail: true,
         });
-        if (customService === undefined) {
+        if (!serviceSelection) {
             stream.markdown('📝 Planning cancelled.');
             return { metadata: { command: 'plan' } };
         }
-        msService = customService;
+
+        msService = (serviceSelection as AzureServiceItem).value;
+
+        if (!msService) {
+            const customService = await vscode.window.showInputBox({
+                prompt: 'Enter a custom ms.service slug (e.g., azure-my-service)',
+                placeHolder: 'azure-service-name',
+                title: 'Custom Service Slug',
+            });
+            if (customService === undefined) {
+                stream.markdown('📝 Planning cancelled.');
+                return { metadata: { command: 'plan' } };
+            }
+            msService = customService;
+        }
     }
 
-    // Step 6: Customer intent (optional)
+    // Step 7: Customer intent (optional)
     if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
 
     const customerIntent = await vscode.window.showInputBox({
@@ -225,7 +292,7 @@ export async function handlePlan(
             return { metadata: { command: 'plan' } };
         }
 
-        // Step 9: Store state + show summary
+        // Step 10: Store state + show summary
         const metadata: DocumentMetadata = {
             author: author || '',
             msAuthor: msAuthor || '',
@@ -236,6 +303,10 @@ export async function handlePlan(
         stateManager.setMetadata(metadata);
         stateManager.setDocType(docType);
         stateManager.setStage('planned');
+
+        if (desiredFilename) {
+            stateManager.setSavedFilename(desiredFilename);
+        }
 
         if (supplementaryContext) {
             stateManager.setSupplementaryContext(supplementaryContext);
@@ -250,6 +321,7 @@ export async function handlePlan(
             `| Video | \`${videoPath}\` |\n` +
             `| Video ID | \`${videoId}\` |\n` +
             `| Type | ${docType} |\n` +
+            `| Filename | ${desiredFilename ? `\`${desiredFilename}\`` : '_(auto-generated)_'} |\n` +
             `| Author | ${author || '_(not set)_'} |\n` +
             `| ms.author | ${msAuthor || '_(not set)_'} |\n` +
             `| ms.service | ${msService || '_(not set)_'} |\n` +
