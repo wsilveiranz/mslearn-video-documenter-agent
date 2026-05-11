@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
-import { OutputManager } from '../utils/outputManager';
+import { OutputManager, sanitizeFilename } from '../utils/outputManager';
 
 const DOC_TYPES = [
     { label: '📘 Tutorial', value: 'tutorial', description: 'Step-by-step learning exercise with checklist' },
@@ -171,7 +171,7 @@ export async function handleGenerate(
                 [],
                 desiredFilename,
             );
-            stateManager.setSavedFilename(desiredFilename ?? `${documentId}.md`);
+            stateManager.setSavedFilename(desiredFilename ? sanitizeFilename(desiredFilename) : `${documentId}.md`);
             stream.markdown(
                 `✅ **${docType.charAt(0).toUpperCase() + docType.slice(1)} document generated!**\n\n` +
                 `| Field | Value |\n` +

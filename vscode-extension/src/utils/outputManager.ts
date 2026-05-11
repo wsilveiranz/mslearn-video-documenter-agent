@@ -143,7 +143,7 @@ export class OutputManager {
         // Ensure output directory exists (may have been removed since initial save)
         await vscode.workspace.fs.createDirectory(baseDirUri);
 
-        const mdFileName = filename ?? `${documentId}.md`;
+        const mdFileName = filename ? sanitizeFilename(filename) : `${documentId}.md`;
         const mdFileUri = vscode.Uri.joinPath(baseDirUri, mdFileName);
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
         return mdFileUri;
