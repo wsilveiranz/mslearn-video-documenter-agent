@@ -61,6 +61,7 @@ async function findPythonInterpreter(): Promise<string> {
 export class BackendProcessManager implements vscode.Disposable {
     private _process: ChildProcess | undefined;
     private _externalProcess = false;
+    private _stopping = false;
     private _outputChannel: vscode.OutputChannel;
     private _exitHandler: (() => void) | undefined;
 
@@ -78,6 +79,8 @@ export class BackendProcessManager implements vscode.Disposable {
      */
     async start(backendPath: string, port: number, host?: string): Promise<void> {
         const resolvedHost = host ?? '127.0.0.1';
+
+        this._stopping = false;
 
         if (this._process || this._externalProcess) {
             this._outputChannel.appendLine('[BackendProcessManager] Backend is already running.');
@@ -144,8 +147,14 @@ export class BackendProcessManager implements vscode.Disposable {
 
         child.on('exit', (code, signal) => {
             const reason = signal ? `signal ${signal}` : `exit code ${code ?? 'unknown'}`;
-            this._outputChannel.appendLine(`[BackendProcessManager] Backend process exited (${reason}).`);
             this._process = undefined;
+
+            if (this._stopping) {
+                this._outputChannel.appendLine('[BackendProcessManager] Backend stopped.');
+                return;
+            }
+
+            this._outputChannel.appendLine(`[BackendProcessManager] Backend process exited (${reason}).`);
 
             // Notify user on unexpected exit (non-zero code, not killed by us)
             if (code !== null && code !== 0) {
@@ -183,6 +192,8 @@ export class BackendProcessManager implements vscode.Disposable {
             this._process = undefined;
             return;
         }
+
+        this._stopping = true;
 
         const pid = child.pid;
         this._outputChannel.appendLine(`[BackendProcessManager] Stopping backend (PID ${pid ?? '?'})…`);
@@ -230,6 +241,7 @@ export class BackendProcessManager implements vscode.Disposable {
             this._exitHandler = undefined;
         }
 
+        this._stopping = true;
         // Synchronously kill child to guarantee cleanup during VS Code shutdown
         this._killSync();
         this._outputChannel.dispose();
@@ -249,12 +261,13 @@ export class BackendProcessManager implements vscode.Disposable {
         }
 
         const pid = child.pid;
+        const isWin = process.platform === 'win32';
         this._outputChannel.appendLine(
-            `[BackendProcessManager] Killing backend process tree (PID ${pid ?? '?'})…`,
+            `[BackendProcessManager] Killing backend ${isWin ? 'process tree' : 'process'} (PID ${pid ?? '?'})…`,
         );
 
         child.kill();
-        if (pid !== undefined && process.platform === 'win32') {
+        if (pid !== undefined && isWin) {
             try {
                 execSync(`taskkill /T /F /PID ${pid}`, { stdio: 'ignore' });
             } catch {
