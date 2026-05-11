@@ -444,7 +444,7 @@ When the extension activates, it orchestrates the full startup sequence:
 
 1. **Register chat participant** — `@video-documenter` becomes available immediately
 2. **Start Python backend** — spawns `python -m src.main` as a child process (if `autoStartBackend` is enabled)
-3. **Health check** — polls `GET /health` every 500ms until the backend responds (30s timeout)
+3. **Health check** — polls `GET /api/v1/health` every 500ms until the backend responds (30s timeout)
 4. **Start LM Proxy** — creates an OpenAI-compatible HTTP server backed by Copilot models
 5. **Connect** — notifies the backend of the LM Proxy URL via `POST /api/v1/config/lm-proxy`
 

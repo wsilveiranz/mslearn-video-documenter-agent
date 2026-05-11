@@ -369,7 +369,9 @@ Expected response:
 ```json
 {
   "status": "ok",
-  "models": ["copilot-gpt-4o", ...]
+  "models": [
+    { "id": "gpt-4o", "name": "GPT-4o", "family": "gpt-4o", "vendor": "copilot" }
+  ]
 }
 ```
 
