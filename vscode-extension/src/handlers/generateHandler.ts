@@ -3,6 +3,7 @@ import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager, sanitizeFilename } from '../utils/outputManager';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
+import { BackendMetadata } from '../api/backendClient';
 
 export async function handleGenerate(
     request: vscode.ChatRequest,
@@ -15,7 +16,7 @@ export async function handleGenerate(
     const state = stateManager.getState();
 
     // 1. Check that a video has been analyzed
-    if (!state.currentVideoId || (state.currentStage !== 'analyzed' && state.currentStage !== 'generated')) {
+    if (!state.currentVideoId || (state.currentStage !== 'analyzed' && state.currentStage !== 'generated' && state.currentStage !== 'planned')) {
         stream.markdown(
             '📝 No analyzed video found. Please analyze a video first:\n\n' +
             '```\n@video-documenter /analyze C:\\path\\to\\video.mp4\n```'
@@ -23,42 +24,48 @@ export async function handleGenerate(
         return { metadata: { command: 'generate' } };
     }
 
-    // 2. Determine doc type — check if specified in prompt, otherwise show QuickPick
+    // 2. Determine doc type — use pre-selected type from /plan, or detect/prompt
     let docType: string | undefined;
-    const promptLower = request.prompt.toLowerCase().trim();
 
-    // Try to detect doc type from prompt text (flexible matching)
-    for (const dt of DOC_TYPE_PATTERNS) {
-        if (dt.patterns.some(p => p.test(promptLower))) {
-            docType = dt.value;
-            break;
-        }
-    }
+    if (state.currentStage === 'planned' && state.lastDocType) {
+        // Coming from /plan — use the already-selected doc type, skip picker
+        docType = state.lastDocType;
+    } else {
+        const promptLower = request.prompt.toLowerCase().trim();
 
-    if (!docType) {
-        docType = fuzzyMatchDocType(promptLower);
-    }
-
-    if (!docType) {
-        // Show QuickPick for doc type selection
-        const selection = await vscode.window.showQuickPick(
-            DOC_TYPES.map(dt => ({
-                label: dt.label,
-                description: dt.description,
-                value: dt.value,
-            })),
-            {
-                placeHolder: 'What type of MS Learn document should I generate?',
-                title: 'Document Type',
+        // Try to detect doc type from prompt text (flexible matching)
+        for (const dt of DOC_TYPE_PATTERNS) {
+            if (dt.patterns.some(p => p.test(promptLower))) {
+                docType = dt.value;
+                break;
             }
-        );
-
-        if (!selection) {
-            stream.markdown('📝 Document generation cancelled. Use `/generate` to try again.');
-            return { metadata: { command: 'generate' } };
         }
 
-        docType = (selection as { label: string; description: string; value: string }).value;
+        if (!docType) {
+            docType = fuzzyMatchDocType(promptLower);
+        }
+
+        if (!docType) {
+            // Show QuickPick for doc type selection
+            const selection = await vscode.window.showQuickPick(
+                DOC_TYPES.map(dt => ({
+                    label: dt.label,
+                    description: dt.description,
+                    value: dt.value,
+                })),
+                {
+                    placeHolder: 'What type of MS Learn document should I generate?',
+                    title: 'Document Type',
+                }
+            );
+
+            if (!selection) {
+                stream.markdown('📝 Document generation cancelled. Use `/generate` to try again.');
+                return { metadata: { command: 'generate' } };
+            }
+
+            docType = (selection as { label: string; description: string; value: string }).value;
+        }
     }
 
     // 3. Extract supplementary context from prompt (everything that isn't the doc type keyword)
@@ -91,8 +98,19 @@ export async function handleGenerate(
 
         stream.progress(`Generating ${docType} document...`);
 
+        // Build metadata for the backend from plan state
+        const backendMetadata: BackendMetadata | undefined = state.metadata ? {
+            author: state.metadata.author,
+            ms_author: state.metadata.msAuthor,
+            ms_service: state.metadata.msService,
+            customer_intent: state.metadata.customerIntent,
+        } : undefined;
+
+        // Combine supplementary context from prompt and plan state
+        const fullContext = [supplementaryContext, state.supplementaryContext].filter(Boolean).join('\n\n');
+
         // Trigger the pipeline
-        await client.generateDocument(state.currentVideoId, docType, supplementaryContext);
+        await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata);
 
         // 6. Connect WebSocket for progress
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {

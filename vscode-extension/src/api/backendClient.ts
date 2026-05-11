@@ -49,6 +49,13 @@ export interface BackendConfig {
     baseUrl: string;
 }
 
+export interface BackendMetadata {
+    author?: string;
+    ms_author?: string;
+    ms_service?: string;
+    customer_intent?: string;
+}
+
 export interface Disposable {
     dispose(): void;
 }
@@ -107,13 +114,18 @@ export class BackendClient {
     async generateDocument(
         videoId: string,
         docType: string,
-        supplementaryContext: string = ''
+        supplementaryContext: string = '',
+        metadata?: BackendMetadata
     ): Promise<GenerateResponse> {
-        return this.post<GenerateResponse>('/documents/generate', {
+        const body: Record<string, unknown> = {
             video_id: videoId,
             doc_type: docType,
             supplementary_context: supplementaryContext,
-        });
+        };
+        if (metadata) {
+            body.metadata = metadata;
+        }
+        return this.post<GenerateResponse>('/documents/generate', body);
     }
 
     async getDocument(documentId: string): Promise<DocumentResponse> {
