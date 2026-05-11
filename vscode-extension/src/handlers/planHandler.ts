@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager, DocumentMetadata } from '../utils/conversationState';
 import { detectVideoPath } from '../utils/fileDetection';
@@ -212,7 +213,7 @@ export async function handlePlan(
                 try {
                     const bytes = await vscode.workspace.fs.readFile(uri);
                     const text = Buffer.from(bytes).toString('utf-8');
-                    contents.push(`--- ${uri.fsPath} ---\n${text}`);
+                    contents.push(`--- ${path.basename(uri.fsPath)} ---\n${text}`);
                 } catch {
                     // Skip files that can't be read
                 }
@@ -311,7 +312,11 @@ export async function handlePlan(
         } catch (extractError) {
             if (extractError instanceof BackendError) {
                 stream.markdown(`⚠️ **Extraction could not be started:** ${extractError.detail}\n\n`);
+            } else {
+                stream.markdown('⚠️ **Extraction could not be started.** Please check backend logs.\n\n');
             }
+            stateManager.setStage('idle');
+            return { metadata: { command: 'plan' } };
         }
 
         let lastExtractWsDetail = '';

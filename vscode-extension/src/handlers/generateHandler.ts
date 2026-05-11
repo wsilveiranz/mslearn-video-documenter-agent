@@ -110,7 +110,7 @@ export async function handleGenerate(
         } : undefined;
 
         // Combine supplementary context from prompt and plan state
-        const fullContext = [supplementaryContext, state.supplementaryContext].filter(Boolean).join('\n\n');
+        const fullContext = [supplementaryContext, stateManager.getSupplementaryContext()].filter(Boolean).join('\n\n');
 
         // Trigger the pipeline
         await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata, selectedModel);

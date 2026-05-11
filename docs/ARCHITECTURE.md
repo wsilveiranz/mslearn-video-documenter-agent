@@ -569,7 +569,7 @@ backend/
 │   │   ├── orchestrator.py           # MAF orchestrator (pipeline routing)
 │   │   ├── ingestion.py              # Video ingestion agent
 │   │   ├── extraction.py             # Video analysis agent
-│   │   ├── quality_assessment.py     # Data quality assessment agent (side-step)
+│   │   ├── quality.py                # Data quality assessment agent (side-step)
 │   │   ├── structure.py              # Document structure agent
 │   │   ├── writer.py                 # Content generation agent
 │   │   ├── editor.py                 # Refinement agent
@@ -592,12 +592,12 @@ backend/
 │   │   ├── editor_system.md          # Editor agent system prompt
 │   │   ├── evaluate_system.md        # Evaluate agent system prompt
 │   │   ├── structure_system.md       # Structure agent system prompt
-│   │   └── quality_assessment_system.md  # Quality Assessment agent system prompt
+│   │   └── quality_system.md         # Quality Assessment agent system prompt
 │   ├── models/
 │   │   ├── video.py                  # Video/extraction data models
 │   │   ├── document.py               # Document/outline data models
 │   │   ├── evaluation.py             # Evaluation report models
-│   │   └── quality.py                # DataQualityReport model
+│   │   └── services.py               # Azure service slug list
 │   └── api/
 │       ├── routes.py                 # API route definitions
 │       └── websocket.py              # WebSocket for streaming progress

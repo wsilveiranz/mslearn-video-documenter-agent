@@ -144,7 +144,11 @@ export async function handleAnalyze(
         } catch (extractError) {
             if (extractError instanceof BackendError) {
                 stream.markdown(`⚠️ **Extraction could not be started:** ${extractError.detail}\n\n`);
+            } else {
+                stream.markdown('⚠️ **Extraction could not be started.** Please check backend logs.\n\n');
             }
+            stateManager.setStage('idle');
+            return { metadata: { command: 'analyze' } };
         }
 
         let lastExtractWsDetail = '';

@@ -23,7 +23,7 @@ from src.api.websocket import manager
 from src.config import get_settings
 from src.models.document import DocType, DocumentMetadata
 from src.models.services import AZURE_SERVICES
-from src.models.video import ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
+from src.models.video import DataQualityReport, ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
 
 if TYPE_CHECKING:
     from src.models.document import GeneratedDocument
@@ -55,6 +55,12 @@ class GenerateRequest(BaseModel):
 
 class GenerateResponse(BaseModel):
     document_id: str
+    status: str
+    message: str
+
+
+class ExtractionResponse(BaseModel):
+    video_id: str
     status: str
     message: str
 
@@ -463,12 +469,12 @@ async def get_video_status(video_id: str) -> StatusResponse:
     )
 
 
-@router.post("/videos/{video_id}/extract", response_model=GenerateResponse)
+@router.post("/videos/{video_id}/extract", response_model=ExtractionResponse)
 async def extract_video(
     video_id: str,
     background_tasks: BackgroundTasks,
     body: ModelOverrideRequest | None = None,
-) -> GenerateResponse:
+) -> ExtractionResponse:
     """Trigger content extraction (transcript, scenes, keyframes) for an ingested video."""
     job = _video_jobs.get(video_id)
     if job is None:
@@ -490,8 +496,8 @@ async def extract_video(
     logger.info("api.extract", video_id=video_id)
     background_tasks.add_task(_run_extraction, video_id)
 
-    return GenerateResponse(
-        document_id="pending",
+    return ExtractionResponse(
+        video_id=video_id,
         status="queued",
         message="Extraction queued.",
     )
@@ -510,8 +516,8 @@ async def get_extraction_results(video_id: str) -> dict:
     return job.extraction_result.model_dump()
 
 
-@router.post("/videos/{video_id}/assess-quality")
-async def assess_quality(video_id: str, body: ModelOverrideRequest | None = None) -> dict:
+@router.post("/videos/{video_id}/assess-quality", response_model=DataQualityReport)
+async def assess_quality(video_id: str, body: ModelOverrideRequest | None = None) -> DataQualityReport:
     """Run LLM-based quality assessment on extraction data."""
     job = _video_jobs.get(video_id)
     if job is None:
@@ -529,7 +535,7 @@ async def assess_quality(video_id: str, body: ModelOverrideRequest | None = None
     # Return cached report if available
     if job.quality_report is not None:
         logger.info("api.assess_quality_cached", video_id=video_id)
-        return job.quality_report.model_dump()
+        return job.quality_report
 
     logger.info("api.assess_quality", video_id=video_id)
 
@@ -542,7 +548,7 @@ async def assess_quality(video_id: str, body: ModelOverrideRequest | None = None
         report = await quality_agent.process(job.extraction_result)
 
         job.quality_report = report
-        return report.model_dump()
+        return report
     except Exception as exc:
         logger.error(
             "api.assess_quality_failed",

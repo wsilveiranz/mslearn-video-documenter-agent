@@ -146,8 +146,15 @@ class QualityAssessmentAgent:
 
         if extraction.keyframes:
             parts.append(f"## Keyframe Descriptions ({len(extraction.keyframes)} keyframes)\n")
-            for kf in extraction.keyframes:
+            keyframes = extraction.keyframes
+            if len(keyframes) > 30:
+                step = len(keyframes) / 30
+                keyframes = [extraction.keyframes[int(i * step)] for i in range(30)]
+                parts.append(f"_(showing 30 of {len(extraction.keyframes)} keyframes, evenly sampled)_\n")
+            for kf in keyframes:
                 desc = kf.ui_description or "(no description)"
+                if len(desc) > 200:
+                    desc = desc[:200] + "…"
                 parts.append(f"- [{kf.id}] at {kf.timestamp_seconds:.1f}s: {desc}")
             parts.append("")
         else:
@@ -165,10 +172,17 @@ class QualityAssessmentAgent:
 
         if extraction.scenes:
             parts.append(f"## Scenes ({len(extraction.scenes)} detected)\n")
-            for scene in extraction.scenes:
+            scenes = extraction.scenes
+            if len(scenes) > 30:
+                step = len(scenes) / 30
+                scenes = [extraction.scenes[int(i * step)] for i in range(30)]
+                parts.append(f"_(showing 30 of {len(extraction.scenes)} scenes, evenly sampled)_\n")
+            for scene in scenes:
+                desc = scene.description or "(no description)"
+                if len(desc) > 200:
+                    desc = desc[:200] + "…"
                 parts.append(
-                    f"- [{scene.id}] {scene.start_seconds:.1f}s-{scene.end_seconds:.1f}s: "
-                    f"{scene.description or '(no description)'}"
+                    f"- [{scene.id}] {scene.start_seconds:.1f}s-{scene.end_seconds:.1f}s: {desc}"
                 )
             parts.append("")
 

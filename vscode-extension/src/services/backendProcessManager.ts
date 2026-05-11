@@ -209,6 +209,8 @@ export class BackendProcessManager implements vscode.Disposable {
                         resolve();
                     });
                 });
+                // Update child.killed state (idempotent if process is already dead)
+                child.kill();
             } else {
                 child.kill();
             }
