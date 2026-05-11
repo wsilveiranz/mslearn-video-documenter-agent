@@ -3,10 +3,18 @@ import * as vscode from 'vscode';
 export type ProcessingStage = 
     | 'idle' 
     | 'analyzing' 
-    | 'analyzed' 
+    | 'analyzed'
+    | 'planned'
     | 'generating' 
     | 'generated' 
     | 'refining';
+
+export interface DocumentMetadata {
+    author: string;
+    msAuthor: string;
+    msService: string;
+    customerIntent: string;
+}
 
 export interface ConversationState {
     currentVideoId?: string;
@@ -15,6 +23,8 @@ export interface ConversationState {
     currentStage: ProcessingStage;
     lastDocType?: string;
     savedFilename?: string;
+    metadata?: DocumentMetadata;
+    supplementaryContext?: string;
 }
 
 const STATE_KEY = 'videoDocumenter.conversationState';
@@ -57,6 +67,16 @@ export class ConversationStateManager {
 
     setSavedFilename(filename: string): void {
         this.state.savedFilename = filename;
+        this.persist();
+    }
+
+    setMetadata(metadata: DocumentMetadata): void {
+        this.state.metadata = metadata;
+        this.persist();
+    }
+
+    setSupplementaryContext(context: string): void {
+        this.state.supplementaryContext = context;
         this.persist();
     }
 
