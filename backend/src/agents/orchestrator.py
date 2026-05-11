@@ -54,13 +54,29 @@ def create_foundry_client() -> FoundryChatClient:
     )
 
 
-def create_llm_client():
+def create_llm_client(processing_mode: ProcessingMode | None = None):
     """Create the appropriate LLM client based on processing mode and config.
 
-    In local mode with copilot_proxy_url configured: uses Copilot LM Proxy.
-    Otherwise: uses Azure AI Foundry (requires Azure credentials).
+    Rules:
+    - ``processing_mode="cloud"`` → always Azure AI Foundry, ignoring proxy config.
+    - ``processing_mode="local"`` and ``copilot_proxy_url`` configured → Copilot LM Proxy.
+    - No mode supplied → falls back to ``settings.use_copilot_proxy`` (existing behaviour).
     """
     settings = get_settings()
+
+    if processing_mode == ProcessingMode.CLOUD:
+        logger.info("pipeline.using_foundry", reason="processing_mode=cloud")
+        return create_foundry_client()
+
+    if processing_mode == ProcessingMode.LOCAL and settings.copilot_proxy_url:
+        logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
+        return create_copilot_client(
+            settings.copilot_proxy_url,
+            model=settings.copilot_proxy_model,
+            secret=settings.copilot_proxy_secret,
+        )
+
+    # Default: honour global settings flag (no explicit mode supplied)
     if settings.use_copilot_proxy:
         logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
         return create_copilot_client(
@@ -102,8 +118,8 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
 
     logger.info("pipeline.start", source=request.video_source, doc_type=request.doc_type, mode=mode)
 
-    # Create shared LLM client (Copilot proxy in local mode, Foundry in cloud)
-    client = create_llm_client()
+    # Create shared LLM client — pass resolved mode so cloud requests always use Foundry
+    client = create_llm_client(mode)
 
     # Stage 1: Ingestion
     logger.info("pipeline.stage", stage="ingestion")

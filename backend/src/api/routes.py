@@ -201,7 +201,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
     try:
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
-        client = create_llm_client()
+        client = create_llm_client(mode)
         job.status = ProcessingStatus.PROCESSING
         job.current_stage = "extracting"
         job.step = 2
