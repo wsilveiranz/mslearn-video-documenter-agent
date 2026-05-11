@@ -622,7 +622,7 @@ class Settings(BaseSettings):
     
     # Copilot LM Proxy (local mode — set via handshake, see §2.4)
     copilot_proxy_url: str = ""       # e.g. http://localhost:54321
-    copilot_proxy_model: str = "gpt-4o"
+    copilot_proxy_model: str = "copilot-auto"
     # use_copilot_proxy is a computed property:
     #   True when processing_mode == "local" and copilot_proxy_url is set
     
