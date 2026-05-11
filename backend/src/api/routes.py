@@ -147,6 +147,7 @@ async def classify_intent_endpoint(request: ClassifyIntentRequest) -> dict:
     # LLM classification
     try:
         client = create_llm_client()
+        result = classify_intent(request.message, client)
         return result.model_dump()
     except Exception as e:
         logger.error(
