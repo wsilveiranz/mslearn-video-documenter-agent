@@ -79,15 +79,20 @@ class ExtractionAgent:
         whisper = WhisperService(settings.whisper_model)
         scene_detector = SceneDetectionService()
 
-        tasks: dict[str, asyncio.Task] = {}
+        # Build task list with stable ordering
+        coros = []
+        task_keys = []
         if has_audio:
-            tasks["transcript"] = asyncio.ensure_future(asyncio.to_thread(whisper.transcribe, audio_path))
-        tasks["scenes"] = asyncio.ensure_future(asyncio.to_thread(scene_detector.detect_scenes, metadata.source_path))
+            coros.append(asyncio.to_thread(whisper.transcribe, audio_path))
+            task_keys.append("transcript")
+        coros.append(asyncio.to_thread(scene_detector.detect_scenes, metadata.source_path))
+        task_keys.append("scenes")
 
-        await asyncio.gather(*tasks.values(), return_exceptions=True)
+        results = await asyncio.gather(*coros, return_exceptions=True)
+        result_map = dict(zip(task_keys, results))
 
-        transcript = tasks["transcript"].result() if "transcript" in tasks else []
-        scenes = tasks["scenes"].result()
+        transcript = result_map.get("transcript", [])
+        scenes = result_map["scenes"]
 
         if isinstance(transcript, BaseException):
             logger.error("extraction.transcription_failed", video_id=video_id, error=str(transcript))
