@@ -11,5 +11,9 @@ Module._resolveFilename = function (request: string, ...args: unknown[]): string
     if (request === 'vscode') {
         return require.resolve('./__mocks__/vscode');
     }
+    // Redirect child_process to our mock for BackendProcessManager tests
+    if (request === 'child_process' || request === 'node:child_process') {
+        return require.resolve('./__mocks__/childProcess');
+    }
     return originalResolve.apply(this, [request, ...args]);
 };

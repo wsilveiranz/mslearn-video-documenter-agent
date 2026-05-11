@@ -1,4 +1,4 @@
-import { execSync, spawn, exec, type ChildProcess } from 'node:child_process';
+import { execSync, spawn, exec, type ChildProcess } from 'child_process';
 import * as vscode from 'vscode';
 
 // ── Python interpreter discovery ───────────────────────────────────────────
