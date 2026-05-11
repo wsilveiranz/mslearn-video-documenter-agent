@@ -171,7 +171,7 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 | Setting | Location | Description |
 |---------|----------|-------------|
 | `copilot_proxy_url` | Backend `Settings` | Set automatically via handshake; e.g. `http://localhost:54321` |
-| `copilot_proxy_model` | Backend `Settings` | Model family requested from Copilot (default: `gpt-4o`) |
+| `copilot_proxy_model` | Backend `Settings` | Model name to request from Copilot (default: `copilot-auto`) |
 | `use_copilot_proxy` | Backend `Settings` (computed) | `True` when `processing_mode == "local"` and `copilot_proxy_url` is set |
 | `useCopilotModels` | Extension `settings.json` | User-facing toggle to enable/disable the LM Proxy |
 
