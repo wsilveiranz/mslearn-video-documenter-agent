@@ -130,15 +130,17 @@ export class LmProxyServer {
         return new Promise((resolve, reject) => {
             let attempt = 0;
             const tryPort = (port: number): void => {
-                server.once('error', (err: NodeJS.ErrnoException) => {
+                const onError = (err: NodeJS.ErrnoException): void => {
                     if (err.code === 'EADDRINUSE' && attempt < MAX_PORT_ATTEMPTS) {
                         attempt++;
                         tryPort(port + 1);
                     } else {
                         reject(err);
                     }
-                });
+                };
+                server.once('error', onError);
                 server.listen(port, '127.0.0.1', () => {
+                    server.removeListener('error', onError);
                     resolve(port);
                 });
             };

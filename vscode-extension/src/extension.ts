@@ -13,7 +13,9 @@ async function waitForBackendHealth(baseUrl: string, timeoutMs: number = 30000):
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
         try {
-            const res = await fetch(`${baseUrl}/api/v1/health`);
+            const res = await fetch(`${baseUrl}/api/v1/health`, {
+                signal: AbortSignal.timeout(2000),
+            });
             if (res.ok) { return true; }
         } catch {
             // not ready yet
