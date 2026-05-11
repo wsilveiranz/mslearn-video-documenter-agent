@@ -1,0 +1,67 @@
+name: Build VSIX
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Install dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Compile TypeScript
+        working-directory: vscode-extension
+        run: npm run compile
+
+      - name: Bundle backend source
+        run: |
+          mkdir -p vscode-extension/backend
+          cp -r backend/src vscode-extension/backend/src
+          cp backend/pyproject.toml vscode-extension/backend/pyproject.toml
+          cp backend/.env.example vscode-extension/backend/.env.example
+          # Clean Python caches
+          find vscode-extension/backend -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+          find vscode-extension/backend -name '*.pyc' -delete 2>/dev/null || true
+          find vscode-extension/backend -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Create release directory
+        run: mkdir -p release
+
+      - name: Package VSIX
+        working-directory: vscode-extension
+        run: npx vsce package --out ../release/
+
+      - name: Clean up bundled backend
+        run: rm -rf vscode-extension/backend
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix-package
+          path: release/*.vsix
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.vsix
+          generate_release_notes: true
