@@ -73,8 +73,13 @@ export async function handleAnalyze(
         stream.progress('Video uploaded, starting analysis...');
 
         // 7. Connect WebSocket for real-time progress updates (best-effort)
+        let lastWsDetail = '';
         const progressDisposable = client.connectProgress(videoId, (msg) => {
-            stream.progress(msg.detail || msg.stage);
+            const text = msg.detail || msg.stage;
+            if (text !== lastWsDetail) {
+                lastWsDetail = text;
+                stream.progress(text);
+            }
         });
 
         // 8. Poll until ingestion_complete (step 1 of 6)
@@ -83,6 +88,7 @@ export async function handleAnalyze(
         let complete = false;
         const startTime = Date.now();
         const timeoutMs = 300000; // 5 minutes
+        let lastPollStage = '';
 
         while (!complete && Date.now() - startTime < timeoutMs) {
             if (token.isCancellationRequested) {
@@ -95,7 +101,10 @@ export async function handleAnalyze(
 
             try {
                 const status = await client.getVideoStatus(videoId);
-                stream.progress(`${status.current_stage}`);
+                if (status.current_stage !== lastPollStage) {
+                    lastPollStage = status.current_stage;
+                    stream.progress(`${status.current_stage}`);
+                }
 
                 if (status.current_stage === 'ingestion_complete') {
                     complete = true;
@@ -135,13 +144,19 @@ export async function handleAnalyze(
             }
         }
 
+        let lastExtractWsDetail = '';
         const extractProgressDisposable = client.connectProgress(videoId, (msg) => {
-            stream.progress(msg.detail || msg.stage);
+            const text = msg.detail || msg.stage;
+            if (text !== lastExtractWsDetail) {
+                lastExtractWsDetail = text;
+                stream.progress(text);
+            }
         });
 
         let extractionComplete = false;
         const extractStartTime = Date.now();
         const extractTimeoutMs = 600000; // 10 minutes
+        let lastExtractPollStage = '';
 
         while (!extractionComplete && Date.now() - extractStartTime < extractTimeoutMs) {
             if (token.isCancellationRequested) {
@@ -154,7 +169,10 @@ export async function handleAnalyze(
 
             try {
                 const status = await client.getVideoStatus(videoId);
-                stream.progress(`${status.current_stage}`);
+                if (status.current_stage !== lastExtractPollStage) {
+                    lastExtractPollStage = status.current_stage;
+                    stream.progress(`${status.current_stage}`);
+                }
 
                 if (status.current_stage === 'extraction_complete') {
                     extractionComplete = true;
