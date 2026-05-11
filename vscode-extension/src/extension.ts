@@ -88,7 +88,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     fetch(`${backendUrl}/api/v1/config/lm-proxy`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ proxy_url: `http://localhost:${proxyPort}` }),
+                        body: JSON.stringify({ proxy_url: `http://localhost:${proxyPort}`, proxy_secret: lmProxyServer.getSecret() }),
                     }).catch(err => {
                         console.warn('[video-documenter] Failed to notify backend of LM Proxy:', err);
                     });

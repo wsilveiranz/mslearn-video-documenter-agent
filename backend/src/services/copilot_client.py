@@ -145,9 +145,10 @@ class CopilotProxyChatClient:
         model: Model identifier to request (default ``copilot-auto``).
     """
 
-    def __init__(self, proxy_url: str, model: str = "copilot-auto") -> None:
+    def __init__(self, proxy_url: str, model: str = "copilot-auto", secret: str = "") -> None:
         self._proxy_url = proxy_url.rstrip("/")
         self.model = model
+        self._secret = secret
         # Required by the SupportsChatGetResponse protocol
         self.additional_properties: dict[str, Any] = {}
 
@@ -299,10 +300,14 @@ class CopilotProxyChatClient:
 
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
+                headers: dict[str, str] = {"Content-Type": "application/json"}
+                if self._secret:
+                    headers["Authorization"] = f"Bearer {self._secret}"
+
                 resp = await self._http_client.post(
                     path,
                     json=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers=headers,
                 )
 
                 if resp.status_code in _RETRYABLE_STATUS_CODES:
@@ -409,7 +414,7 @@ class CopilotProxyChatClient:
 # Factory function
 # ---------------------------------------------------------------------------
 
-def create_copilot_client(proxy_url: str, model: str = "copilot-auto") -> CopilotProxyChatClient:
+def create_copilot_client(proxy_url: str, model: str = "copilot-auto", secret: str = "") -> CopilotProxyChatClient:
     """Create a ``CopilotProxyChatClient`` instance.
 
     This is the local-mode equivalent of ``create_foundry_client()`` in
@@ -422,4 +427,4 @@ def create_copilot_client(proxy_url: str, model: str = "copilot-auto") -> Copilo
     Returns:
         A configured ``CopilotProxyChatClient`` ready to be passed to agents.
     """
-    return CopilotProxyChatClient(proxy_url=proxy_url, model=model)
+    return CopilotProxyChatClient(proxy_url=proxy_url, model=model, secret=secret)

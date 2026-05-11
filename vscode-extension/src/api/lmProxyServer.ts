@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import * as http from 'node:http';
 import * as vscode from 'vscode';
 
@@ -57,15 +58,7 @@ function parseDataUrl(dataUrl: string): { mime: string; data: Uint8Array } | nul
     return { mime, data };
 }
 
-/** Set CORS headers so the Python backend on a different port can reach us. */
-function setCorsHeaders(res: http.ServerResponse): void {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-}
-
 function sendJson(res: http.ServerResponse, status: number, body: string): void {
-    setCorsHeaders(res);
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(body);
 }
@@ -78,6 +71,7 @@ const MAX_PORT_ATTEMPTS = 20;
 export class LmProxyServer {
     private server: http.Server | null = null;
     private port = 0;
+    private secret = '';
     private cachedModels: vscode.LanguageModelChat[] = [];
     private modelsLastRefreshed = 0;
     private readonly modelCacheTtlMs = 60_000;
@@ -92,6 +86,8 @@ export class LmProxyServer {
         if (this.server) {
             return this.port;
         }
+
+        this.secret = crypto.randomUUID();
 
         this.server = http.createServer((req, res) => {
             this.handleRequest(req, res);
@@ -124,6 +120,11 @@ export class LmProxyServer {
         return this.port;
     }
 
+    /** Return the shared secret for authenticating requests to this proxy. */
+    getSecret(): string {
+        return this.secret;
+    }
+
     // ── Private: port binding ──────────────────────────────────────────────
 
     private listen(server: http.Server, startPort: number): Promise<number> {
@@ -151,15 +152,14 @@ export class LmProxyServer {
     // ── Private: request router ────────────────────────────────────────────
 
     private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-        // CORS preflight
-        if (req.method === 'OPTIONS') {
-            setCorsHeaders(res);
-            res.writeHead(204);
-            res.end();
+        const url = req.url ?? '/';
+
+        // Validate shared secret
+        const authHeader = req.headers['authorization'] ?? '';
+        if (authHeader !== `Bearer ${this.secret}`) {
+            sendJson(res, 401, makeErrorJson('Unauthorized: invalid or missing secret', 'authentication_error'));
             return;
         }
-
-        const url = req.url ?? '/';
 
         if (req.method === 'GET' && url === '/health') {
             this.handleHealth(res);
@@ -353,7 +353,6 @@ export class LmProxyServer {
     ): Promise<void> {
         const completionId = generateId();
 
-        setCorsHeaders(res);
         res.writeHead(200, {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',

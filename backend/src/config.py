@@ -81,6 +81,10 @@ class Settings(BaseSettings):
         default="copilot-auto",
         description="Model name to request from the Copilot proxy (copilot-auto for best available)",
     )
+    copilot_proxy_secret: str = Field(
+        default="",
+        description="Shared secret for authenticating requests to the Copilot LM Proxy",
+    )
 
     # --- Output ---
     output_directory: str = Field(default="./output", description="Directory for generated documents")
