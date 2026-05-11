@@ -233,15 +233,7 @@ Interactive API docs available at `http://127.0.0.1:8000/docs` when the server i
 
 The `@video-documenter` Chat Participant runs inside VS Code's Copilot Chat panel. To test it locally:
 
-### 1. Start the backend
-
-```bash
-cd backend
-python -m src.main
-# Verify: curl http://localhost:8000/api/v1/health
-```
-
-### 2. Build and launch the extension
+### 1. Build and launch the extension
 
 ```bash
 cd vscode-extension
@@ -249,13 +241,11 @@ npm install
 npm run compile
 ```
 
-Then press **F5** in VS Code (with `vscode-extension/` open) to launch the **Extension Development Host**, or run:
+Then press **F5** in VS Code (with `vscode-extension/` open) to launch the **Extension Development Host**.
 
-```bash
-code --extensionDevelopmentPath=./vscode-extension --new-window
-```
+The extension automatically starts the Python backend and shows a "Starting backend..." notification. Once the backend is healthy, `@video-documenter` is ready to use.
 
-### 3. Use the chat participant
+### 2. Use the chat participant
 
 In the Extension Development Host, open Copilot Chat and type:
 
@@ -292,6 +282,8 @@ You can also right-click any video file (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`
 | `video-documenter.autoOpenPreview` | `true` | Open markdown preview after generation |
 | `video-documenter.useCopilotModels` | `true` | Route LLM calls through Copilot in local mode |
 | `video-documenter.lmProxyPort` | `0` (auto) | Port for the LM Proxy server |
+| `video-documenter.autoStartBackend` | `true` | Auto-start the Python backend on extension activation |
+| `video-documenter.backendPath` | `""` | Path to backend directory (empty = auto-detect from monorepo) |
 
 > [!TIP]
 > See [Manual Test Plan](docs/MANUAL-TEST-PLAN.md) for a comprehensive list of test scenarios.
@@ -341,20 +333,7 @@ Install dependencies:
 pip install -e ".[local,dev]"
 ```
 
-### Step 2: Start the backend
-
-```bash
-cd backend
-python -m src.main
-```
-
-Verify it's running:
-
-```bash
-curl http://localhost:8000/api/v1/health
-```
-
-### Step 3: Launch the extension (with LM Proxy)
+### Step 2: Launch the extension
 
 ```bash
 cd vscode-extension
@@ -365,17 +344,20 @@ npm run compile
 Press **F5** in VS Code to launch the Extension Development Host.
 
 On activation, the extension:
-1. Starts an **LM Proxy server** on localhost (check the output panel for the port)
-2. Notifies the backend at `POST /api/v1/config/lm-proxy` with the proxy URL
-3. The backend now routes LLM calls through Copilot models automatically
+1. **Starts the Python backend** automatically (shows "Starting backend..." notification)
+2. Starts an **LM Proxy server** on localhost (check the output panel for the port)
+3. Notifies the backend at `POST /api/v1/config/lm-proxy` with the proxy URL
+4. The backend now routes LLM calls through Copilot models automatically
 
 You should see in the extension output:
 ```
+[video-documenter] Starting backend...
+[video-documenter] Backend started (PID: ...)
 [video-documenter] LM Proxy started on port 3001
 [video-documenter] Extension activated successfully
 ```
 
-### Step 4: Verify the LM Proxy is working
+### Step 3: Verify the LM Proxy is working
 
 Check the proxy health endpoint (port may vary):
 
@@ -391,7 +373,7 @@ Expected response:
 }
 ```
 
-### Step 5: Process a video
+### Step 4: Process a video
 
 In the Extension Development Host's Copilot Chat:
 
@@ -411,6 +393,9 @@ The pipeline runs entirely through Copilot models — no Azure calls.
 
 | Problem | Solution |
 |---------|----------|
+| "Backend failed to start within 30s" | Open the "Video Documenter Backend" output channel. Check Python is installed and `backend/` has dependencies installed (`pip install -e .`) |
+| Backend starts but Python not found | Install Python 3.11+, or configure `python.defaultInterpreterPath` in VS Code settings |
+| Want to run backend manually | Set `video-documenter.autoStartBackend` to `false` in VS Code settings, then start manually with `cd backend && python -m src.main` |
 | `LM Proxy failed to start` | Ensure GitHub Copilot is installed and signed in |
 | `No Copilot models available` (503) | Check your Copilot subscription is active in VS Code |
 | `CopilotProxyUnreachableError` | Extension must be running; check the proxy port in output |

@@ -438,7 +438,19 @@ vscode-video-documenter/
 └── tsconfig.json
 ```
 
-### 4.2 Chat Participant Registration
+### 4.2 Extension activation lifecycle
+
+When the extension activates, it orchestrates the full startup sequence:
+
+1. **Register chat participant** — `@video-documenter` becomes available immediately
+2. **Start Python backend** — spawns `python -m src.main` as a child process (if `autoStartBackend` is enabled)
+3. **Health check** — polls `GET /health` every 500ms until the backend responds (30s timeout)
+4. **Start LM Proxy** — creates an OpenAI-compatible HTTP server backed by Copilot models
+5. **Connect** — notifies the backend of the LM Proxy URL via `POST /api/v1/config/lm-proxy`
+
+The extension detects if a backend is already running on the configured port and skips spawning in that case, allowing developers to run the backend manually for debugging.
+
+### 4.3 Chat Participant Registration
 
 ```json
 {
@@ -459,7 +471,7 @@ vscode-video-documenter/
 }
 ```
 
-### 4.3 Video File Input Patterns
+### 4.4 Video File Input Patterns
 
 Since VS Code Chat has no native video upload, three input patterns are supported:
 
@@ -469,7 +481,7 @@ Since VS Code Chat has no native video upload, three input patterns are supporte
 | **Context menu** | Right-click .mp4 in Explorer → "Analyze with Video Documenter" | Register `menus.explorer/context` command |
 | **File picker** | `@video-documenter /analyze` (no path) | Invoke `vscode.window.showOpenDialog()` with video filters |
 
-### 4.4 Companion Extensions
+### 4.5 Companion Extensions
 
 The Video Documenter extension integrates with three companion VS Code extensions that enhance the documentation workflow:
 
