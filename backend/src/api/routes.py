@@ -6,6 +6,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
@@ -15,7 +16,7 @@ from src.agents.editor import EditorAgent
 from src.agents.evaluate import EvaluateAgent
 from src.agents.extraction import ExtractionAgent
 from src.agents.ingestion import IngestionAgent
-from src.agents.orchestrator import MAX_REVISION_ITERATIONS, create_foundry_client
+from src.agents.orchestrator import MAX_REVISION_ITERATIONS, create_llm_client
 from src.agents.structure import StructureAgent
 from src.agents.writer import WriterAgent
 from src.api.websocket import manager
@@ -83,6 +84,7 @@ _runtime_config: dict[str, str] = {}
 
 class LmProxyConfigRequest(BaseModel):
     proxy_url: str
+    proxy_secret: str = ""
 
 
 class LmProxyConfigResponse(BaseModel):
@@ -96,10 +98,11 @@ async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigRespo
     proxy_url = request.proxy_url.rstrip("/")
 
     # Only allow localhost connections for security
-    if not (proxy_url.startswith("http://localhost") or proxy_url.startswith("http://127.0.0.1")):
+    parsed = urlparse(proxy_url)
+    if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
         raise HTTPException(
             status_code=400,
-            detail="LM Proxy URL must be a localhost address (http://localhost or http://127.0.0.1)",
+            detail="LM Proxy URL must be a localhost address (http://localhost, http://127.0.0.1, or http://[::1])",
         )
 
     _runtime_config["lm_proxy_url"] = proxy_url
@@ -107,6 +110,7 @@ async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigRespo
     # Always update — the proxy port may change between extension restarts
     settings = get_settings()
     settings.copilot_proxy_url = proxy_url
+    settings.copilot_proxy_secret = request.proxy_secret
 
     logger.info("config.lm_proxy_registered", proxy_url=proxy_url)
 
@@ -142,8 +146,7 @@ async def classify_intent_endpoint(request: ClassifyIntentRequest) -> dict:
 
     # LLM classification
     try:
-        client = create_foundry_client()
-        result = await classify_intent(request.message, client)
+        client = create_llm_client()
         return result.model_dump()
     except Exception as e:
         logger.error(
@@ -203,9 +206,7 @@ async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context:
     try:
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
-        client = create_foundry_client()
-
-        # Step 2/6: Extraction
+        client = create_llm_client()
         job.status = ProcessingStatus.PROCESSING
         job.current_stage = "extracting"
         job.step = 2
@@ -456,13 +457,12 @@ async def refine_document(
                 break
 
         try:
-            from src.agents.orchestrator import create_foundry_client
+            from src.agents.orchestrator import create_llm_client
 
             if video_id:
                 manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
 
-            client = create_foundry_client()
-            editor = EditorAgent(client)
+            client = create_llm_client()
             refined = await editor.process(doc, feedback=request.feedback)
 
             if extraction is not None:
