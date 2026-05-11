@@ -136,7 +136,11 @@ export async function handleRefine(
             // Update the workspace file with refined content
             let savedPath: string | undefined;
             try {
-                const savedUri = await outputManager.updateDocument(state.currentDocumentId!, doc.markdown_content);
+                const savedUri = await outputManager.updateDocument(
+                    state.currentDocumentId!,
+                    doc.markdown_content,
+                    state.savedFilename,
+                );
                 savedPath = savedUri.fsPath;
             } catch {
                 // Non-fatal — file may not exist yet if user skipped /generate

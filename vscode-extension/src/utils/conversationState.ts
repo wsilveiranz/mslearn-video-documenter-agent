@@ -14,6 +14,7 @@ export interface ConversationState {
     currentDocumentId?: string;
     currentStage: ProcessingStage;
     lastDocType?: string;
+    savedFilename?: string;
 }
 
 const STATE_KEY = 'videoDocumenter.conversationState';
@@ -51,6 +52,11 @@ export class ConversationStateManager {
 
     setDocType(docType: string): void {
         this.state.lastDocType = docType;
+        this.persist();
+    }
+
+    setSavedFilename(filename: string): void {
+        this.state.savedFilename = filename;
         this.persist();
     }
 
