@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
 
     from src.models.document import GeneratedDocument
-    from src.models.video import ExtractionResult
+    from src.models.video import DataQualityReport, ExtractionResult
 
 logger = structlog.get_logger()
 
@@ -29,7 +29,7 @@ _FALLBACK_SUMMARY = (
 
 
 class EvaluateAgent:
-    """Evaluates documents on completeness, accuracy, style, and readability."""
+    """Evaluates documents on completeness, accuracy, style, readability, and grounding."""
 
     def __init__(self, client: FoundryChatClient) -> None:
         self._client = client
@@ -44,20 +44,22 @@ class EvaluateAgent:
             logger.warning("evaluate.prompt_not_found", path=str(prompt_path))
 
     async def process(
-        self, document: GeneratedDocument, extraction: ExtractionResult
+        self, document: GeneratedDocument, extraction: ExtractionResult,
+        quality_report: DataQualityReport | None = None,
     ) -> EvaluationReport:
         """Evaluate a generated document against quality criteria.
 
         Args:
             document: The document to evaluate.
             extraction: Original extraction data for accuracy comparison.
+            quality_report: Optional data quality report for grounding calibration.
 
         Returns:
             EvaluationReport with scores and suggestions.
         """
         logger.info("evaluate.start", doc_id=document.document_id)
 
-        user_message = self._build_user_message(document, extraction)
+        user_message = self._build_user_message(document, extraction, quality_report)
 
         agent = Agent(
             client=self._client,
@@ -114,9 +116,25 @@ class EvaluateAgent:
     # ------------------------------------------------------------------
 
     def _build_user_message(
-        self, document: GeneratedDocument, extraction: ExtractionResult
+        self, document: GeneratedDocument, extraction: ExtractionResult,
+        quality_report: DataQualityReport | None = None,
     ) -> str:
         extraction_summary = self._build_extraction_summary(extraction)
+        quality_context = ""
+        if quality_report is not None:
+            quality_context = (
+                f"## Data quality context\n\n"
+                f"Quality level: **{quality_report.quality_level}**\n"
+                f"Grounding confidence: **{quality_report.grounding_confidence:.0%}**\n\n"
+            )
+            if quality_report.coverage_gaps:
+                gaps = "\n".join(f"- {gap}" for gap in quality_report.coverage_gaps)
+                quality_context += f"Coverage gaps identified:\n{gaps}\n\n"
+            quality_context += (
+                "Use this quality context to calibrate your grounding assessment. "
+                "Content in coverage gaps should use TODO placeholders, not fabricated content.\n\n"
+            )
+
         return (
             f"## Document to evaluate\n\n"
             f"Document ID: {document.document_id}\n"
@@ -124,6 +142,7 @@ class EvaluateAgent:
             f"```markdown\n{document.markdown_content}\n```\n\n"
             f"## Extraction data (for accuracy and completeness verification)\n\n"
             f"{extraction_summary}\n\n"
+            f"{quality_context}"
             "Evaluate this document and return your assessment as JSON."
         )
 
@@ -161,6 +180,7 @@ class EvaluateAgent:
             accuracy=accuracy,
             style_compliance=raw_scores["style_compliance"],
             readability=raw_scores["readability"],
+            grounding=raw_scores.get("grounding", 0.5),
         )
 
         suggestions: list[EvaluationSuggestion] = []
@@ -193,6 +213,7 @@ class EvaluateAgent:
             accuracy=0.5,
             style_compliance=0.5,
             readability=0.5,
+            grounding=0.5,
         )
         return EvaluationReport(
             document_id=document_id,

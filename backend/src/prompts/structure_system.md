@@ -25,8 +25,11 @@ Return a **DocumentOutline** as structured JSON with:
   "doc_type": "tutorial",
   "title": "Tutorial: Deploy a web app to Azure App Service",
   "description": "Learn how to deploy a Node.js web app to Azure App Service using the Azure portal.",
+  "author": "octocat",
+  "ms_author": "octocatalias",
   "audience": "developers",
   "ms_service": "azure-app-service",
+  "customer_intent": "As a developer, I want to deploy my web app so that it's accessible online.",
   "sections": [
     {
       "id": "section-1",
@@ -206,6 +209,18 @@ All headings must follow MS Learn conventions:
 - **No gerunds in H1**: "Deploy a web app" not "Deploying a web app"
 - **No numbering**: don't prefix H2s with "Step 1:", "Step 2:", etc. — the numbered list within each section handles ordering
 - **Specific and descriptive**: "Add a connection string" not "Configuration" or "Next part"
+
+## User-provided metadata
+
+Some frontmatter fields may be provided by the user as part of the planning step. When present, these values MUST be used exactly as given — do not modify, override, or omit them.
+
+The user message may include a `## User-provided metadata` section with these fields:
+- **author**: GitHub username for the article byline. If provided, include as `"author": "<value>"` in your output. If NOT provided, omit the field or set it to an empty string — do NOT invent a name.
+- **ms_author**: Microsoft alias. Same rules as author.
+- **ms_service**: Azure service slug (e.g., `azure-openai`). If provided, use it exactly. If NOT provided, infer from entities and context. This field also helps determine the document's audience and terminology.
+- **customer_intent**: A sentence in the format "As a <role>, I want <what> so that <why>". If provided, use this to guide the document's focus, audience targeting, and section prioritization. Include it in your output JSON.
+
+**Critical rule**: Never hallucinate author or ms_author values. If no value is provided and you cannot determine it from context, leave the field empty.
 
 ## Additional rules
 

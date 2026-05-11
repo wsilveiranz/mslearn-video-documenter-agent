@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BackendClient } from '../api/backendClient';
-import { ConversationStateManager } from '../utils/conversationState';
+import { ConversationStateManager, ConversationState } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
 import { classifyIntentFast, parseLlmClassification, ConversationIntent } from '../utils/intentClassification';
 import { handleRefine } from './refineHandler';
@@ -50,6 +50,44 @@ async function classifyIntent(
     }
 }
 
+function buildStateContext(state: Readonly<ConversationState>): string {
+    const parts: string[] = [];
+
+    if (state.currentVideoId) {
+        parts.push(`Video loaded: ID ${state.currentVideoId}`);
+        if (state.currentVideoPath) {
+            // Show just the filename, not the full path (privacy)
+            const filename = state.currentVideoPath.split(/[\\/]/).pop() || state.currentVideoPath;
+            parts.push(`Video file: ${filename}`);
+        }
+    }
+
+    parts.push(`Current stage: ${state.currentStage}`);
+
+    if (state.lastDocType) {
+        parts.push(`Document type: ${state.lastDocType}`);
+    }
+
+    if (state.currentDocumentId) {
+        parts.push(`Generated document: ID ${state.currentDocumentId}`);
+    }
+
+    if (state.metadata) {
+        const meta: string[] = [];
+        if (state.metadata.author) meta.push(`author: ${state.metadata.author}`);
+        if (state.metadata.msService) meta.push(`ms.service: ${state.metadata.msService}`);
+        if (meta.length > 0) {
+            parts.push(`Metadata: ${meta.join(', ')}`);
+        }
+    }
+
+    if (state.savedFilename) {
+        parts.push(`Saved as: ${state.savedFilename}`);
+    }
+
+    return parts.join('\n');
+}
+
 export async function handleConversation(
     request: vscode.ChatRequest,
     stream: vscode.ChatResponseStream,
@@ -77,15 +115,24 @@ export async function handleConversation(
     }
 
     // General conversation — use the LLM
+    const stateContext = buildStateContext(state);
+
+    const systemPrompt =
+        'You are the MS Learn Video Documenter agent. You help users create ' +
+        'Microsoft Learn-style documentation from screen recording videos. ' +
+        'You can analyze videos, generate documentation in various MS Learn formats ' +
+        '(Quickstart, Tutorial, How-to, Concept, Overview), and refine generated content. ' +
+        'Available commands: /plan, /analyze, /generate, /refine, /save, /status. ' +
+        'Keep responses concise and helpful.\n\n' +
+        '## Current Session State\n' +
+        stateContext + '\n\n' +
+        'Use the session state above to answer questions about what has been done in this session. ' +
+        'If a video has been loaded and analyzed, acknowledge that. ' +
+        'If a document has been generated, you can reference it. ' +
+        'Do not deny actions that the session state shows have been completed.';
+
     const messages = [
-        vscode.LanguageModelChatMessage.User(
-            'You are the MS Learn Video Documenter agent. You help users create ' +
-            'Microsoft Learn-style documentation from screen recording videos. ' +
-            'You can analyze videos, generate documentation in various MS Learn formats ' +
-            '(Quickstart, Tutorial, How-to, Concept, Overview), and refine generated content. ' +
-            'Available commands: /analyze, /generate, /refine, /save, /status. ' +
-            'Keep responses concise and helpful.'
-        ),
+        vscode.LanguageModelChatMessage.User(systemPrompt),
         vscode.LanguageModelChatMessage.User(request.prompt),
     ];
 

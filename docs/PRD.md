@@ -42,6 +42,7 @@ Commercial tools (Scribe, Tango, Loom) address parts of this problem but target 
 | G5 | Run locally (VS Code) or on Azure with identical capabilities | Feature parity between local and cloud deployments |
 | G6 | Accept video from multiple sources (local files, Azure Blob, YouTube/Stream) | All three source types supported |
 | G7 | Auto-capture and annotate screenshots from video keyframes | Screenshots included in output with step numbers and captions |
+| G8 | Assess extraction data quality and warn users when source material is insufficient for grounded documentation | Quality assessment runs after every extraction; thin/minimal data triggers visible warnings before document generation |
 
 ### Non-Goals (v1)
 
@@ -123,6 +124,16 @@ US-12: As an engineer, I want the agent to integrate with existing docs repos by
        generating files in the correct directory structure.
 ```
 
+### Data quality
+
+```
+US-13: As a documentation author, I want to see a quality assessment of the extracted 
+       data so I can decide whether to provide supplementary materials before generating.
+
+US-14: As a documentation author, I want the system to use TODO placeholders instead of 
+       fabricated content when extraction data is insufficient.
+```
+
 ---
 
 ## 6. Functional Requirements
@@ -148,37 +159,50 @@ US-12: As an engineer, I want the agent to integrate with existing docs repos by
 | FR-10 | Perform OCR on keyframes to extract on-screen text (UI labels, menu items, dialog text) | P0 |
 | FR-11 | Analyze keyframes with vision AI to describe UI state and identify user actions | P0 |
 | FR-12 | Correlate transcript segments with corresponding keyframes by timestamp | P0 |
+| FR-13 | Assess extraction data quality using LLM and surface warnings for thin or minimal data | P0 |
 
 ### 6.3 Document Generation
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-13 | Ask user which document type to produce and what supplementary materials are available | P0 |
-| FR-14 | Generate document structure matching selected MS Learn template (Quickstart, Tutorial, How-to, Concept, Overview) | P0 |
-| FR-15 | Generate YAML frontmatter with required MS Learn metadata fields | P0 |
-| FR-16 | Write body content in MS Learn voice and tone | P0 |
-| FR-17 | Include extracted screenshots with MS Learn image syntax (`:::image type="content" source="..." alt-text="...":::`) | P0 |
-| FR-18 | Generate numbered step-by-step procedures from detected actions | P0 |
-| FR-19 | Use MS Learn Markdown extensions appropriately (alerts, code blocks, checklists) | P1 |
-| FR-20 | Generate alt-text for all images | P0 |
+| FR-14 | Ask user which document type to produce and what supplementary materials are available | P0 |
+| FR-15 | Generate document structure matching selected MS Learn template (Quickstart, Tutorial, How-to, Concept, Overview) | P0 |
+| FR-16 | Generate YAML frontmatter with required MS Learn metadata fields | P0 |
+| FR-17 | Write body content in MS Learn voice and tone | P0 |
+| FR-18 | Include extracted screenshots with MS Learn image syntax (`:::image type="content" source="..." alt-text="...":::`) | P0 |
+| FR-19 | Generate numbered step-by-step procedures from detected actions | P0 |
+| FR-20 | Use MS Learn Markdown extensions appropriately (alerts, code blocks, checklists) | P1 |
+| FR-21 | Generate alt-text for all images | P0 |
+| FR-22 | Use TODO placeholders for document sections that lack sufficient grounding evidence in extraction data | P0 |
 
 ### 6.4 Iterative Refinement
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-21 | Accept natural language feedback on specific document sections | P0 |
-| FR-22 | Revise targeted sections without regenerating the full document | P0 |
-| FR-23 | Track conversation history for context-aware refinements | P0 |
-| FR-24 | Allow user to accept, reject, or modify individual steps | P1 |
+| FR-23 | Accept natural language feedback on specific document sections | P0 |
+| FR-24 | Revise targeted sections without regenerating the full document | P0 |
+| FR-25 | Track conversation history for context-aware refinements | P0 |
+| FR-26 | Allow user to accept, reject, or modify individual steps | P1 |
 
 ### 6.5 Output
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-25 | Output Markdown file(s) to a user-specified directory | P0 |
-| FR-26 | Output extracted screenshots to a `media/` subdirectory | P0 |
-| FR-27 | Generate frontmatter without triggering MS Learn compilation errors | P0 |
-| FR-28 | Optionally annotate screenshots with step numbers and highlighted UI regions | P1 |
+| FR-27 | Output Markdown file(s) to a user-specified directory | P0 |
+| FR-28 | Output extracted screenshots to a `media/` subdirectory | P0 |
+| FR-29 | Generate frontmatter without triggering MS Learn compilation errors | P0 |
+| FR-30 | Optionally annotate screenshots with step numbers and highlighted UI regions | P1 |
+
+### 6.6 Data quality and grounding
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-31 | Expose `POST /api/v1/videos/{video_id}/assess-quality` endpoint that returns a `DataQualityReport` | P0 |
+| FR-32 | Classify extraction data into four quality levels: `rich`, `adequate`, `thin`, `minimal` | P0 |
+| FR-33 | Include `grounding_confidence` score (0.0–1.0), `coverage_gaps`, `warnings`, and `recommendations` in the quality report | P0 |
+| FR-34 | Display LLM-generated quality warnings in the VS Code extension after extraction completes | P0 |
+| FR-35 | Block document generation and prompt the user to provide supplementary materials when quality level is `thin` or `minimal` | P1 |
+| FR-36 | Score a "grounding" dimension in the Evaluate Agent to verify every document step is traceable to transcript, OCR, or keyframe evidence | P0 |
 
 ---
 
@@ -426,6 +450,9 @@ The Microsoft Learn Authoring Assistant is an AI-powered VS Code extension that 
 | User time saved | ≥70% reduction in documentation time vs. manual | Time comparison study |
 | Refinement cycles | Average ≤3 refinement rounds to reach publishable quality | Track conversation turns |
 | Video processing time | <5 min for a 10-minute video | End-to-end timing |
+| Grounding score | ≥0.7 for documents generated from rich extraction data | Evaluate Agent grounding dimension score |
+| Thin data warning | Warning displayed when extraction quality is below `adequate` | Automated test against low-coverage extraction data |
+| TODO placeholder usage | TODO placeholders used instead of fabricated content for ungrounded sections | Review generated docs from thin extraction data |
 
 ---
 
@@ -441,6 +468,7 @@ The Microsoft Learn Authoring Assistant is an AI-powered VS Code extension that 
 | VS Code Chat Participant cannot natively accept video file uploads | Medium | High | Implement file picker dialog and context menu integration patterns |
 | Microsoft Learn MCP Server may be unavailable or rate-limited | Medium | Low | Implement response caching (1-hour TTL), graceful degradation (agents continue with embedded style rules), structured logging for monitoring |
 | Content Mentor and Learn Authoring Assistant are Microsoft-internal only | Low | N/A (by design) | Treat as companion workflow only; detect presence conditionally; never recommend to external users; no hard dependencies |
+| Hallucinated content in documents from sparse source material | High | Medium | Quality Assessment Agent evaluates extraction data before generation; Writer uses TODO placeholders for coverage gaps; Evaluate Agent scores grounding as a quality gate |
 
 ---
 

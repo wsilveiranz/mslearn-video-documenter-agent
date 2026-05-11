@@ -107,7 +107,9 @@ export async function handleRefine(
             // If we can't fetch the current revision, we'll accept the first result
         }
 
-        await client.refineDocument(state.currentDocumentId, feedback);
+        const selectedModel = request.model?.id;
+
+        await client.refineDocument(state.currentDocumentId, feedback, selectedModel);
 
         stream.progress('Applying changes...');
 

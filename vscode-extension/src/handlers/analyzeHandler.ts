@@ -62,19 +62,27 @@ export async function handleAnalyze(
         stateManager.setStage('analyzing');
         stream.progress('Uploading video...');
 
+        // Capture the user's selected model to forward to the backend pipeline
+        const selectedModel = request.model?.id;
+
         // Use path-based ingestion — backend reads the file directly, avoiding HTTP upload overhead.
         // NOTE: This assumes backend shares the local filesystem. For remote backends,
         // use client.ingestVideo() (multipart upload) instead.
         // TODO(Phase 3): Auto-detect remote backend and switch to upload mode.
-        const ingestResult = await client.ingestVideoByPath(videoPath);
+        const ingestResult = await client.ingestVideoByPath(videoPath, selectedModel);
         const videoId = ingestResult.video_id;
 
         stateManager.setVideoId(videoId, videoPath);
         stream.progress('Video uploaded, starting analysis...');
 
         // 7. Connect WebSocket for real-time progress updates (best-effort)
+        let lastWsDetail = '';
         const progressDisposable = client.connectProgress(videoId, (msg) => {
-            stream.progress(msg.detail || msg.stage);
+            const text = msg.detail || msg.stage;
+            if (text !== lastWsDetail) {
+                lastWsDetail = text;
+                stream.progress(text);
+            }
         });
 
         // 8. Poll until ingestion_complete (step 1 of 6)
@@ -83,6 +91,7 @@ export async function handleAnalyze(
         let complete = false;
         const startTime = Date.now();
         const timeoutMs = 300000; // 5 minutes
+        let lastPollStage = '';
 
         while (!complete && Date.now() - startTime < timeoutMs) {
             if (token.isCancellationRequested) {
@@ -95,7 +104,10 @@ export async function handleAnalyze(
 
             try {
                 const status = await client.getVideoStatus(videoId);
-                stream.progress(`${status.current_stage}`);
+                if (status.current_stage !== lastPollStage) {
+                    lastPollStage = status.current_stage;
+                    stream.progress(`${status.current_stage}`);
+                }
 
                 if (status.current_stage === 'ingestion_complete') {
                     complete = true;
@@ -124,19 +136,133 @@ export async function handleAnalyze(
             return { metadata: { command: 'analyze' } };
         }
 
-        // 9. Ingestion complete — update state
+        // Step 3: Run extraction
+        stream.progress('Analyzing video content...');
+
+        try {
+            await client.extractVideo(videoId, selectedModel);
+        } catch (extractError) {
+            if (extractError instanceof BackendError) {
+                stream.markdown(`⚠️ **Extraction could not be started:** ${extractError.detail}\n\n`);
+            } else {
+                stream.markdown('⚠️ **Extraction could not be started.** Please check backend logs.\n\n');
+            }
+            stateManager.setStage('idle');
+            return { metadata: { command: 'analyze' } };
+        }
+
+        let lastExtractWsDetail = '';
+        const extractProgressDisposable = client.connectProgress(videoId, (msg) => {
+            const text = msg.detail || msg.stage;
+            if (text !== lastExtractWsDetail) {
+                lastExtractWsDetail = text;
+                stream.progress(text);
+            }
+        });
+
+        let extractionComplete = false;
+        const extractStartTime = Date.now();
+        const extractTimeoutMs = 600000; // 10 minutes
+        let lastExtractPollStage = '';
+
+        while (!extractionComplete && Date.now() - extractStartTime < extractTimeoutMs) {
+            if (token.isCancellationRequested) {
+                extractProgressDisposable.dispose();
+                stateManager.setStage('idle');
+                return { metadata: { command: 'analyze' } };
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            try {
+                const status = await client.getVideoStatus(videoId);
+                if (status.current_stage !== lastExtractPollStage) {
+                    lastExtractPollStage = status.current_stage;
+                    stream.progress(`${status.current_stage}`);
+                }
+
+                if (status.current_stage === 'extraction_complete') {
+                    extractionComplete = true;
+                } else if (status.status === 'failed') {
+                    stateManager.setStage('idle');
+                    stream.markdown('❌ **Extraction failed.** Please check the backend logs.');
+                    extractProgressDisposable.dispose();
+                    return { metadata: { command: 'analyze' } };
+                }
+            } catch (pollError) {
+                if (pollError instanceof BackendError && pollError.statusCode === 404) {
+                    stateManager.setStage('idle');
+                    stream.markdown('❌ **Job not found.** The backend may have restarted. Please try `/analyze` again.');
+                    extractProgressDisposable.dispose();
+                    return { metadata: { command: 'analyze' } };
+                }
+            }
+        }
+
+        extractProgressDisposable.dispose();
+
+        if (!extractionComplete) {
+            stateManager.setStage('idle');
+            stream.markdown('⚠️ **Extraction timed out.** Use `/status` to check progress.');
+            return { metadata: { command: 'analyze' } };
+        }
+
+        // Ingestion + Extraction complete — update state
         stateManager.setStage('analyzed');
 
-        // 10. Show success message
+        // Fetch extraction summary and quality assessment
+        let extractionRows = '';
+        let qualityWarning = '';
+        try {
+            const finalStatus = await client.getVideoStatus(videoId);
+            if (finalStatus.extraction_summary) {
+                const es = finalStatus.extraction_summary;
+                extractionRows = 
+                    `| Transcript | ${es.transcript_segments} segment(s) |\n` +
+                    `| Scenes | ${es.scenes} detected |\n` +
+                    `| Keyframes | ${es.keyframes} captured |\n` +
+                    `| Vision analysis | ${es.has_vision_descriptions ? '✓' : '✗ (no descriptions)'} |\n`;
+            }
+
+            // Run quality assessment
+            try {
+                const quality = await client.assessQuality(videoId, selectedModel);
+                const confidence = Math.round(quality.grounding_confidence * 100);
+                extractionRows += `| Data quality | **${quality.quality_level}** (${confidence}% grounding confidence) |\n`;
+
+                if (quality.quality_level === 'minimal' || quality.quality_level === 'thin') {
+                    const warnings = quality.warnings.map(w => `> - ${w}`).join('\n');
+                    const recommendations = quality.recommendations.map(r => `> - ${r}`).join('\n');
+                    qualityWarning = 
+                        `\n⚠️ **Data quality: ${quality.quality_level}** — ` +
+                        `The extraction data may be insufficient for fully grounded documentation.\n\n` +
+                        (quality.warnings.length > 0 ? `> **Warnings:**\n${warnings}\n\n` : '') +
+                        (quality.recommendations.length > 0 ? `> **Recommendations:**\n${recommendations}\n\n` : '');
+                } else if (quality.quality_level === 'adequate') {
+                    const recommendations = quality.recommendations.map(r => `> - ${r}`).join('\n');
+                    qualityWarning = quality.recommendations.length > 0
+                        ? `\n💡 **Tips to improve quality:**\n${recommendations}\n\n`
+                        : '';
+                }
+            } catch {
+                // Quality assessment failed — non-fatal, continue without it
+            }
+        } catch {
+            // Non-fatal
+        }
+
         stream.markdown(
             `✅ **Video analyzed successfully!**\n\n` +
             `| Field | Value |\n` +
             `|-------|-------|\n` +
             `| Video | \`${videoPath}\` |\n` +
-            `| Video ID | \`${videoId}\` |\n\n` +
+            `| Video ID | \`${videoId}\` |\n` +
+            extractionRows +
+            `\n` +
             `📝 Ready to generate documentation. Choose a document type:\n\n` +
             '```\n@video-documenter /generate\n```\n\n' +
-            'Available types: **Quickstart**, **Tutorial**, **How-to**, **Concept**, **Overview**'
+            'Available types: **Quickstart**, **Tutorial**, **How-to**, **Concept**, **Overview**' +
+            qualityWarning
         );
 
     } catch (error) {

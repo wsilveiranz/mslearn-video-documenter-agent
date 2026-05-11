@@ -15,10 +15,23 @@ export interface StatusResponse {
     total_steps: number;
     current_stage: string;
     document_id: string | null;
+    extraction_summary: {
+        transcript_segments: number;
+        scenes: number;
+        keyframes: number;
+        has_vision_descriptions: boolean;
+    } | null;
+    data_quality: DataQualityResponse | null;
 }
 
 export interface GenerateResponse {
     document_id: string;
+    status: string;
+    message: string;
+}
+
+export interface ExtractionResponse {
+    video_id: string;
     status: string;
     message: string;
 }
@@ -29,6 +42,17 @@ export interface DocumentResponse {
     markdown_content: string;
     word_count: number;
     revision_number: number;
+}
+
+export interface DataQualityResponse {
+    quality_level: 'rich' | 'adequate' | 'thin' | 'minimal';
+    transcript_assessment: string;
+    visual_assessment: string;
+    coverage_gaps: string[];
+    warnings: string[];
+    recommendations: string[];
+    grounding_confidence: number;
+    raw_metrics: Record<string, unknown>;
 }
 
 export interface HealthResponse {
@@ -49,6 +73,13 @@ export interface BackendConfig {
     baseUrl: string;
 }
 
+export interface BackendMetadata {
+    author?: string;
+    ms_author?: string;
+    ms_service?: string;
+    customer_intent?: string;
+}
+
 export interface Disposable {
     dispose(): void;
 }
@@ -64,7 +95,7 @@ export class BackendClient {
         return this.get<HealthResponse>('/health');
     }
 
-    async ingestVideo(filePath: string): Promise<IngestResponse> {
+    async ingestVideo(filePath: string, model?: string): Promise<IngestResponse> {
         const url = `${this.baseUrl}/api/v1/videos/ingest`;
 
         const fileBuffer = await fs.promises.readFile(filePath);
@@ -73,6 +104,9 @@ export class BackendClient {
         const formData = new FormData();
         const blob = new Blob([fileBuffer]);
         formData.append('file', blob, fileName);
+        if (model) {
+            formData.append('model', model);
+        }
 
         const response = await fetch(url, {
             method: 'POST',
@@ -82,11 +116,14 @@ export class BackendClient {
         return this.handleResponse<IngestResponse>(response);
     }
 
-    async ingestVideoByPath(videoPath: string): Promise<IngestResponse> {
+    async ingestVideoByPath(videoPath: string, model?: string): Promise<IngestResponse> {
         const url = `${this.baseUrl}/api/v1/videos/ingest`;
 
         const formData = new FormData();
         formData.append('video_path', videoPath);
+        if (model) {
+            formData.append('model', model);
+        }
 
         const response = await fetch(url, {
             method: 'POST',
@@ -100,28 +137,49 @@ export class BackendClient {
         return this.get<StatusResponse>(`/videos/${videoId}/status`);
     }
 
+    async extractVideo(videoId: string, model?: string): Promise<ExtractionResponse> {
+        return this.post<ExtractionResponse>(`/videos/${videoId}/extract`, { model: model ?? null });
+    }
+
     async getExtractionResults(videoId: string): Promise<Record<string, unknown>> {
         return this.get<Record<string, unknown>>(`/videos/${videoId}/extraction`);
+    }
+
+    async assessQuality(videoId: string, model?: string): Promise<DataQualityResponse> {
+        return this.post<DataQualityResponse>(`/videos/${videoId}/assess-quality`, { model: model ?? null });
     }
 
     async generateDocument(
         videoId: string,
         docType: string,
-        supplementaryContext: string = ''
+        supplementaryContext: string = '',
+        metadata?: BackendMetadata,
+        model?: string
     ): Promise<GenerateResponse> {
-        return this.post<GenerateResponse>('/documents/generate', {
+        const body: Record<string, unknown> = {
             video_id: videoId,
             doc_type: docType,
             supplementary_context: supplementaryContext,
-        });
+        };
+        if (metadata) {
+            body.metadata = metadata;
+        }
+        if (model) {
+            body.model = model;
+        }
+        return this.post<GenerateResponse>('/documents/generate', body);
     }
 
     async getDocument(documentId: string): Promise<DocumentResponse> {
         return this.get<DocumentResponse>(`/documents/${documentId}`);
     }
 
-    async refineDocument(documentId: string, feedback: string): Promise<GenerateResponse> {
-        return this.post<GenerateResponse>(`/documents/${documentId}/refine`, { feedback });
+    async refineDocument(documentId: string, feedback: string, model?: string): Promise<GenerateResponse> {
+        const body: Record<string, unknown> = { feedback };
+        if (model) {
+            body.model = model;
+        }
+        return this.post<GenerateResponse>(`/documents/${documentId}/refine`, body);
     }
 
     connectProgress(videoId: string, onProgress: (msg: ProgressMessage) => void): Disposable {

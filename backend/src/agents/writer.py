@@ -15,7 +15,7 @@ from src.models.document import DocType, DocumentOutline, GeneratedDocument
 if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
 
-    from src.models.video import ExtractionResult
+    from src.models.video import DataQualityReport, ExtractionResult
 
 logger = structlog.get_logger()
 
@@ -55,24 +55,62 @@ class WriterAgent:
                 logger.warning("writer.template_not_found", doc_type=doc_type, path=str(path))
 
     async def process(
-        self, outline: DocumentOutline, extraction: ExtractionResult
+        self, outline: DocumentOutline, extraction: ExtractionResult,
+        quality_report: DataQualityReport | None = None,
     ) -> GeneratedDocument:
         """Generate a full Markdown document from the outline.
 
         Args:
             outline: Document structure with sections and screenshots.
             extraction: Original extraction data for reference.
+            quality_report: Optional quality assessment; injects guardrails when thin/minimal.
 
         Returns:
             GeneratedDocument with full Markdown content.
         """
-        logger.info("writer.start", doc_type=outline.doc_type, sections=len(outline.sections))
+        logger.info(
+            "writer.start",
+            doc_type=outline.doc_type,
+            sections=len(outline.sections),
+            quality_level=quality_report.quality_level if quality_report else "unknown",
+        )
 
         template = self._templates.get(outline.doc_type, "")
         outline_json = outline.model_dump_json(indent=2)
         extraction_context = self._build_extraction_context(extraction)
 
+        quality_guardrail = ""
+        if quality_report and quality_report.quality_level in ("thin", "minimal"):
+            gaps = (
+                "\n".join(f"- {gap}" for gap in quality_report.coverage_gaps)
+                if quality_report.coverage_gaps
+                else "- No specific gaps identified"
+            )
+            confidence = f"{quality_report.grounding_confidence:.0%}"
+            quality_guardrail = (
+                "## ⚠️ THIN DATA GUARDRAIL — READ CAREFULLY\n\n"
+                f"**Data quality: {quality_report.quality_level}** "
+                f"(grounding confidence: {confidence})\n\n"
+                "The extraction data for this video is insufficient "
+                "for fully grounded documentation. "
+                "You MUST follow these rules:\n\n"
+                "1. **DO NOT fabricate steps, commands, UI paths, or "
+                "procedures** not evidenced in the extraction data.\n"
+                "2. For any section where extraction data is insufficient, insert a visible TODO comment:\n"
+                "   `<!-- TODO: Verify — not shown in video -->`\n"
+                "3. **Prefer shorter, conservative output** over comprehensive but ungrounded content.\n"
+                "4. Add this alert after the introduction:\n"
+                "   ```\n"
+                "   > [!IMPORTANT]\n"
+                "   > This article was generated from a video with limited extraction data. "
+                "Some sections may be incomplete or require verification.\n"
+                "   ```\n"
+                "5. **Coverage gaps identified by quality assessment:**\n"
+                f"{gaps}\n\n"
+            )
+
         user_message = (
+            quality_guardrail +
             "## Document Outline\n\n"
             f"```json\n{outline_json}\n```\n\n"
             "## MS Learn Template\n\n"

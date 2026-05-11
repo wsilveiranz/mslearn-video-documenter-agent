@@ -1,70 +1,10 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager, sanitizeFilename } from '../utils/outputManager';
-
-const DOC_TYPES = [
-    { label: '📘 Tutorial', value: 'tutorial', description: 'Step-by-step learning exercise with checklist' },
-    { label: '⚡ Quickstart', value: 'quickstart', description: 'Get started quickly with a focused task' },
-    { label: '🔧 How-to', value: 'how-to', description: 'Task-oriented guide for a specific goal' },
-    { label: '💡 Concept', value: 'concept', description: 'Explain what something is and how it works' },
-    { label: '🔍 Overview', value: 'overview', description: 'High-level product or service introduction' },
-];
-
-function levenshtein(a: string, b: string): number {
-    const m = a.length;
-    const n = b.length;
-    const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
-        Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
-    );
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            dp[i][j] = a[i - 1] === b[j - 1]
-                ? dp[i - 1][j - 1]
-                : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-        }
-    }
-    return dp[m][n];
-}
-
-const DOC_TYPE_ALIASES: Array<{ alias: string; value: string }> = [
-    { alias: 'quickstart', value: 'quickstart' },
-    { alias: 'quick start', value: 'quickstart' },
-    { alias: 'quick-start', value: 'quickstart' },
-    { alias: 'tutorial', value: 'tutorial' },
-    { alias: 'tutorials', value: 'tutorial' },
-    { alias: 'how-to', value: 'how-to' },
-    { alias: 'how to', value: 'how-to' },
-    { alias: 'howto', value: 'how-to' },
-    { alias: 'concept', value: 'concept' },
-    { alias: 'concepts', value: 'concept' },
-    { alias: 'overview', value: 'overview' },
-];
-
-function fuzzyMatchDocType(input: string): string | undefined {
-    const words = input.split(/\s+/).filter(Boolean);
-    const candidates: string[] = [];
-    for (let i = 0; i < words.length; i++) {
-        candidates.push(words[i]);
-        if (i + 1 < words.length) { candidates.push(`${words[i]} ${words[i + 1]}`); }
-        if (i + 2 < words.length) { candidates.push(`${words[i]} ${words[i + 1]} ${words[i + 2]}`); }
-    }
-
-    let bestValue: string | undefined;
-    let bestDist = Infinity;
-
-    for (const candidate of candidates) {
-        for (const { alias, value } of DOC_TYPE_ALIASES) {
-            const dist = levenshtein(candidate, alias);
-            if (dist < bestDist) {
-                bestDist = dist;
-                bestValue = value;
-            }
-        }
-    }
-
-    return bestDist <= 2 ? bestValue : undefined;
-}
+import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
+import { BackendMetadata } from '../api/backendClient';
 
 export async function handleGenerate(
     request: vscode.ChatRequest,
@@ -77,7 +17,7 @@ export async function handleGenerate(
     const state = stateManager.getState();
 
     // 1. Check that a video has been analyzed
-    if (!state.currentVideoId || (state.currentStage !== 'analyzed' && state.currentStage !== 'generated')) {
+    if (!state.currentVideoId || (state.currentStage !== 'analyzed' && state.currentStage !== 'generated' && state.currentStage !== 'planned')) {
         stream.markdown(
             '📝 No analyzed video found. Please analyze a video first:\n\n' +
             '```\n@video-documenter /analyze C:\\path\\to\\video.mp4\n```'
@@ -85,74 +25,79 @@ export async function handleGenerate(
         return { metadata: { command: 'generate' } };
     }
 
-    // 2. Determine doc type — check if specified in prompt, otherwise show QuickPick
+    // 2. Determine doc type — use pre-selected type from /plan, or detect/prompt
     let docType: string | undefined;
-    const promptLower = request.prompt.toLowerCase().trim();
 
-    // Try to detect doc type from prompt text (flexible matching)
-    const docTypePatterns: Array<{ value: string; patterns: RegExp[] }> = [
-        { value: 'quickstart', patterns: [/\bquick\s*-?\s*start\b/] },
-        { value: 'tutorial', patterns: [/\btutorial\b/] },
-        { value: 'how-to', patterns: [/\bhow[\s-]*to\b/] },
-        { value: 'concept', patterns: [/\bconcept\b/] },
-        { value: 'overview', patterns: [/\boverview\b/] },
-    ];
+    if (state.currentStage === 'planned' && state.lastDocType) {
+        // Coming from /plan — use the already-selected doc type, skip picker
+        docType = state.lastDocType;
+    } else {
+        const promptLower = request.prompt.toLowerCase().trim();
 
-    for (const dt of docTypePatterns) {
-        if (dt.patterns.some(p => p.test(promptLower))) {
-            docType = dt.value;
-            break;
-        }
-    }
-
-    if (!docType) {
-        docType = fuzzyMatchDocType(promptLower);
-    }
-
-    if (!docType) {
-        // Show QuickPick for doc type selection
-        const selection = await vscode.window.showQuickPick(
-            DOC_TYPES.map(dt => ({
-                label: dt.label,
-                description: dt.description,
-                value: dt.value,
-            })),
-            {
-                placeHolder: 'What type of MS Learn document should I generate?',
-                title: 'Document Type',
+        // Try to detect doc type from prompt text (flexible matching)
+        for (const dt of DOC_TYPE_PATTERNS) {
+            if (dt.patterns.some(p => p.test(promptLower))) {
+                docType = dt.value;
+                break;
             }
-        );
-
-        if (!selection) {
-            stream.markdown('📝 Document generation cancelled. Use `/generate` to try again.');
-            return { metadata: { command: 'generate' } };
         }
 
-        docType = (selection as { label: string; description: string; value: string }).value;
+        if (!docType) {
+            docType = fuzzyMatchDocType(promptLower);
+        }
+
+        if (!docType) {
+            // Show QuickPick for doc type selection
+            const selection = await vscode.window.showQuickPick(
+                DOC_TYPES.map(dt => ({
+                    label: dt.label,
+                    description: dt.description,
+                    value: dt.value,
+                })),
+                {
+                    placeHolder: 'What type of MS Learn document should I generate?',
+                    title: 'Document Type',
+                }
+            );
+
+            if (!selection) {
+                stream.markdown('📝 Document generation cancelled. Use `/generate` to try again.');
+                return { metadata: { command: 'generate' } };
+            }
+
+            docType = (selection as { label: string; description: string; value: string }).value;
+        }
     }
 
     // 3. Extract supplementary context from prompt (everything that isn't the doc type keyword)
     let supplementaryContext = request.prompt.trim();
     // Remove the doc type keyword if present
-    for (const dt of docTypePatterns) {
+    for (const dt of DOC_TYPE_PATTERNS) {
         for (const pattern of dt.patterns) {
             supplementaryContext = supplementaryContext.replace(new RegExp(pattern.source, 'gi'), '').trim();
         }
     }
 
-    // 4. Extract desired filename from prompt (e.g., "use foo.md as the file name")
+    // 4. Extract desired filename — prefer /plan's saved filename if coming from planned state
     let desiredFilename: string | undefined;
-    const filenameMatch = supplementaryContext.match(
-        /(?:use|save\s+(?:as|to)|file\s*name\s*(?:should\s+be)?|name\s+(?:it|the\s+file))\s+(\S+\.md)\b/i
-    ) ?? supplementaryContext.match(/\b([\w-]+\.md)\b/i);
-    if (filenameMatch) {
-        desiredFilename = filenameMatch[1].replace(/^["']+|["']+$/g, '');
+    if (state.currentStage === 'planned' && state.savedFilename) {
+        desiredFilename = state.savedFilename;
+    } else {
+        const filenameMatch = supplementaryContext.match(
+            /(?:use|save\s+(?:as|to)|file\s*name\s*(?:should\s+be)?|name\s+(?:it|the\s+file))\s+(\S+\.md)\b/i
+        ) ?? supplementaryContext.match(/\b([\w-]+\.md)\b/i);
+        if (filenameMatch) {
+            desiredFilename = filenameMatch[1].replace(/^["']+|["']+$/g, '');
+        }
     }
 
     // 4. Check cancellation
     if (token.isCancellationRequested) {
         return { metadata: { command: 'generate' } };
     }
+
+    // Capture the user's selected model to forward to the backend pipeline
+    const selectedModel = request.model?.id;
 
     // 5. Trigger generation
     try {
@@ -161,8 +106,51 @@ export async function handleGenerate(
 
         stream.progress(`Generating ${docType} document...`);
 
+        // Build metadata for the backend from plan state
+        const backendMetadata: BackendMetadata | undefined = state.metadata ? {
+            author: state.metadata.author,
+            ms_author: state.metadata.msAuthor,
+            ms_service: state.metadata.msService,
+            customer_intent: state.metadata.customerIntent,
+        } : undefined;
+
+        // Load supplementary context from stored references on-demand
+        const MAX_REF_FILE_BYTES = 100 * 1024;  // 100 KB per file
+        const MAX_TOTAL_REF_BYTES = 500 * 1024; // 500 KB total
+        let refContext = '';
+        const docRefs = stateManager.getSupplementaryDocRefs();
+        if (docRefs.length > 0) {
+            const contents: string[] = [];
+            let totalBytes = 0;
+            let totalCapReached = false;
+            for (const refPath of docRefs) {
+                try {
+                    const uri = vscode.Uri.file(refPath);
+                    const bytes = await vscode.workspace.fs.readFile(uri);
+                    const basename = path.basename(refPath);
+                    let text = Buffer.from(bytes).toString('utf-8');
+                    if (bytes.length > MAX_REF_FILE_BYTES) {
+                        text = text.slice(0, MAX_REF_FILE_BYTES) + '\n[… truncated — file exceeds 100 KB limit]';
+                        stream.progress(`Ref doc truncated (exceeds 100 KB): ${basename}`);
+                    }
+                    totalBytes += text.length;
+                    contents.push(`--- ${basename} ---\n${text}`);
+                    if (totalBytes >= MAX_TOTAL_REF_BYTES) {
+                        contents.push('\n[… remaining ref docs skipped — total exceeds 500 KB limit]');
+                        stream.progress('Some ref docs skipped — total ref doc size exceeds 500 KB limit.');
+                        totalCapReached = true;
+                        break;
+                    }
+                } catch {
+                    // Skip files that can't be read (may have been moved/deleted)
+                }
+            }
+            refContext = contents.join('\n\n');
+        }
+        const fullContext = [supplementaryContext, refContext].filter(Boolean).join('\n\n');
+
         // Trigger the pipeline
-        await client.generateDocument(state.currentVideoId, docType, supplementaryContext);
+        await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata, selectedModel);
 
         // 6. Connect WebSocket for progress
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {
