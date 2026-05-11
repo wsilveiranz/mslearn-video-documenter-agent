@@ -165,3 +165,7 @@ class VideoJob(BaseModel):
     quality_report: DataQualityReport | None = Field(
         default=None, description="LLM-generated quality assessment of extraction data"
     )
+    llm_model: str | None = Field(
+        default=None,
+        description="LLM model identifier from the frontend chat picker, forwarded to Copilot proxy",
+    )

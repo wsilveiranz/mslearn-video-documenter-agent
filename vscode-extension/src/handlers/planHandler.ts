@@ -238,7 +238,9 @@ export async function handlePlan(
         stateManager.setStage('analyzing');
         stream.progress('Uploading video...');
 
-        const ingestResult = await client.ingestVideoByPath(videoPath);
+        const selectedModel = request.model?.id;
+
+        const ingestResult = await client.ingestVideoByPath(videoPath, selectedModel);
         const videoId = ingestResult.video_id;
 
         stateManager.setVideoId(videoId, videoPath);
@@ -305,7 +307,7 @@ export async function handlePlan(
         stream.progress('Analyzing video content...');
 
         try {
-            await client.extractVideo(videoId);
+            await client.extractVideo(videoId, selectedModel);
         } catch (extractError) {
             if (extractError instanceof BackendError) {
                 stream.markdown(`⚠️ **Extraction could not be started:** ${extractError.detail}\n\n`);
@@ -384,7 +386,7 @@ export async function handlePlan(
 
             // Run quality assessment
             try {
-                const quality = await client.assessQuality(videoId);
+                const quality = await client.assessQuality(videoId, selectedModel);
                 const confidence = Math.round(quality.grounding_confidence * 100);
                 extractionInfo += `| Data quality | **${quality.quality_level}** (${confidence}% grounding confidence) |\n`;
 

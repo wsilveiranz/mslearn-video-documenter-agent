@@ -57,7 +57,11 @@ def create_foundry_client() -> FoundryChatClient:
     )
 
 
-def create_llm_client(processing_mode: ProcessingMode | None = None):
+def create_llm_client(
+    processing_mode: ProcessingMode | None = None,
+    *,
+    model_override: str | None = None,
+):
     """Create the appropriate LLM client based on processing mode and config.
 
     Rules:
@@ -71,11 +75,18 @@ def create_llm_client(processing_mode: ProcessingMode | None = None):
         logger.info("pipeline.using_foundry", reason="processing_mode=cloud")
         return create_foundry_client()
 
+    copilot_model = model_override or settings.copilot_proxy_model
+
     if processing_mode == ProcessingMode.LOCAL and settings.copilot_proxy_url:
-        logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
+        logger.info(
+            "pipeline.using_copilot_proxy",
+            proxy_url=settings.copilot_proxy_url,
+            model=copilot_model,
+            model_override=model_override,
+        )
         return create_copilot_client(
             settings.copilot_proxy_url,
-            model=settings.copilot_proxy_model,
+            model=copilot_model,
             secret=settings.copilot_proxy_secret,
         )
 
@@ -87,10 +98,15 @@ def create_llm_client(processing_mode: ProcessingMode | None = None):
 
     # Default: honour global settings flag (no explicit mode supplied)
     if settings.use_copilot_proxy:
-        logger.info("pipeline.using_copilot_proxy", proxy_url=settings.copilot_proxy_url)
+        logger.info(
+            "pipeline.using_copilot_proxy",
+            proxy_url=settings.copilot_proxy_url,
+            model=copilot_model,
+            model_override=model_override,
+        )
         return create_copilot_client(
             settings.copilot_proxy_url,
-            model=settings.copilot_proxy_model,
+            model=copilot_model,
             secret=settings.copilot_proxy_secret,
         )
     return create_foundry_client()

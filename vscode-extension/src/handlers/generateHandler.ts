@@ -91,6 +91,9 @@ export async function handleGenerate(
         return { metadata: { command: 'generate' } };
     }
 
+    // Capture the user's selected model to forward to the backend pipeline
+    const selectedModel = request.model?.id;
+
     // 5. Trigger generation
     try {
         stateManager.setStage('generating');
@@ -110,7 +113,7 @@ export async function handleGenerate(
         const fullContext = [supplementaryContext, state.supplementaryContext].filter(Boolean).join('\n\n');
 
         // Trigger the pipeline
-        await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata);
+        await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata, selectedModel);
 
         // 6. Connect WebSocket for progress
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {

@@ -50,6 +50,7 @@ class GenerateRequest(BaseModel):
     doc_type: DocType
     supplementary_context: str = ""
     metadata: DocumentMetadata | None = None
+    model: str | None = None
 
 
 class GenerateResponse(BaseModel):
@@ -60,6 +61,7 @@ class GenerateResponse(BaseModel):
 
 class RefineRequest(BaseModel):
     feedback: str
+    model: str | None = None
 
 
 class StatusResponse(BaseModel):
@@ -90,6 +92,12 @@ class LmProxyConfigRequest(BaseModel):
 class LmProxyConfigResponse(BaseModel):
     status: str
     message: str
+
+
+class ModelOverrideRequest(BaseModel):
+    """Optional body for endpoints that accept a model override."""
+
+    model: str | None = None
 
 
 @router.post("/config/lm-proxy", response_model=LmProxyConfigResponse)
@@ -220,7 +228,7 @@ async def _run_extraction(video_id: str) -> None:
 
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
-        client = create_llm_client(mode)
+        client = create_llm_client(mode, model_override=job.llm_model)
         extraction_agent = ExtractionAgent(foundry_client=client)
 
         # Reuse cached metadata from ingestion to avoid re-probing the video
@@ -265,7 +273,7 @@ async def _run_pipeline(
     try:
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
-        client = create_llm_client(mode)
+        client = create_llm_client(mode, model_override=job.llm_model)
         job.status = ProcessingStatus.PROCESSING
 
         # Check if extraction was already done (e.g., by /extract endpoint)
@@ -380,6 +388,7 @@ async def ingest_video(
     background_tasks: BackgroundTasks,
     file: UploadFile | None = None,
     video_path: str | None = Form(None),
+    model: str | None = Form(None),
 ) -> IngestResponse:
     """Upload or register a video for processing.
 
@@ -414,7 +423,7 @@ async def ingest_video(
 
     logger.info("api.ingest", source=source, video_id=video_id)
 
-    job = VideoJob(video_id=video_id, status=ProcessingStatus.QUEUED)
+    job = VideoJob(video_id=video_id, status=ProcessingStatus.QUEUED, llm_model=model)
     _video_jobs[video_id] = job
 
     background_tasks.add_task(_run_ingestion, video_id, source, is_temp_file=is_temp_file)
@@ -455,11 +464,18 @@ async def get_video_status(video_id: str) -> StatusResponse:
 
 
 @router.post("/videos/{video_id}/extract", response_model=GenerateResponse)
-async def extract_video(video_id: str, background_tasks: BackgroundTasks) -> GenerateResponse:
+async def extract_video(
+    video_id: str,
+    background_tasks: BackgroundTasks,
+    body: ModelOverrideRequest | None = None,
+) -> GenerateResponse:
     """Trigger content extraction (transcript, scenes, keyframes) for an ingested video."""
     job = _video_jobs.get(video_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Video job '{video_id}' not found")
+
+    if body and body.model:
+        job.llm_model = body.model
 
     if job.status == ProcessingStatus.FAILED:
         raise HTTPException(status_code=400, detail=f"Video job '{video_id}' has failed: {job.error_message}")
@@ -495,11 +511,14 @@ async def get_extraction_results(video_id: str) -> dict:
 
 
 @router.post("/videos/{video_id}/assess-quality")
-async def assess_quality(video_id: str) -> dict:
+async def assess_quality(video_id: str, body: ModelOverrideRequest | None = None) -> dict:
     """Run LLM-based quality assessment on extraction data."""
     job = _video_jobs.get(video_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Video job '{video_id}' not found")
+
+    if body and body.model:
+        job.llm_model = body.model
 
     if job.extraction_result is None:
         raise HTTPException(
@@ -518,7 +537,7 @@ async def assess_quality(video_id: str) -> dict:
         from src.agents.orchestrator import create_llm_client
         from src.agents.quality import QualityAssessmentAgent
 
-        client = create_llm_client()
+        client = create_llm_client(model_override=job.llm_model)
         quality_agent = QualityAssessmentAgent(client)
         report = await quality_agent.process(job.extraction_result)
 
@@ -552,7 +571,10 @@ async def generate_document(request: GenerateRequest, background_tasks: Backgrou
             detail=f"Video job '{request.video_id}' is not ready for generation (stage: {job.current_stage})",
         )
 
-    logger.info("api.generate", video_id=request.video_id, doc_type=request.doc_type)
+    if request.model:
+        job.llm_model = request.model
+
+    logger.info("api.generate", video_id=request.video_id, doc_type=request.doc_type, llm_model=job.llm_model)
 
     background_tasks.add_task(
         _run_pipeline, request.video_id, request.doc_type, request.supplementary_context, request.metadata
@@ -597,9 +619,12 @@ async def refine_document(
     async def _refine() -> None:
         # Find associated video_id for WebSocket broadcast
         video_id: str | None = None
+        llm_model: str | None = request.model
         for vid, j in _video_jobs.items():
             if j.document_id == document_id:
                 video_id = vid
+                if not llm_model:
+                    llm_model = j.llm_model
                 break
 
         try:
@@ -608,7 +633,7 @@ async def refine_document(
             if video_id:
                 manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
 
-            client = create_llm_client()
+            client = create_llm_client(model_override=llm_model)
             editor = EditorAgent(client)
             refined = await editor.process(doc, feedback=request.feedback)
 
