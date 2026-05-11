@@ -2,6 +2,27 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { getOutputDirectory, getAutoOpenPreview } from './config';
 
+/** Strip unsafe characters from a user-provided markdown filename. */
+export function sanitizeFilename(filename: string): string {
+    let name = filename
+        .trim()
+        .replace(/^["']+|["']+$/g, '')   // strip surrounding quotes
+        .replace(/\.\./g, '')             // strip .. segments
+        .replace(/[/\\]/g, '')            // strip path separators
+        .trim();
+
+    if (!name.endsWith('.md')) {
+        name = name ? `${name}.md` : 'document.md';
+    }
+
+    // Fallback if name is empty or reduced to just ".md"
+    if (!name || name === '.md') {
+        name = 'document.md';
+    }
+
+    return name;
+}
+
 /** Validate outputDirectory is relative and doesn't escape workspace. */
 function sanitizeOutputDir(dir: string): string {
     if (path.isAbsolute(dir)) {
@@ -43,7 +64,7 @@ export class OutputManager {
         await vscode.workspace.fs.createDirectory(baseDirUri);
 
         // Save markdown file (use provided filename or fall back to documentId)
-        const mdFileName = filename ?? `${documentId}.md`;
+        const mdFileName = filename ? sanitizeFilename(filename) : `${documentId}.md`;
         const mdFileUri = vscode.Uri.joinPath(baseDirUri, mdFileName);
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
 
@@ -110,7 +131,7 @@ export class OutputManager {
     /**
      * Update an existing document in the workspace (for refinements).
      */
-    async updateDocument(documentId: string, markdownContent: string): Promise<vscode.Uri> {
+    async updateDocument(documentId: string, markdownContent: string, filename?: string): Promise<vscode.Uri> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder open.');
@@ -122,7 +143,8 @@ export class OutputManager {
         // Ensure output directory exists (may have been removed since initial save)
         await vscode.workspace.fs.createDirectory(baseDirUri);
 
-        const mdFileUri = vscode.Uri.joinPath(baseDirUri, `${documentId}.md`);
+        const mdFileName = filename ?? `${documentId}.md`;
+        const mdFileUri = vscode.Uri.joinPath(baseDirUri, mdFileName);
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
         return mdFileUri;
     }

@@ -87,7 +87,7 @@ export async function handleGenerate(
         /(?:use|save\s+(?:as|to)|file\s*name\s*(?:should\s+be)?|name\s+(?:it|the\s+file))\s+(\S+\.md)\b/i
     ) ?? supplementaryContext.match(/\b([\w-]+\.md)\b/i);
     if (filenameMatch) {
-        desiredFilename = filenameMatch[1];
+        desiredFilename = filenameMatch[1].replace(/^["']+|["']+$/g, '');
     }
 
     // 4. Check cancellation
@@ -171,6 +171,7 @@ export async function handleGenerate(
                 [],
                 desiredFilename,
             );
+            stateManager.setSavedFilename(desiredFilename ?? `${documentId}.md`);
             stream.markdown(
                 `✅ **${docType.charAt(0).toUpperCase() + docType.slice(1)} document generated!**\n\n` +
                 `| Field | Value |\n` +
