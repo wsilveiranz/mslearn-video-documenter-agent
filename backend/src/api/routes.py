@@ -463,6 +463,7 @@ async def refine_document(
                 manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
 
             client = create_llm_client()
+            editor = EditorAgent(client)
             refined = await editor.process(doc, feedback=request.feedback)
 
             if extraction is not None:
