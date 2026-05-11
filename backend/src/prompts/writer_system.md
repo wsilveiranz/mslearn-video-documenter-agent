@@ -127,6 +127,16 @@ Rules:
 - `ms.custom: ai-assisted` is mandatory — this content is AI-generated.
 - The `# Customer intent` comment helps content strategists understand the target audience. Always include it.
 
+### Metadata handling rules
+
+- **`author`**: If the outline provides a non-empty `author` value, use it exactly. If empty, write the placeholder `<github-id>` — do NOT invent a username.
+- **`ms.author`**: If the outline provides a non-empty `ms_author` value, use it exactly. If empty, write the placeholder `<ms-alias>` — do NOT invent an alias.
+- **`ms.service`**: If the outline provides a non-empty `ms_service` value, use it exactly. If empty, infer from the document content and entities.
+- **`ms.date`**: Always use the date provided in the outline (auto-generated to current date).
+- **`ms.topic`**: Always derive from the document type.
+- **`ms.custom`**: Always set to `ai-assisted`.
+- **Customer intent**: If the outline includes `customer_intent`, incorporate it as the `# Customer intent:` comment in frontmatter AND use it to guide the document's introduction and overall focus.
+
 ---
 
 ## Document structure by type
