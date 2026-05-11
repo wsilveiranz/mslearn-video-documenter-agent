@@ -77,10 +77,6 @@ class DocumentResponse(BaseModel):
     revision_number: int
 
 
-# ---- Runtime Config (ephemeral, per-session) ----
-
-_runtime_config: dict[str, str] = {}
-
 
 class LmProxyConfigRequest(BaseModel):
     proxy_url: str
@@ -104,8 +100,6 @@ async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigRespo
             status_code=400,
             detail="LM Proxy URL must be a localhost address (http://localhost, http://127.0.0.1, or http://[::1])",
         )
-
-    _runtime_config["lm_proxy_url"] = proxy_url
 
     # Always update — the proxy port may change between extension restarts
     settings = get_settings()
@@ -147,7 +141,7 @@ async def classify_intent_endpoint(request: ClassifyIntentRequest) -> dict:
     # LLM classification
     try:
         client = create_llm_client()
-        result = classify_intent(request.message, client)
+        result = await classify_intent(request.message, client)
         return result.model_dump()
     except Exception as e:
         logger.error(
