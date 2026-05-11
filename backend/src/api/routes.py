@@ -22,6 +22,7 @@ from src.agents.writer import WriterAgent
 from src.api.websocket import manager
 from src.config import get_settings
 from src.models.document import DocType
+from src.models.services import AZURE_SERVICES
 from src.models.video import ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
 
 if TYPE_CHECKING:
@@ -120,6 +121,14 @@ async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigRespo
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok", "service": "video-documenter"}
+
+
+# ---- Services ----
+
+@router.get("/services")
+async def list_services() -> list[dict[str, str]]:
+    """Return the list of common Azure service slugs for ms.service metadata."""
+    return [{"slug": slug, "display_name": name} for slug, name in AZURE_SERVICES]
 
 
 # ---- Intent Classification ----

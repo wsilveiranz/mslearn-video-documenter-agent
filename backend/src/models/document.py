@@ -67,6 +67,18 @@ class Frontmatter(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class DocumentMetadata(BaseModel):
+    """User-provided metadata for MS Learn frontmatter fields that cannot be derived from video content."""
+
+    author: str = Field(default="", description="GitHub username of the document author (appears in article byline)")
+    ms_author: str = Field(default="", description="Microsoft alias without @microsoft.com (for internal tracking)")
+    ms_service: str = Field(default="", description="Azure service slug from MS Learn taxonomy (e.g., azure-openai)")
+    customer_intent: str = Field(
+        default="",
+        description="Reader's goal: 'As a <role>, I want <what> so that <why>'",
+    )
+
+
 class DocumentOutline(BaseModel):
     """Complete document outline produced by the Structure Agent."""
 
