@@ -4,10 +4,13 @@ import { createChatHandler } from './chatHandler';
 import { registerAnalyzeFileCommand } from './commands/analyzeFile';
 import { LmProxyServer } from './api/lmProxyServer';
 import { BackendProcessManager } from './services/backendProcessManager';
-import { getBackendUrl, getAutoStartBackend, getBackendPath } from './utils/config';
+import { getBackendUrl, getAutoStartBackend, getBackendPath, getProcessingMode } from './utils/config';
+import { PrerequisiteManager } from './services/prerequisiteManager';
+import { validateSettings } from './utils/settingsValidation';
 
 let lmProxyServer: LmProxyServer | undefined;
 let backendManager: BackendProcessManager | undefined;
+let prerequisiteManager: PrerequisiteManager | undefined;
 
 async function waitForBackendHealth(baseUrl: string, timeoutMs: number = 30000): Promise<boolean> {
     const start = Date.now();
@@ -37,6 +40,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
         registerAnalyzeFileCommand(context);
 
+        // Validate settings (non-blocking warning if cloud mode settings are missing)
+        validateSettings();
+
         const backendUrl = getBackendUrl();
         let backendHealthy = false;
 
@@ -52,10 +58,25 @@ export async function activate(context: vscode.ExtensionContext) {
                 : path.join(context.extensionUri.fsPath, '..', 'backend');
 
             backendManager = new BackendProcessManager();
+            prerequisiteManager = new PrerequisiteManager();
 
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Video Documenter' },
                 async (progress) => {
+                    // Check prerequisites before starting backend
+                    progress.report({ message: 'Checking prerequisites...' });
+                    const prereqStatus = await prerequisiteManager!.ensurePrerequisites(resolvedPath);
+
+                    if (!prereqStatus.python.available) {
+                        void vscode.window.showErrorMessage(
+                            'Video Documenter: Python is required but could not be found or installed. The backend will not start.',
+                            'Open Output'
+                        ).then(action => {
+                            if (action === 'Open Output') { prerequisiteManager?.getOutputChannel().show(); }
+                        });
+                        return;
+                    }
+
                     progress.report({ message: 'Starting backend...' });
                     await backendManager!.start(resolvedPath, port, host);
 
@@ -76,7 +97,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Start LM Proxy if enabled
         const config = vscode.workspace.getConfiguration('video-documenter');
-        if (config.get<boolean>('useCopilotModels', true)) {
+        if (config.get<boolean>('useCopilotModels', true) && getProcessingMode() === 'local') {
             const preferredPort = config.get<number>('lmProxyPort', 0);
             lmProxyServer = new LmProxyServer();
             try {
@@ -106,6 +127,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
         context.subscriptions.push(participant);
         context.subscriptions.push({ dispose: () => lmProxyServer?.stop() });
+        if (prerequisiteManager) {
+            context.subscriptions.push({ dispose: () => prerequisiteManager?.dispose() });
+        }
         if (backendManager) {
             context.subscriptions.push(backendManager);
         }
@@ -116,6 +140,10 @@ export async function activate(context: vscode.ExtensionContext) {
         if (backendManager) {
             await backendManager.stop();
             backendManager = undefined;
+        }
+        if (prerequisiteManager) {
+            prerequisiteManager.dispose();
+            prerequisiteManager = undefined;
         }
         throw error;
     }
@@ -129,5 +157,9 @@ export async function deactivate() {
     if (backendManager) {
         await backendManager.stop();
         backendManager = undefined;
+    }
+    if (prerequisiteManager) {
+        prerequisiteManager.dispose();
+        prerequisiteManager = undefined;
     }
 }
