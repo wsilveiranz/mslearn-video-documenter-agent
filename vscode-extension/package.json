@@ -114,6 +114,86 @@
           "type": "string",
           "default": "",
           "description": "Default Microsoft alias for ms.author (pre-fills in /plan)"
+        },
+        "video-documenter.processingMode": {
+          "type": "string",
+          "enum": [
+            "local",
+            "cloud"
+          ],
+          "default": "local",
+          "description": "Processing mode: 'local' uses FFmpeg + Whisper, 'cloud' uses Azure Video Indexer + AI Speech",
+          "enumDescriptions": [
+            "Local processing using FFmpeg, PySceneDetect, and OpenAI Whisper",
+            "Cloud processing using Azure Video Indexer and Azure AI Speech"
+          ]
+        },
+        "video-documenter.foundryProjectEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Azure AI Foundry project endpoint (cloud mode only). Example: https://your-project.services.ai.azure.com"
+        },
+        "video-documenter.foundryModel": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "Azure AI Foundry model deployment name (cloud mode only)"
+        },
+        "video-documenter.foundryModelMini": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "Azure AI Foundry smaller model for simpler tasks (cloud mode only)"
+        },
+        "video-documenter.blobAccountUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Azure Blob Storage account URL (cloud mode only). Example: https://stvideodocumenter.blob.core.windows.net"
+        },
+        "video-documenter.blobContainerName": {
+          "type": "string",
+          "default": "video-documenter",
+          "description": "Azure Blob Storage container name (cloud mode only)"
+        },
+        "video-documenter.speechServiceEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Azure AI Speech endpoint URL (cloud mode only)"
+        },
+        "video-documenter.speechServiceRegion": {
+          "type": "string",
+          "default": "eastus",
+          "description": "Azure AI Speech region (cloud mode only)"
+        },
+        "video-documenter.videoIndexerAccountId": {
+          "type": "string",
+          "default": "",
+          "description": "Azure Video Indexer account ID (cloud mode only)"
+        },
+        "video-documenter.videoIndexerResourceId": {
+          "type": "string",
+          "default": "",
+          "description": "Full ARM resource ID for Azure Video Indexer (cloud mode only)"
+        },
+        "video-documenter.videoIndexerLocation": {
+          "type": "string",
+          "default": "trial",
+          "description": "Azure Video Indexer account location (cloud mode only)"
+        },
+        "video-documenter.whisperModel": {
+          "type": "string",
+          "enum": [
+            "tiny",
+            "base",
+            "small",
+            "medium",
+            "large"
+          ],
+          "default": "base",
+          "description": "OpenAI Whisper model size for transcription (local mode only)"
+        },
+        "video-documenter.ffmpegPath": {
+          "type": "string",
+          "default": "ffmpeg",
+          "description": "Path to FFmpeg binary (local mode only). Default uses PATH lookup."
         }
       }
     }
@@ -123,7 +203,8 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src/",
     "pretest": "npm run compile",
-    "test": "mocha"
+    "test": "mocha",
+    "vsce:package": "vsce package --out ../release/"
   },
   "ts-node": {
     "project": "./tsconfig.test.json",
@@ -140,6 +221,7 @@
     "@types/vscode": "^1.100.0",
     "@typescript-eslint/eslint-plugin": "^8.59.2",
     "@typescript-eslint/parser": "^8.59.2",
+    "@vscode/vsce": "^3.9.1",
     "eslint": "^10.3.0",
     "mocha": "^11.7.5",
     "ts-node": "^10.9.2",
