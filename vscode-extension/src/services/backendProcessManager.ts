@@ -1,5 +1,20 @@
 import { execSync, spawn, exec, type ChildProcess } from 'child_process';
 import * as vscode from 'vscode';
+import {
+    getProcessingMode,
+    getFoundryProjectEndpoint,
+    getFoundryModel,
+    getFoundryModelMini,
+    getBlobAccountUrl,
+    getBlobContainerName,
+    getSpeechServiceEndpoint,
+    getSpeechServiceRegion,
+    getVideoIndexerAccountId,
+    getVideoIndexerResourceId,
+    getVideoIndexerLocation,
+    getWhisperModel,
+    getFfmpegPath,
+} from '../utils/config';
 
 // ── Python interpreter discovery ───────────────────────────────────────────
 
@@ -113,15 +128,39 @@ export class BackendProcessManager implements vscode.Disposable {
             `[BackendProcessManager] Starting backend: ${pythonPath} -m src.main (cwd: ${backendPath})`,
         );
 
+        const envVars: Record<string, string> = {
+            ...process.env as Record<string, string>,
+            HOST: resolvedHost,
+            PORT: String(port),
+            PROCESSING_MODE: getProcessingMode(),
+            PYTHONIOENCODING: 'utf-8',
+        };
+
+        // Add cloud-mode settings (only if non-empty to not override .env defaults)
+        const conditionalVars: Record<string, string> = {
+            FOUNDRY_PROJECT_ENDPOINT: getFoundryProjectEndpoint(),
+            FOUNDRY_MODEL: getFoundryModel(),
+            FOUNDRY_MODEL_MINI: getFoundryModelMini(),
+            BLOB_ACCOUNT_URL: getBlobAccountUrl(),
+            BLOB_CONTAINER_NAME: getBlobContainerName(),
+            SPEECH_SERVICE_ENDPOINT: getSpeechServiceEndpoint(),
+            SPEECH_SERVICE_REGION: getSpeechServiceRegion(),
+            VIDEO_INDEXER_ACCOUNT_ID: getVideoIndexerAccountId(),
+            VIDEO_INDEXER_RESOURCE_ID: getVideoIndexerResourceId(),
+            VIDEO_INDEXER_LOCATION: getVideoIndexerLocation(),
+            WHISPER_MODEL: getWhisperModel(),
+            FFMPEG_PATH: getFfmpegPath(),
+        };
+
+        for (const [key, value] of Object.entries(conditionalVars)) {
+            if (value) {
+                envVars[key] = value;
+            }
+        }
+
         const child = spawn(pythonPath, ['-m', 'src.main'], {
             cwd: backendPath,
-            env: {
-                ...process.env,
-                HOST: resolvedHost,
-                PORT: String(port),
-                PROCESSING_MODE: 'local',
-                PYTHONIOENCODING: 'utf-8',
-            },
+            env: envVars,
             stdio: ['ignore', 'pipe', 'pipe'],
         });
 
