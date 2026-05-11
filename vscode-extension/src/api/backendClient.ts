@@ -30,6 +30,12 @@ export interface GenerateResponse {
     message: string;
 }
 
+export interface ExtractionResponse {
+    video_id: string;
+    status: string;
+    message: string;
+}
+
 export interface DocumentResponse {
     document_id: string;
     doc_type: string;
@@ -131,8 +137,8 @@ export class BackendClient {
         return this.get<StatusResponse>(`/videos/${videoId}/status`);
     }
 
-    async extractVideo(videoId: string, model?: string): Promise<GenerateResponse> {
-        return this.post<GenerateResponse>(`/videos/${videoId}/extract`, { model: model ?? null });
+    async extractVideo(videoId: string, model?: string): Promise<ExtractionResponse> {
+        return this.post<ExtractionResponse>(`/videos/${videoId}/extract`, { model: model ?? null });
     }
 
     async getExtractionResults(videoId: string): Promise<Record<string, unknown>> {

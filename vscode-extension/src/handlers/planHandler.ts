@@ -100,7 +100,7 @@ export async function handlePlan(
 
     let desiredFilename = detectFilename(promptText);
     if (!desiredFilename) {
-        desiredFilename = await vscode.window.showInputBox({
+        const filenameInput = await vscode.window.showInputBox({
             prompt: 'Output filename for the generated document (e.g., deploy-web-app.md)',
             placeHolder: 'my-article.md',
             title: 'Output Filename',
@@ -110,7 +110,12 @@ export async function handlePlan(
                 }
                 return undefined;
             },
-        }) ?? '';
+        });
+        if (filenameInput === undefined) {
+            stream.markdown('📝 Planning cancelled.');
+            return { metadata: { command: 'plan' } };
+        }
+        desiredFilename = filenameInput;
     }
 
     // Step 4: Author (GitHub ID)
@@ -190,7 +195,7 @@ export async function handlePlan(
     // Step 7: Supplementary docs (optional)
     if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
 
-    let supplementaryContext = '';
+    let supplementaryDocRefs: string[] = [];
     const addDocs = await vscode.window.showQuickPick(
         [
             { label: '📎 Yes, select reference files', value: 'yes' },
@@ -208,17 +213,7 @@ export async function handlePlan(
             title: 'Select reference documentation files',
         });
         if (docFiles && docFiles.length > 0) {
-            const contents: string[] = [];
-            for (const uri of docFiles) {
-                try {
-                    const bytes = await vscode.workspace.fs.readFile(uri);
-                    const text = Buffer.from(bytes).toString('utf-8');
-                    contents.push(`--- ${path.basename(uri.fsPath)} ---\n${text}`);
-                } catch {
-                    // Skip files that can't be read
-                }
-            }
-            supplementaryContext = contents.join('\n\n');
+            supplementaryDocRefs = docFiles.map(uri => uri.fsPath);
         }
     }
 
@@ -432,11 +427,11 @@ export async function handlePlan(
             stateManager.setSavedFilename(desiredFilename);
         }
 
-        if (supplementaryContext) {
-            stateManager.setSupplementaryContext(supplementaryContext);
+        if (supplementaryDocRefs.length > 0) {
+            stateManager.setSupplementaryDocRefs(supplementaryDocRefs);
         }
 
-        const refDocsInfo = supplementaryContext ? `${supplementaryContext.split('---').length - 1} file(s) attached` : 'None';
+        const refDocsInfo = supplementaryDocRefs.length > 0 ? `${supplementaryDocRefs.length} file(s) attached` : 'None';
 
         stream.markdown(
             `✅ **Plan complete! Ready to generate documentation.**\n\n` +

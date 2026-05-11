@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager, sanitizeFilename } from '../utils/outputManager';
@@ -77,13 +78,17 @@ export async function handleGenerate(
         }
     }
 
-    // 4. Extract desired filename from prompt (e.g., "use foo.md as the file name")
+    // 4. Extract desired filename — prefer /plan's saved filename if coming from planned state
     let desiredFilename: string | undefined;
-    const filenameMatch = supplementaryContext.match(
-        /(?:use|save\s+(?:as|to)|file\s*name\s*(?:should\s+be)?|name\s+(?:it|the\s+file))\s+(\S+\.md)\b/i
-    ) ?? supplementaryContext.match(/\b([\w-]+\.md)\b/i);
-    if (filenameMatch) {
-        desiredFilename = filenameMatch[1].replace(/^["']+|["']+$/g, '');
+    if (state.currentStage === 'planned' && state.savedFilename) {
+        desiredFilename = state.savedFilename;
+    } else {
+        const filenameMatch = supplementaryContext.match(
+            /(?:use|save\s+(?:as|to)|file\s*name\s*(?:should\s+be)?|name\s+(?:it|the\s+file))\s+(\S+\.md)\b/i
+        ) ?? supplementaryContext.match(/\b([\w-]+\.md)\b/i);
+        if (filenameMatch) {
+            desiredFilename = filenameMatch[1].replace(/^["']+|["']+$/g, '');
+        }
     }
 
     // 4. Check cancellation
@@ -109,8 +114,25 @@ export async function handleGenerate(
             customer_intent: state.metadata.customerIntent,
         } : undefined;
 
-        // Combine supplementary context from prompt and plan state
-        const fullContext = [supplementaryContext, stateManager.getSupplementaryContext()].filter(Boolean).join('\n\n');
+        // Load supplementary context from stored references on-demand
+        let refContext = '';
+        const docRefs = stateManager.getSupplementaryDocRefs();
+        if (docRefs.length > 0) {
+            const contents: string[] = [];
+            for (const refPath of docRefs) {
+                try {
+                    const uri = vscode.Uri.file(refPath);
+                    const bytes = await vscode.workspace.fs.readFile(uri);
+                    const text = Buffer.from(bytes).toString('utf-8');
+                    const basename = path.basename(refPath);
+                    contents.push(`--- ${basename} ---\n${text}`);
+                } catch {
+                    // Skip files that can't be read (may have been moved/deleted)
+                }
+            }
+            refContext = contents.join('\n\n');
+        }
+        const fullContext = [supplementaryContext, refContext].filter(Boolean).join('\n\n');
 
         // Trigger the pipeline
         await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata, selectedModel);

@@ -24,6 +24,7 @@ export interface ConversationState {
     lastDocType?: string;
     savedFilename?: string;
     metadata?: DocumentMetadata;
+    supplementaryDocRefs?: string[];
 }
 
 const STATE_KEY = 'videoDocumenter.conversationState';
@@ -34,7 +35,6 @@ const DEFAULT_STATE: ConversationState = {
 
 export class ConversationStateManager {
     private state: ConversationState;
-    private _supplementaryContext?: string;
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.state = this.context.workspaceState.get<ConversationState>(STATE_KEY) ?? { ...DEFAULT_STATE };
@@ -75,17 +75,17 @@ export class ConversationStateManager {
         this.persist();
     }
 
-    setSupplementaryContext(context: string): void {
-        this._supplementaryContext = context;
+    setSupplementaryDocRefs(refs: string[]): void {
+        this.state.supplementaryDocRefs = refs;
+        this.persist();
     }
 
-    getSupplementaryContext(): string | undefined {
-        return this._supplementaryContext;
+    getSupplementaryDocRefs(): string[] {
+        return this.state.supplementaryDocRefs ?? [];
     }
 
     reset(): void {
         this.state = { ...DEFAULT_STATE };
-        this._supplementaryContext = undefined;
         this.persist();
     }
 

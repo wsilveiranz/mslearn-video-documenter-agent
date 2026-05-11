@@ -70,6 +70,13 @@ class RefineRequest(BaseModel):
     model: str | None = None
 
 
+class ExtractionSummary(BaseModel):
+    transcript_segments: int
+    scenes: int
+    keyframes: int
+    has_vision_descriptions: bool
+
+
 class StatusResponse(BaseModel):
     video_id: str
     status: ProcessingStatus
@@ -77,8 +84,8 @@ class StatusResponse(BaseModel):
     total_steps: int
     current_stage: str
     document_id: str | None = None
-    extraction_summary: dict | None = None
-    data_quality: dict | None = None
+    extraction_summary: ExtractionSummary | None = None
+    data_quality: DataQualityReport | None = None
 
 
 class DocumentResponse(BaseModel):
@@ -450,12 +457,12 @@ async def get_video_status(video_id: str) -> StatusResponse:
 
     extraction_summary = None
     if job.extraction_result is not None:
-        extraction_summary = {
-            "transcript_segments": len(job.extraction_result.transcript),
-            "scenes": len(job.extraction_result.scenes),
-            "keyframes": len(job.extraction_result.keyframes),
-            "has_vision_descriptions": any(kf.ui_description for kf in job.extraction_result.keyframes),
-        }
+        extraction_summary = ExtractionSummary(
+            transcript_segments=len(job.extraction_result.transcript),
+            scenes=len(job.extraction_result.scenes),
+            keyframes=len(job.extraction_result.keyframes),
+            has_vision_descriptions=any(kf.ui_description for kf in job.extraction_result.keyframes),
+        )
 
     return StatusResponse(
         video_id=job.video_id,
@@ -465,7 +472,7 @@ async def get_video_status(video_id: str) -> StatusResponse:
         current_stage=job.current_stage,
         document_id=job.document_id,
         extraction_summary=extraction_summary,
-        data_quality=job.quality_report.model_dump() if job.quality_report is not None else None,
+        data_quality=job.quality_report,
     )
 
 
