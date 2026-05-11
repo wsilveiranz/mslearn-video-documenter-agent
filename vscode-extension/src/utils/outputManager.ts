@@ -9,15 +9,27 @@ export function sanitizeFilename(filename: string): string {
         .replace(/^["']+|["']+$/g, '')   // strip surrounding quotes
         .replace(/\.\./g, '')             // strip .. segments
         .replace(/[/\\]/g, '')            // strip path separators
+        .replace(/[:<>*?"|]/g, '')        // strip Windows-invalid characters
         .trim();
 
     if (!name.endsWith('.md')) {
         name = name ? `${name}.md` : 'document.md';
     }
 
+    // Strip trailing dots and spaces from stem (Windows silently removes them, causing confusion)
+    const strippedStem = name.slice(0, -3).replace(/[\s.]+$/, '');
+    name = strippedStem ? `${strippedStem}.md` : 'document.md';
+
     // Fallback if name is empty or reduced to just ".md"
     if (!name || name === '.md') {
         name = 'document.md';
+    }
+
+    // Prefix reserved Windows device names to prevent filesystem conflicts
+    const reserved = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+    const stem = name.slice(0, -3);
+    if (reserved.test(stem)) {
+        name = `_${name}`;
     }
 
     return name;
