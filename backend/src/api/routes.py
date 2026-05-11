@@ -202,7 +202,9 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
                 logger.warning("api.temp_cleanup_failed", path=source)
 
 
-async def _run_pipeline(video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None) -> None:
+async def _run_pipeline(
+    video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None,
+) -> None:
     """Run the full pipeline in the background with per-stage progress updates."""
     job = _video_jobs.get(video_id)
     if job is None:

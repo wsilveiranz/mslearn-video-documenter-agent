@@ -153,7 +153,9 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
     # Stage 3: Structure
     logger.info("pipeline.stage", stage="structure")
     structure_agent = StructureAgent(client)
-    outline = await structure_agent.process(extraction_result, request.doc_type, request.supplementary_context, request.metadata)
+    outline = await structure_agent.process(
+        extraction_result, request.doc_type, request.supplementary_context, request.metadata
+    )
 
     # Stage 4: Writer
     logger.info("pipeline.stage", stage="writer")
