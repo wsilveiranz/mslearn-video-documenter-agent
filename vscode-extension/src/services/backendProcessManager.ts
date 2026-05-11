@@ -199,14 +199,18 @@ export class BackendProcessManager implements vscode.Disposable {
         this._outputChannel.appendLine(`[BackendProcessManager] Stopping backend (PID ${pid ?? '?'})…`);
 
         if (process.platform === 'win32') {
-            // On Windows, kill the entire process tree (uvicorn may have subprocesses)
-            child.kill();
+            // On Windows, kill the entire process tree BEFORE the parent.
+            // taskkill /T /F walks the tree from the root PID downward; if
+            // child.kill() runs first, the root PID dies and taskkill can no
+            // longer find the grandchildren (e.g., uvicorn reload workers).
             if (pid !== undefined) {
                 await new Promise<void>((resolve) => {
                     exec(`taskkill /T /F /PID ${pid}`, () => {
                         resolve();
                     });
                 });
+            } else {
+                child.kill();
             }
         } else {
             // On Unix, send SIGTERM first, then SIGKILL after 5 s
@@ -266,13 +270,18 @@ export class BackendProcessManager implements vscode.Disposable {
             `[BackendProcessManager] Killing backend ${isWin ? 'process tree' : 'process'} (PID ${pid ?? '?'})…`,
         );
 
-        child.kill();
         if (pid !== undefined && isWin) {
+            // Kill the entire process tree BEFORE the parent. taskkill /T /F
+            // walks from the root PID downward; if child.kill() runs first,
+            // the root dies and grandchildren (uvicorn reload workers) orphan.
             try {
                 execSync(`taskkill /T /F /PID ${pid}`, { stdio: 'ignore' });
             } catch {
-                // Process may have already exited
+                // Process may have already exited — fall back to direct kill
+                child.kill();
             }
+        } else {
+            child.kill();
         }
         this._process = undefined;
     }
