@@ -141,7 +141,6 @@ export async function activate(context: vscode.ExtensionContext) {
             prerequisiteManager = new PrerequisiteManager();
 
             // Start backend in the background so activation completes instantly.
-            // This hides the PyInstaller cold-start extraction delay from the user.
             void startBackendInBackground(resolvedPath, port, host, backendUrl);
         }
 

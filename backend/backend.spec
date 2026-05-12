@@ -1,5 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for MS Learn Video Documenter backend."""
+"""PyInstaller spec for MS Learn Video Documenter backend.
+
+Uses **onedir** mode so all DLLs (including python311.dll) live alongside
+backend.exe in a permanent directory.  This avoids onefile's temp-directory
+extraction, which is blocked by Windows Application Control / AppLocker
+policies on many corporate machines.
+"""
 
 a = Analysis(
     ['src/main.py'],
@@ -53,15 +59,26 @@ a.binaries = [
 ]
 
 pyz = PYZ(a.pure)
+
+# onedir EXE: contains only the bootloader + scripts (no binaries/datas).
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    exclude_binaries=True,
     name='backend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=True,
+)
+
+# COLLECT places binaries and datas alongside the exe in dist/backend/.
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name='backend',
 )

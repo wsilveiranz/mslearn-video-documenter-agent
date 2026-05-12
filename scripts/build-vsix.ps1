@@ -117,18 +117,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 Pop-Location
 
-# Copy dist/backend.exe into vscode-extension/backend/
-$pyinstallerExe = Join-Path $backendDir 'dist' 'backend.exe'
-if (-not (Test-Path $pyinstallerExe)) {
-    Write-Error "PyInstaller output not found at $pyinstallerExe"
+# Copy dist/backend/ directory into vscode-extension/backend/
+# PyInstaller onedir mode produces a directory with backend.exe + all DLLs
+$pyinstallerDir = Join-Path $backendDir 'dist' 'backend'
+if (-not (Test-Path $pyinstallerDir)) {
+    Write-Error "PyInstaller output directory not found at $pyinstallerDir"
     exit 1
 }
 
 if (Test-Path $bundledBackend) {
     Remove-Item -Recurse -Force $bundledBackend
 }
-New-Item -ItemType Directory -Path $bundledBackend -Force | Out-Null
-Copy-Item -Force $pyinstallerExe (Join-Path $bundledBackend 'backend.exe')
+Copy-Item -Recurse -Force $pyinstallerDir $bundledBackend
 
 # Verify backend.exe exists in the bundle
 $backendExe = Join-Path $bundledBackend 'backend.exe'
@@ -137,8 +137,8 @@ if (-not (Test-Path $backendExe)) {
     exit 1
 }
 
-$exeSize = [math]::Round((Get-Item $backendExe).Length / 1MB, 2)
-Write-Host "  Backend executable built: $exeSize MB" -ForegroundColor Gray
+$dirSize = [math]::Round(((Get-ChildItem -Recurse $bundledBackend | Measure-Object -Property Length -Sum).Sum) / 1MB, 2)
+Write-Host "  Backend directory bundled: $dirSize MB" -ForegroundColor Gray
 
 # 4. Create release directory
 Write-Host "[4/6] Preparing release directory..." -ForegroundColor Yellow
