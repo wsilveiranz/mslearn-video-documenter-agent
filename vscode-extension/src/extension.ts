@@ -61,7 +61,10 @@ export async function activate(context: vscode.ExtensionContext) {
                 // Prefer bundled backend (VSIX install) over monorepo sibling layout (dev)
                 const bundledPath = path.join(context.extensionUri.fsPath, 'backend');
                 const monorepoPath = path.join(context.extensionUri.fsPath, '..', 'backend');
-                resolvedPath = fs.existsSync(path.join(bundledPath, 'pyproject.toml'))
+                // Detect bundled backend: PyInstaller exe or source layout
+                const hasBundledExe = fs.existsSync(path.join(bundledPath, 'backend.exe'));
+                const hasBundledSource = fs.existsSync(path.join(bundledPath, 'pyproject.toml'));
+                resolvedPath = (hasBundledExe || hasBundledSource)
                     ? bundledPath
                     : monorepoPath;
             }
