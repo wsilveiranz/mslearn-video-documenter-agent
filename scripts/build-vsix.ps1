@@ -8,9 +8,12 @@
 
 .EXAMPLE
     .\scripts\build-vsix.ps1
+    .\scripts\build-vsix.ps1 -Version 0.2.0
+    .\scripts\build-vsix.ps1 -Version 0.1.1 -SkipCompile
 #>
 
 param(
+    [string]$Version,
     [switch]$SkipCompile
 )
 
@@ -25,6 +28,20 @@ $bundledBackend = Join-Path $extensionDir 'backend'
 
 Write-Host "=== MS Learn Video Documenter VSIX Builder ===" -ForegroundColor Cyan
 Write-Host ""
+
+# 0. Override version in package.json if specified
+if ($Version) {
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+        Write-Error "Invalid version format '$Version'. Expected semver: major.minor.patch (e.g., 0.2.0)"
+        exit 1
+    }
+    Write-Host "[0/6] Setting version to $Version..." -ForegroundColor Yellow
+    $packageJsonPath = Join-Path $extensionDir 'package.json'
+    $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+    $packageJson.version = $Version
+    $packageJson | ConvertTo-Json -Depth 100 | Set-Content $packageJsonPath -Encoding UTF8
+    Write-Host "  Updated package.json version to $Version" -ForegroundColor Gray
+}
 
 # 1. Verify prerequisites
 Write-Host "[1/6] Checking prerequisites..." -ForegroundColor Yellow
