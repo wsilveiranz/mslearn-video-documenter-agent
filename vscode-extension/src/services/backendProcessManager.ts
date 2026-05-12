@@ -155,6 +155,8 @@ export class BackendProcessManager implements vscode.Disposable {
             PORT: String(port),
             PROCESSING_MODE: getProcessingMode(),
             PYTHONIOENCODING: 'utf-8',
+            // Bundled .exe must not use uvicorn reload (it can't re-import frozen modules)
+            ...(isBundled ? { ENVIRONMENT: 'production' } : {}),
         };
 
         // Add cloud-mode settings (only if non-empty to not override .env defaults)
