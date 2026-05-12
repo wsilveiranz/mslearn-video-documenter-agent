@@ -28,6 +28,7 @@ env/
 vscode-extension/node_modules/
 vscode-extension/out/
 vscode-extension/*.vsix
+vscode-extension/backend/
 
 # Node
 node_modules/
