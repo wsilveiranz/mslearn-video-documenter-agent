@@ -39,6 +39,31 @@ export class PrerequisiteManager implements vscode.Disposable {
                 cancellable: false,
             },
             async (progress) => {
+                // Check if we're running in bundled mode (backend.exe present)
+                const exePath = path.join(backendPath, 'backend.exe');
+                const isBundled = fs.existsSync(exePath);
+
+                if (isBundled) {
+                    this._log('Bundled backend detected — skipping Python and dependency checks.');
+
+                    // Only check FFmpeg in bundled mode
+                    progress.report({ message: 'Checking FFmpeg…' });
+                    let ffmpegStatus = await this.checkFfmpeg();
+                    if (!ffmpegStatus.available) {
+                        const installed = await this.installFfmpeg();
+                        if (installed) {
+                            ffmpegStatus = await this.checkFfmpeg();
+                        }
+                    }
+
+                    return {
+                        python: { available: true, version: 'bundled', path: exePath },
+                        ffmpeg: ffmpegStatus,
+                        backendDeps: { installed: true },
+                    };
+                }
+
+                // Development mode: check all prerequisites
                 // 1. Python
                 progress.report({ message: 'Checking Python…' });
                 let pythonStatus = await this.checkPython();

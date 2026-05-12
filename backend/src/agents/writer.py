@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import re
 import uuid
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
 from agent_framework import Agent
 
 from src.models.document import DocType, DocumentOutline, GeneratedDocument
+from src.utils.paths import get_prompts_dir, get_templates_dir
 
 if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
@@ -29,7 +29,7 @@ class WriterAgent:
         self._load_template_cache()
 
     def _load_system_prompt(self) -> None:
-        prompt_path = Path(__file__).parent.parent / "prompts" / "writer_system.md"
+        prompt_path = get_prompts_dir() / "writer_system.md"
         try:
             self._system_prompt = prompt_path.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -39,7 +39,7 @@ class WriterAgent:
     def _load_template_cache(self) -> None:
         """Pre-load MS Learn templates."""
         self._templates: dict[DocType, str] = {}
-        templates_dir = Path(__file__).parent.parent / "templates"
+        templates_dir = get_templates_dir()
         template_map = {
             DocType.QUICKSTART: "quickstart.md",
             DocType.TUTORIAL: "tutorial.md",

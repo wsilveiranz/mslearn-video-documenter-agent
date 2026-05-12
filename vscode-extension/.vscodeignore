@@ -11,23 +11,6 @@ eslint.config.mjs
 # Node modules (vsce handles dependencies separately)
 node_modules/**
 
-# Backend exclusions (backend is copied in during build)
-backend/.venv/**
-backend/.venv
-backend/tests/**
-backend/.ruff_cache/**
-backend/.pytest_cache/**
-backend/output/**
-backend/.env
-backend/__pycache__/**
-backend/src/__pycache__/**
-backend/src/**/__pycache__/**
-backend/src/**/*.pyc
-backend/src/**/*.egg-info/**
-
-# Scripts that shouldn't be in VSIX
-scripts/**
-
 # General exclusions
 **/.git/**
 **/.DS_Store

@@ -11,6 +11,7 @@ import structlog
 from agent_framework import Agent
 
 from src.models.document import DocType, DocumentMetadata, DocumentOutline, DocumentSection, Frontmatter, Screenshot
+from src.utils.paths import get_prompts_dir
 
 if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
@@ -37,9 +38,7 @@ class StructureAgent:
 
     def _load_system_prompt(self) -> None:
         """Load the structure agent system prompt from file."""
-        from pathlib import Path
-
-        prompt_path = Path(__file__).parent.parent / "prompts" / "structure_system.md"
+        prompt_path = get_prompts_dir() / "structure_system.md"
         try:
             self._system_prompt = prompt_path.read_text(encoding="utf-8")
         except FileNotFoundError:
