@@ -43,6 +43,15 @@ a = Analysis(
     excludes=['pytest', 'ruff', 'pyright', 'tkinter', 'matplotlib'],
     noarchive=False,
 )
+
+# Exclude Universal CRT DLLs — they ship with Windows 10+ and the bundled
+# copies can trigger 0xc0e90002 ("Bad Image") on some machines.
+a.binaries = [
+    b for b in a.binaries
+    if not b[0].lower().startswith('api-ms-win-')
+    and b[0].lower() != 'ucrtbase.dll'
+]
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
