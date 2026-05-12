@@ -29,6 +29,75 @@ async function waitForBackendHealth(baseUrl: string, timeoutMs: number = 30000):
     return false;
 }
 
+/**
+ * Start the backend silently in the background so activation completes instantly.
+ * Handles prerequisites, process spawn, health check, and LM proxy handshake.
+ */
+async function startBackendInBackground(
+    resolvedPath: string, port: number, host: string, backendUrl: string,
+): Promise<void> {
+    try {
+        const prereqStatus = await prerequisiteManager!.ensurePrerequisites(resolvedPath);
+
+        if (!prereqStatus.python.available) {
+            void vscode.window.showErrorMessage(
+                'Video Documenter: Python is required but could not be found or installed. The backend will not start.',
+                'Open Output',
+            ).then(action => {
+                if (action === 'Open Output') { prerequisiteManager?.getOutputChannel().show(); }
+            });
+            return;
+        }
+
+        if (!prereqStatus.backendDeps.installed) {
+            void vscode.window.showErrorMessage(
+                'Video Documenter: Backend dependencies could not be installed. The backend will not start.',
+                'Open Output',
+            ).then(action => {
+                if (action === 'Open Output') { prerequisiteManager?.getOutputChannel().show(); }
+            });
+            return;
+        }
+
+        await backendManager!.start(resolvedPath, port, host);
+        const healthy = await waitForBackendHealth(backendUrl);
+
+        if (!healthy) {
+            void vscode.window.showErrorMessage(
+                'Video Documenter: Backend failed to start within 30s.',
+                'Open Output',
+            ).then(action => {
+                if (action === 'Open Output') { backendManager?.getOutputChannel().show(); }
+            });
+            return;
+        }
+
+        console.log('[video-documenter] Backend is ready');
+
+        // Perform LM proxy handshake now that backend is healthy
+        if (lmProxyServer) {
+            try {
+                const proxyPort = lmProxyServer.getPort();
+                const handshakeRes = await fetch(`${backendUrl}/api/v1/config/lm-proxy`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        proxy_url: `http://localhost:${proxyPort}`,
+                        proxy_secret: lmProxyServer.getSecret(),
+                    }),
+                });
+                if (!handshakeRes.ok) {
+                    console.warn(`[video-documenter] LM proxy handshake returned HTTP ${handshakeRes.status}`);
+                }
+            } catch (err) {
+                console.warn('[video-documenter] Failed to notify backend of LM Proxy:', err);
+            }
+        }
+    } catch (err) {
+        console.error('[video-documenter] Background backend startup failed:', err);
+    }
+}
+
 export async function activate(context: vscode.ExtensionContext) {
     try {
         const handler = createChatHandler(context);
@@ -45,7 +114,6 @@ export async function activate(context: vscode.ExtensionContext) {
         validateSettings();
 
         const backendUrl = getBackendUrl();
-        let backendHealthy = false;
 
         // Auto-start backend if enabled
         if (getAutoStartBackend()) {
@@ -72,52 +140,12 @@ export async function activate(context: vscode.ExtensionContext) {
             backendManager = new BackendProcessManager();
             prerequisiteManager = new PrerequisiteManager();
 
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Video Documenter' },
-                async (progress) => {
-                    // Check prerequisites before starting backend
-                    progress.report({ message: 'Checking prerequisites...' });
-                    const prereqStatus = await prerequisiteManager!.ensurePrerequisites(resolvedPath);
-
-                    if (!prereqStatus.python.available) {
-                        void vscode.window.showErrorMessage(
-                            'Video Documenter: Python is required but could not be found or installed. The backend will not start.',
-                            'Open Output'
-                        ).then(action => {
-                            if (action === 'Open Output') { prerequisiteManager?.getOutputChannel().show(); }
-                        });
-                        return;
-                    }
-
-                    if (!prereqStatus.backendDeps.installed) {
-                        void vscode.window.showErrorMessage(
-                            'Video Documenter: Backend dependencies could not be installed. The backend will not start.',
-                            'Open Output'
-                        ).then(action => {
-                            if (action === 'Open Output') { prerequisiteManager?.getOutputChannel().show(); }
-                        });
-                        return;
-                    }
-
-                    progress.report({ message: 'Starting backend...' });
-                    await backendManager!.start(resolvedPath, port, host);
-
-                    progress.report({ message: 'Waiting for backend to be ready...' });
-                    backendHealthy = await waitForBackendHealth(backendUrl);
-
-                    if (!backendHealthy) {
-                        void vscode.window.showErrorMessage(
-                            'Video Documenter: Backend failed to start within 30s.',
-                            'Open Output'
-                        ).then(action => {
-                            if (action === 'Open Output') { backendManager?.getOutputChannel().show(); }
-                        });
-                    }
-                }
-            );
+            // Start backend in the background so activation completes instantly.
+            // This hides the PyInstaller cold-start extraction delay from the user.
+            void startBackendInBackground(resolvedPath, port, host, backendUrl);
         }
 
-        // Start LM Proxy if enabled
+        // Start LM Proxy if enabled (handshake is done in startBackendInBackground)
         const config = vscode.workspace.getConfiguration('video-documenter');
         if (config.get<boolean>('useCopilotModels', true) && getProcessingMode() === 'local') {
             const preferredPort = config.get<number>('lmProxyPort', 0);
@@ -125,22 +153,6 @@ export async function activate(context: vscode.ExtensionContext) {
             try {
                 const proxyPort = await lmProxyServer.start(preferredPort);
                 console.log(`[video-documenter] LM Proxy started on port ${proxyPort}`);
-
-                // Notify backend of the proxy URL only after health is confirmed
-                if (backendHealthy || !getAutoStartBackend()) {
-                    try {
-                        const handshakeRes = await fetch(`${backendUrl}/api/v1/config/lm-proxy`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ proxy_url: `http://localhost:${proxyPort}`, proxy_secret: lmProxyServer.getSecret() }),
-                        });
-                        if (!handshakeRes.ok) {
-                            console.warn(`[video-documenter] LM proxy handshake returned HTTP ${handshakeRes.status} — local-mode calls may not work`);
-                        }
-                    } catch (err) {
-                        console.warn('[video-documenter] Failed to notify backend of LM Proxy:', err);
-                    }
-                }
             } catch (err) {
                 console.warn('[video-documenter] LM Proxy failed to start:', err);
                 lmProxyServer = undefined;

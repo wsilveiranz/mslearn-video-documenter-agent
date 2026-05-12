@@ -48,7 +48,8 @@ jobs:
       - name: Bundle backend into extension
         shell: pwsh
         run: |
-          Copy-Item -Recurse -Force backend\dist\backend vscode-extension\backend
+          New-Item -ItemType Directory -Path vscode-extension\backend -Force | Out-Null
+          Copy-Item -Force backend\dist\backend.exe vscode-extension\backend\backend.exe
           if (-not (Test-Path vscode-extension\backend\backend.exe)) {
             Write-Error "backend.exe not found in bundle"
             exit 1

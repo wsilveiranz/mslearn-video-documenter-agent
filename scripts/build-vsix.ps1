@@ -98,17 +98,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 Pop-Location
 
-# Copy dist/backend/ into vscode-extension/backend/
-$pyinstallerDist = Join-Path $backendDir 'dist' 'backend'
-if (-not (Test-Path $pyinstallerDist)) {
-    Write-Error "PyInstaller output not found at $pyinstallerDist"
+# Copy dist/backend.exe into vscode-extension/backend/
+$pyinstallerExe = Join-Path $backendDir 'dist' 'backend.exe'
+if (-not (Test-Path $pyinstallerExe)) {
+    Write-Error "PyInstaller output not found at $pyinstallerExe"
     exit 1
 }
 
 if (Test-Path $bundledBackend) {
     Remove-Item -Recurse -Force $bundledBackend
 }
-Copy-Item -Recurse -Force $pyinstallerDist $bundledBackend
+New-Item -ItemType Directory -Path $bundledBackend -Force | Out-Null
+Copy-Item -Force $pyinstallerExe (Join-Path $bundledBackend 'backend.exe')
 
 # Verify backend.exe exists in the bundle
 $backendExe = Join-Path $bundledBackend 'backend.exe'
