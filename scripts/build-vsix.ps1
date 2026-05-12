@@ -78,19 +78,38 @@ if (-not $SkipCompile) {
     Write-Host "[2/6] Skipping TypeScript compilation (-SkipCompile)" -ForegroundColor DarkGray
 }
 
-# 3. Build backend exe with PyInstaller
+# 3. Build backend exe with PyInstaller (in a clean venv to avoid bundling unrelated packages)
 Write-Host "[3/6] Building backend executable..." -ForegroundColor Yellow
 
-# Check PyInstaller is available
-$pyinstallerCheck = python -c "import PyInstaller" 2>&1
+$buildVenv = Join-Path $backendDir '.build-venv'
+
+# Create a fresh build venv
+if (Test-Path $buildVenv) {
+    Write-Host "  Removing previous build venv..." -ForegroundColor Gray
+    Remove-Item -Recurse -Force $buildVenv
+}
+
+Write-Host "  Creating isolated build venv..." -ForegroundColor Gray
+python -m venv $buildVenv
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "PyInstaller is required. Install with: pip install pyinstaller"
+    Write-Error "Failed to create build venv."
     exit 1
 }
 
-# Run PyInstaller
+$venvPip = Join-Path $buildVenv 'Scripts' 'pip.exe'
+$venvPython = Join-Path $buildVenv 'Scripts' 'python.exe'
+
+# Install only the app's own dependencies + pyinstaller
+Write-Host "  Installing backend dependencies in build venv..." -ForegroundColor Gray
+& $venvPip install --quiet -e "$backendDir" pyinstaller 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to install dependencies in build venv."
+    exit 1
+}
+
+# Run PyInstaller from the clean venv
 Push-Location $backendDir
-pyinstaller --noconfirm backend.spec
+& $venvPython -m PyInstaller --noconfirm backend.spec
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Write-Error "PyInstaller build failed."
@@ -147,11 +166,13 @@ Write-Host "[6/6] Cleaning up..." -ForegroundColor Yellow
 if (Test-Path $bundledBackend) {
     Remove-Item -Recurse -Force $bundledBackend
 }
-# Clean PyInstaller artifacts
+# Clean PyInstaller artifacts and build venv
 $pyinstallerBuild = Join-Path $backendDir 'build'
 $pyinstallerDist = Join-Path $backendDir 'dist'
+$buildVenvClean = Join-Path $backendDir '.build-venv'
 if (Test-Path $pyinstallerBuild) { Remove-Item -Recurse -Force $pyinstallerBuild }
 if (Test-Path $pyinstallerDist) { Remove-Item -Recurse -Force $pyinstallerDist }
+if (Test-Path $buildVenvClean) { Remove-Item -Recurse -Force $buildVenvClean }
 
 # Report results
 $vsixFile = Get-ChildItem -Path $releaseDir -Filter '*.vsix' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
