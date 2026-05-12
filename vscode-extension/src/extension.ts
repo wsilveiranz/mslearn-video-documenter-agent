@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { createChatHandler } from './chatHandler';
@@ -53,9 +54,17 @@ export async function activate(context: vscode.ExtensionContext) {
             const host = parsed.hostname;
 
             const configuredPath = getBackendPath();
-            const resolvedPath = configuredPath
-                ? configuredPath
-                : path.join(context.extensionUri.fsPath, '..', 'backend');
+            let resolvedPath: string;
+            if (configuredPath) {
+                resolvedPath = configuredPath;
+            } else {
+                // Prefer bundled backend (VSIX install) over monorepo sibling layout (dev)
+                const bundledPath = path.join(context.extensionUri.fsPath, 'backend');
+                const monorepoPath = path.join(context.extensionUri.fsPath, '..', 'backend');
+                resolvedPath = fs.existsSync(path.join(bundledPath, 'pyproject.toml'))
+                    ? bundledPath
+                    : monorepoPath;
+            }
 
             backendManager = new BackendProcessManager();
             prerequisiteManager = new PrerequisiteManager();
@@ -70,6 +79,16 @@ export async function activate(context: vscode.ExtensionContext) {
                     if (!prereqStatus.python.available) {
                         void vscode.window.showErrorMessage(
                             'Video Documenter: Python is required but could not be found or installed. The backend will not start.',
+                            'Open Output'
+                        ).then(action => {
+                            if (action === 'Open Output') { prerequisiteManager?.getOutputChannel().show(); }
+                        });
+                        return;
+                    }
+
+                    if (!prereqStatus.backendDeps.installed) {
+                        void vscode.window.showErrorMessage(
+                            'Video Documenter: Backend dependencies could not be installed. The backend will not start.',
                             'Open Output'
                         ).then(action => {
                             if (action === 'Open Output') { prerequisiteManager?.getOutputChannel().show(); }
