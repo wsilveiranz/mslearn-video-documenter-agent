@@ -170,7 +170,29 @@ export class PrerequisiteManager implements vscode.Disposable {
                 return false;
             }
 
-            // Install backend in editable mode
+            // Install backend dependencies if not already present
+            const venvPythonPath = isWin
+                ? path.join(venvDir, 'Scripts', 'python.exe')
+                : path.join(venvDir, 'bin', 'python');
+
+            // Check if the backend package is already installed
+            let alreadyInstalled = false;
+            try {
+                execSync(`"${venvPythonPath}" -c "import src"`, {
+                    cwd: backendPath,
+                    timeout: 10_000,
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
+                alreadyInstalled = true;
+            } catch {
+                // not installed yet
+            }
+
+            if (alreadyInstalled) {
+                this._log('Backend dependencies already installed.');
+                return true;
+            }
+
             this._log(`Installing backend dependencies from ${backendPath}…`);
             await this._execAsync(`"${pipPath}" install -e "${backendPath}"`);
             this._log('Backend dependencies installed successfully.');
