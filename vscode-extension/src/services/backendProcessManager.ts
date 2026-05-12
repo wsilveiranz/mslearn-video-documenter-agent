@@ -1,4 +1,6 @@
 import { execSync, spawn, exec, type ChildProcess } from 'child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
     getProcessingMode,
@@ -111,22 +113,41 @@ export class BackendProcessManager implements vscode.Disposable {
             return;
         }
 
-        // Discover Python
-        let pythonPath: string;
-        try {
-            pythonPath = await findPythonInterpreter();
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            this._outputChannel.appendLine(`[BackendProcessManager] ${message}`);
-            void vscode.window.showErrorMessage(
-                `Video Documenter: ${message}\n\nInstall Python 3.10+ from https://www.python.org and reload VS Code.`,
-            );
-            return;
-        }
+        // Determine how to start the backend: bundled exe or Python
+        const exePath = path.join(backendPath, 'backend.exe');
+        const isBundled = fs.existsSync(exePath);
 
-        this._outputChannel.appendLine(
-            `[BackendProcessManager] Starting backend: ${pythonPath} -m src.main (cwd: ${backendPath})`,
-        );
+        let command: string;
+        let args: string[];
+        let cwd: string;
+
+        if (isBundled) {
+            command = exePath;
+            args = [];
+            cwd = backendPath;
+            this._outputChannel.appendLine(
+                `[BackendProcessManager] Starting bundled backend: ${exePath}`,
+            );
+        } else {
+            // Development mode: use Python interpreter
+            let pythonPath: string;
+            try {
+                pythonPath = await findPythonInterpreter();
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                this._outputChannel.appendLine(`[BackendProcessManager] ${message}`);
+                void vscode.window.showErrorMessage(
+                    `Video Documenter: ${message}\n\nInstall Python 3.10+ from https://www.python.org and reload VS Code.`,
+                );
+                return;
+            }
+            command = pythonPath;
+            args = ['-m', 'src.main'];
+            cwd = backendPath;
+            this._outputChannel.appendLine(
+                `[BackendProcessManager] Starting backend: ${pythonPath} -m src.main (cwd: ${backendPath})`,
+            );
+        }
 
         const envVars: Record<string, string> = {
             ...process.env as Record<string, string>,
@@ -158,8 +179,8 @@ export class BackendProcessManager implements vscode.Disposable {
             }
         }
 
-        const child = spawn(pythonPath, ['-m', 'src.main'], {
-            cwd: backendPath,
+        const child = spawn(command, args, {
+            cwd,
             env: envVars,
             stdio: ['ignore', 'pipe', 'pipe'],
         });
