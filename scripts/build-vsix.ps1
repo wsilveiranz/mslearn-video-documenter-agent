@@ -3,8 +3,9 @@
     Build the MS Learn Video Documenter VSIX package for private preview distribution.
 
 .DESCRIPTION
-    Compiles the TypeScript extension, bundles the Python backend source,
-    and produces a .vsix file in the release/ directory at the repo root.
+    Compiles the TypeScript extension, builds the Python backend into a
+    standalone executable via PyInstaller, and produces a .vsix file in
+    the release/ directory at the repo root.
 
 .EXAMPLE
     .\scripts\build-vsix.ps1
@@ -51,6 +52,11 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Error "Python is required but not found on PATH."
+    exit 1
+}
+
 if (-not (Test-Path (Join-Path $extensionDir 'node_modules'))) {
     Write-Host "  Installing npm dependencies..." -ForegroundColor Gray
     Push-Location $extensionDir
@@ -72,39 +78,47 @@ if (-not $SkipCompile) {
     Write-Host "[2/6] Skipping TypeScript compilation (-SkipCompile)" -ForegroundColor DarkGray
 }
 
-# 3. Copy backend source into extension directory for bundling
-Write-Host "[3/6] Bundling backend source..." -ForegroundColor Yellow
+# 3. Build backend exe with PyInstaller
+Write-Host "[3/6] Building backend executable..." -ForegroundColor Yellow
+
+# Check PyInstaller is available
+$pyinstallerCheck = python -c "import PyInstaller" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "PyInstaller is required. Install with: pip install pyinstaller"
+    exit 1
+}
+
+# Run PyInstaller
+Push-Location $backendDir
+pyinstaller --noconfirm backend.spec
+if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    Write-Error "PyInstaller build failed."
+    exit 1
+}
+Pop-Location
+
+# Copy dist/backend/ into vscode-extension/backend/
+$pyinstallerDist = Join-Path $backendDir 'dist' 'backend'
+if (-not (Test-Path $pyinstallerDist)) {
+    Write-Error "PyInstaller output not found at $pyinstallerDist"
+    exit 1
+}
 
 if (Test-Path $bundledBackend) {
     Remove-Item -Recurse -Force $bundledBackend
 }
+Copy-Item -Recurse -Force $pyinstallerDist $bundledBackend
 
-New-Item -ItemType Directory -Path $bundledBackend -Force | Out-Null
-
-# Copy backend source files (exclude dev artifacts)
-$backendItems = @(
-    @{ Source = (Join-Path $backendDir 'src'); Dest = (Join-Path $bundledBackend 'src') },
-    @{ Source = (Join-Path $backendDir 'pyproject.toml'); Dest = (Join-Path $bundledBackend 'pyproject.toml') },
-    @{ Source = (Join-Path $backendDir '.env.example'); Dest = (Join-Path $bundledBackend '.env.example') }
-)
-
-foreach ($item in $backendItems) {
-    if (Test-Path $item.Source) {
-        if ((Get-Item $item.Source).PSIsContainer) {
-            Copy-Item -Recurse -Force $item.Source $item.Dest
-        } else {
-            Copy-Item -Force $item.Source $item.Dest
-        }
-        Write-Host "  Copied: $($item.Source | Split-Path -Leaf)" -ForegroundColor Gray
-    } else {
-        Write-Warning "  Missing: $($item.Source)"
-    }
+# Verify backend.exe exists in the bundle
+$backendExe = Join-Path $bundledBackend 'backend.exe'
+if (-not (Test-Path $backendExe)) {
+    Write-Error "backend.exe not found in bundled output."
+    exit 1
 }
 
-# Clean up Python caches from the copy
-Get-ChildItem -Path $bundledBackend -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Get-ChildItem -Path $bundledBackend -Recurse -Filter '*.pyc' | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem -Path $bundledBackend -Recurse -Directory -Filter '*.egg-info' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+$exeSize = [math]::Round((Get-Item $backendExe).Length / 1MB, 2)
+Write-Host "  Backend executable built: $exeSize MB" -ForegroundColor Gray
 
 # 4. Create release directory
 Write-Host "[4/6] Preparing release directory..." -ForegroundColor Yellow
@@ -127,11 +141,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 Pop-Location
 
-# 6. Clean up bundled backend from extension directory
+# 6. Clean up
 Write-Host "[6/6] Cleaning up..." -ForegroundColor Yellow
 if (Test-Path $bundledBackend) {
     Remove-Item -Recurse -Force $bundledBackend
 }
+# Clean PyInstaller artifacts
+$pyinstallerBuild = Join-Path $backendDir 'build'
+$pyinstallerDist = Join-Path $backendDir 'dist'
+if (Test-Path $pyinstallerBuild) { Remove-Item -Recurse -Force $pyinstallerBuild }
+if (Test-Path $pyinstallerDist) { Remove-Item -Recurse -Force $pyinstallerDist }
 
 # Report results
 $vsixFile = Get-ChildItem -Path $releaseDir -Filter '*.vsix' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
