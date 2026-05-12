@@ -106,6 +106,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to install dependencies in build venv."
     exit 1
 }
+Write-Host "  Installed packages:" -ForegroundColor Gray
+& $venvPip list --format=columns 2>&1 | Select-String "agent-framework|azure|pyinstaller" | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 
 # Run PyInstaller from the clean venv
 Push-Location $backendDir
@@ -116,6 +118,54 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Pop-Location
+
+# 3b. Smoke-test the built executable (catches missing hidden imports early)
+Write-Host "  Running import smoke test..." -ForegroundColor Gray
+$smokeExe = Join-Path $backendDir 'dist' 'backend' 'backend.exe'
+$smokeEnv = @{
+    'SMOKE_TEST' = '1'
+    'PYTHONIOENCODING' = 'utf-8'
+}
+$smokeProcess = Start-Process -FilePath $smokeExe -ArgumentList @() -Environment $smokeEnv -NoNewWindow -PassThru -RedirectStandardError (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -RedirectStandardOutput (Join-Path $backendDir 'dist' 'smoke_stdout.txt')
+
+# Give the server up to 15 seconds to start and respond to health check
+$smokeTimeout = 15
+$smokeStart = Get-Date
+$smokeHealthy = $false
+while (((Get-Date) - $smokeStart).TotalSeconds -lt $smokeTimeout) {
+    Start-Sleep -Milliseconds 500
+    # Check if process died
+    if ($smokeProcess.HasExited) {
+        $stderr = Get-Content (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -Raw -ErrorAction SilentlyContinue
+        Write-Error "Smoke test FAILED — backend.exe exited with code $($smokeProcess.ExitCode).`n$stderr"
+        exit 1
+    }
+    # Try health endpoint
+    try {
+        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health' -TimeoutSec 2 -ErrorAction Stop
+        if ($response.StatusCode -eq 200) {
+            $smokeHealthy = $true
+            break
+        }
+    } catch {
+        # Not ready yet
+    }
+}
+
+# Kill the smoke-test process
+Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+
+if (-not $smokeHealthy) {
+    $stderr = Get-Content (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -Raw -ErrorAction SilentlyContinue
+    Write-Error "Smoke test FAILED — backend.exe did not become healthy within ${smokeTimeout}s.`n$stderr"
+    exit 1
+}
+Write-Host "  Smoke test passed — backend.exe starts and responds to health checks." -ForegroundColor Green
+
+# Clean up smoke test output files
+Remove-Item -Force (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -ErrorAction SilentlyContinue
+Remove-Item -Force (Join-Path $backendDir 'dist' 'smoke_stdout.txt') -ErrorAction SilentlyContinue
 
 # Copy dist/backend/ directory into vscode-extension/backend/
 # PyInstaller onedir mode produces a directory with backend.exe + all DLLs
