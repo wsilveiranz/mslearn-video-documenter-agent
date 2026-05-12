@@ -86,7 +86,7 @@ $buildVenv = Join-Path $backendDir '.build-venv'
 # Create a fresh build venv
 if (Test-Path $buildVenv) {
     Write-Host "  Removing previous build venv..." -ForegroundColor Gray
-    Remove-Item -Recurse -Force $buildVenv
+    cmd /c "rmdir /s /q `"$buildVenv`"" 2>$null
 }
 
 Write-Host "  Creating isolated build venv..." -ForegroundColor Gray
@@ -122,11 +122,10 @@ Pop-Location
 # 3b. Smoke-test the built executable (catches missing hidden imports early)
 Write-Host "  Running import smoke test..." -ForegroundColor Gray
 $smokeExe = Join-Path $backendDir 'dist' 'backend' 'backend.exe'
-$smokeEnv = @{
-    'SMOKE_TEST' = '1'
-    'PYTHONIOENCODING' = 'utf-8'
-}
-$smokeProcess = Start-Process -FilePath $smokeExe -ArgumentList @() -Environment $smokeEnv -NoNewWindow -PassThru -RedirectStandardError (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -RedirectStandardOutput (Join-Path $backendDir 'dist' 'smoke_stdout.txt')
+$smokeStderr = Join-Path $backendDir 'dist' 'smoke_stderr.txt'
+$smokeStdout = Join-Path $backendDir 'dist' 'smoke_stdout.txt'
+$env:PYTHONIOENCODING = 'utf-8'
+$smokeProcess = Start-Process -FilePath $smokeExe -NoNewWindow -PassThru -RedirectStandardError $smokeStderr -RedirectStandardOutput $smokeStdout
 
 # Give the server up to 15 seconds to start and respond to health check
 $smokeTimeout = 15
@@ -136,7 +135,7 @@ while (((Get-Date) - $smokeStart).TotalSeconds -lt $smokeTimeout) {
     Start-Sleep -Milliseconds 500
     # Check if process died
     if ($smokeProcess.HasExited) {
-        $stderr = Get-Content (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -Raw -ErrorAction SilentlyContinue
+        $stderr = Get-Content $smokeStderr -Raw -ErrorAction SilentlyContinue
         Write-Error "Smoke test FAILED — backend.exe exited with code $($smokeProcess.ExitCode).`n$stderr"
         exit 1
     }
@@ -157,15 +156,15 @@ Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
 if (-not $smokeHealthy) {
-    $stderr = Get-Content (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -Raw -ErrorAction SilentlyContinue
+    $stderr = Get-Content $smokeStderr -Raw -ErrorAction SilentlyContinue
     Write-Error "Smoke test FAILED — backend.exe did not become healthy within ${smokeTimeout}s.`n$stderr"
     exit 1
 }
 Write-Host "  Smoke test passed — backend.exe starts and responds to health checks." -ForegroundColor Green
 
 # Clean up smoke test output files
-Remove-Item -Force (Join-Path $backendDir 'dist' 'smoke_stderr.txt') -ErrorAction SilentlyContinue
-Remove-Item -Force (Join-Path $backendDir 'dist' 'smoke_stdout.txt') -ErrorAction SilentlyContinue
+Remove-Item -Force $smokeStderr -ErrorAction SilentlyContinue
+Remove-Item -Force $smokeStdout -ErrorAction SilentlyContinue
 
 # Copy dist/backend/ directory into vscode-extension/backend/
 # PyInstaller onedir mode produces a directory with backend.exe + all DLLs
@@ -176,7 +175,7 @@ if (-not (Test-Path $pyinstallerDir)) {
 }
 
 if (Test-Path $bundledBackend) {
-    Remove-Item -Recurse -Force $bundledBackend
+    cmd /c "rmdir /s /q `"$bundledBackend`"" 2>$null
 }
 Copy-Item -Recurse -Force $pyinstallerDir $bundledBackend
 
@@ -204,7 +203,7 @@ if ($LASTEXITCODE -ne 0) {
     Pop-Location
     # Clean up bundled backend on failure
     if (Test-Path $bundledBackend) {
-        Remove-Item -Recurse -Force $bundledBackend
+        cmd /c "rmdir /s /q `"$bundledBackend`"" 2>$null
     }
     Write-Error "VSIX packaging failed."
     exit 1
@@ -214,15 +213,15 @@ Pop-Location
 # 6. Clean up
 Write-Host "[6/6] Cleaning up..." -ForegroundColor Yellow
 if (Test-Path $bundledBackend) {
-    Remove-Item -Recurse -Force $bundledBackend
+    cmd /c "rmdir /s /q `"$bundledBackend`"" 2>$null
 }
-# Clean PyInstaller artifacts and build venv
+# Clean PyInstaller artifacts and build venv (use cmd rmdir for speed on Windows)
 $pyinstallerBuild = Join-Path $backendDir 'build'
 $pyinstallerDist = Join-Path $backendDir 'dist'
 $buildVenvClean = Join-Path $backendDir '.build-venv'
-if (Test-Path $pyinstallerBuild) { Remove-Item -Recurse -Force $pyinstallerBuild }
-if (Test-Path $pyinstallerDist) { Remove-Item -Recurse -Force $pyinstallerDist }
-if (Test-Path $buildVenvClean) { Remove-Item -Recurse -Force $buildVenvClean }
+if (Test-Path $pyinstallerBuild) { cmd /c "rmdir /s /q `"$pyinstallerBuild`"" 2>$null }
+if (Test-Path $pyinstallerDist) { cmd /c "rmdir /s /q `"$pyinstallerDist`"" 2>$null }
+if (Test-Path $buildVenvClean) { cmd /c "rmdir /s /q `"$buildVenvClean`"" 2>$null }
 
 # Report results
 $vsixFile = Get-ChildItem -Path $releaseDir -Filter '*.vsix' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
