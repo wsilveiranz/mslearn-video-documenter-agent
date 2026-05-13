@@ -9,9 +9,13 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 from src.config import Settings, get_settings
 from src.models.video import (
@@ -196,8 +200,15 @@ class VideoIndexerService:
         *,
         timeout_s: float = 600,
         poll_interval_s: float = 15,
+        on_progress: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         """Poll until video indexing reaches a terminal state.
+
+        Args:
+            vi_video_id: The Video Indexer video ID.
+            timeout_s: Maximum wait time in seconds.
+            poll_interval_s: Seconds between poll requests.
+            on_progress: Optional async callback invoked with progress string (e.g. "42%").
 
         Returns ``"Processed"`` on success.
 
@@ -206,6 +217,7 @@ class VideoIndexerService:
             RuntimeError: If the indexing state becomes ``"Failed"``.
         """
         logger.info("vi.indexing_wait_started", vi_video_id=vi_video_id, timeout_s=timeout_s)
+        last_progress = ""
 
         deadline = time.time() + timeout_s
         while True:
@@ -226,10 +238,12 @@ class VideoIndexerService:
             else:
                 data = response.json()
                 state = data.get("state", "Unknown")
+                progress = data.get("processingProgress", "")
                 logger.debug(
                     "vi.index_poll",
                     vi_video_id=vi_video_id,
                     state=state,
+                    progress=progress,
                 )
 
                 if state == "Processed":
@@ -245,6 +259,11 @@ class VideoIndexerService:
                     raise RuntimeError(
                         f"Video Indexer indexing failed: {failure}"
                     )
+
+                # Report progress if changed
+                if on_progress and progress and progress != last_progress:
+                    last_progress = progress
+                    await on_progress(progress)
 
             if time.time() >= deadline:
                 raise TimeoutError(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import structlog
@@ -16,6 +17,9 @@ from src.services.scene_detection_service import SceneDetectionService
 from src.services.video_indexer_service import VideoIndexerService
 from src.services.whisper_service import WhisperService
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
 logger = structlog.get_logger()
 
 
@@ -25,7 +29,12 @@ class ExtractionAgent:
     def __init__(self, foundry_client=None) -> None:
         self._foundry_client = foundry_client
 
-    async def process(self, video_metadata: VideoMetadata, processing_mode: ProcessingMode) -> ExtractionResult:
+    async def process(
+        self,
+        video_metadata: VideoMetadata,
+        processing_mode: ProcessingMode,
+        on_progress: Callable[[str], Awaitable[None]] | None = None,
+    ) -> ExtractionResult:
         """Extract structured content from a video.
 
         In cloud mode, uses Azure Video Indexer + Speech.
@@ -34,6 +43,7 @@ class ExtractionAgent:
         Args:
             video_metadata: Metadata from the ingestion stage.
             processing_mode: Cloud or local processing.
+            on_progress: Optional async callback for progress updates.
 
         Returns:
             ExtractionResult with transcript, scenes, keyframes, OCR, entities.
@@ -41,11 +51,15 @@ class ExtractionAgent:
         logger.info("extraction.start", video_id=video_metadata.video_id, mode=processing_mode)
 
         if processing_mode == ProcessingMode.CLOUD:
-            return await self._extract_cloud(video_metadata)
+            return await self._extract_cloud(video_metadata, on_progress=on_progress)
         else:
             return await self._extract_local(video_metadata)
 
-    async def _extract_cloud(self, metadata: VideoMetadata) -> ExtractionResult:
+    async def _extract_cloud(
+        self,
+        metadata: VideoMetadata,
+        on_progress: Callable[[str], Awaitable[None]] | None = None,
+    ) -> ExtractionResult:
         """Cloud extraction using Azure Video Indexer + Speech."""
         settings = get_settings()
         video_id = metadata.video_id
@@ -87,7 +101,7 @@ class ExtractionAgent:
 
             # 3. Poll for indexing completion
             try:
-                await vi_service.wait_for_index(vi_video_id)
+                await vi_service.wait_for_index(vi_video_id, on_progress=on_progress)
             except Exception as e:
                 logger.error("extraction.vi_indexing_failed", video_id=video_id, vi_video_id=vi_video_id, error=str(e))
                 raise
