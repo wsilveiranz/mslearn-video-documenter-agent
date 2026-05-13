@@ -148,6 +148,16 @@ class ExtractionAgent:
                         vi_video_id=vi_video_id,
                         error=str(e),
                     )
+            # Cleanup blob storage (best-effort)
+            try:
+                deleted = await blob_service.delete_video_blobs(video_id)
+                logger.info("extraction.blob_cleanup_done", video_id=video_id, blobs_deleted=deleted)
+            except Exception as e:
+                logger.warning(
+                    "extraction.blob_cleanup_failed",
+                    video_id=video_id,
+                    error=str(e),
+                )
             await vi_service.close()
             await blob_service.close()
 
