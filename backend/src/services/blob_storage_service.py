@@ -66,7 +66,7 @@ class BlobStorageService:
             logger.error("blob.upload_failed", video_id=video_id, blob_name=blob_name, error=str(e))
             raise
 
-    async def generate_sas_url(self, blob_name: str, expiry_hours: int = 2) -> str:
+    async def generate_sas_url(self, blob_name: str, expiry_hours: int | None = None) -> str:
         """Generate a time-limited SAS URL for a blob.
 
         Uses UserDelegationKey-based SAS (no account key needed).
@@ -74,6 +74,7 @@ class BlobStorageService:
         Returns:
             Full blob URL with SAS token appended.
         """
+        expiry_hours = expiry_hours if expiry_hours is not None else self._settings.blob_retention_hours
         logger.info("blob.sas_url_requested", blob_name=blob_name, expiry_hours=expiry_hours)
         try:
             now = datetime.now(tz=UTC)

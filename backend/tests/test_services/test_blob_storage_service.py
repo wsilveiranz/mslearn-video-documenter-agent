@@ -14,6 +14,7 @@ def mock_settings():
     s = MagicMock()
     s.blob_account_url = "https://testaccount.blob.core.windows.net"
     s.blob_container_name = "test-container"
+    s.blob_retention_hours = 1
     return s
 
 
