@@ -57,8 +57,8 @@ class ExtractionAgent:
 
         # Extract blob_name from blob_url:
         # URL format: https://<account>.blob.core.windows.net/<container>/<blob_name>
-        parsed = urlparse(metadata.blob_url)
-        path_parts = parsed.path.lstrip("/").split("/", 1)
+        parsed = urlparse(str(metadata.blob_url))
+        path_parts = str(parsed.path).lstrip("/").split("/", 1)
         if len(path_parts) != 2:
             raise ValueError(
                 f"Cannot parse blob_name from blob_url: {metadata.blob_url!r}"
