@@ -575,12 +575,15 @@ backend/
 │   │   ├── editor.py                 # Refinement agent
 │   │   └── evaluate.py               # Quality evaluation agent
 │   ├── services/
-│   │   ├── video_indexer.py          # Azure Video Indexer client
-│   │   ├── speech.py                 # Azure Speech / Whisper client
-│   │   ├── vision.py                 # GPT-4o Vision analysis
-│   │   ├── blob_storage.py           # Azure Blob Storage client
-│   │   ├── ffmpeg.py                 # FFmpeg wrapper
-│   │   └── mcp_client.py            # MCP client (Microsoft Learn docs)
+│   │   ├── blob_storage_service.py   # Azure Blob Storage client (cloud mode)
+│   │   ├── copilot_client.py         # Copilot LM Proxy client (local mode)
+│   │   ├── ffmpeg_service.py         # FFmpeg wrapper (local mode)
+│   │   ├── intent_classifier.py      # User message intent classification
+│   │   ├── scene_detection_service.py # PySceneDetect wrapper (local mode)
+│   │   ├── speech_service.py         # Azure AI Speech Fast Transcription (cloud mode)
+│   │   ├── video_indexer_service.py  # Azure Video Indexer client (cloud mode)
+│   │   ├── vision_service.py         # GPT-4o Vision analysis
+│   │   └── whisper_service.py        # OpenAI Whisper transcription (local mode)
 │   ├── templates/
 │   │   ├── quickstart.md             # MS Learn Quickstart template
 │   │   ├── tutorial.md               # MS Learn Tutorial template
