@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import tempfile
 import uuid
 from pathlib import Path
@@ -145,6 +146,57 @@ async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigRespo
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok", "service": "video-documenter"}
+
+
+@router.get("/health/deep")
+async def health_deep() -> dict:
+    """Deep health check — validates the full Azure async import chain.
+
+    Used by the VSIX build smoke test to catch missing PyInstaller hidden
+    imports at build time.  Does NOT require Azure credentials or env vars.
+    """
+    from fastapi.responses import JSONResponse
+
+    critical_modules: list[str | tuple[str, str]] = [
+        "aiohttp",
+        "multidict",
+        "yarl",
+        "frozenlist",
+        "aiosignal",
+        "charset_normalizer",
+        "azure.core.pipeline.transport._aiohttp",
+        "azure.ai.projects.aio",
+        "azure.ai.inference.aio",
+        ("agent_framework_foundry", "FoundryChatClient"),
+        ("azure.identity.aio", "DefaultAzureCredential"),
+    ]
+
+    for entry in critical_modules:
+        if isinstance(entry, tuple):
+            module_name, attr = entry
+        else:
+            module_name, attr = entry, None
+
+        try:
+            mod = importlib.import_module(module_name)
+            if attr is not None:
+                getattr(mod, attr)
+        except Exception as exc:
+            logger.error(
+                "health.deep_failed",
+                missing_module=module_name,
+                error=str(exc),
+            )
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "missing_module": module_name,
+                    "error": str(exc),
+                },
+            )
+
+    return {"status": "ok", "imports_verified": len(critical_modules)}
 
 
 # ---- Services ----

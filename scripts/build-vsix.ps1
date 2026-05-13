@@ -110,8 +110,11 @@ Write-Host "  Installed packages:" -ForegroundColor Gray
 & $venvPip list --format=columns 2>&1 | Select-String "agent-framework|azure|pyinstaller" | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 
 # Run PyInstaller from the clean venv
+# Clean __pycache__ first — stale .pyc files cause PyInstaller to bundle
+# old bytecode, leading to missing routes or other phantom issues.
 Push-Location $backendDir
-& $venvPython -m PyInstaller --noconfirm backend.spec
+Get-ChildItem -Path src -Recurse -Directory -Filter __pycache__ | ForEach-Object { cmd /c "rmdir /s /q `"$($_.FullName)`"" 2>$null }
+& $venvPython -m PyInstaller --noconfirm --clean backend.spec
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Write-Error "PyInstaller build failed."
@@ -151,15 +154,42 @@ while (((Get-Date) - $smokeStart).TotalSeconds -lt $smokeTimeout) {
     }
 }
 
-# Kill the smoke-test process
-Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
-
 if (-not $smokeHealthy) {
     $stderr = Get-Content $smokeStderr -Raw -ErrorAction SilentlyContinue
     Write-Error "Smoke test FAILED — backend.exe did not become healthy within ${smokeTimeout}s.`n$stderr"
     exit 1
 }
+
+# 3c. Deep import check — verify Azure async transport modules are bundled
+Write-Host "  Running deep import check..." -ForegroundColor Gray
+try {
+    $deepResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health/deep' -TimeoutSec 10 -ErrorAction Stop
+    if ($deepResponse.StatusCode -ne 200) {
+        $body = $deepResponse.Content
+        Write-Error "Deep import check FAILED (HTTP $($deepResponse.StatusCode)): $body"
+        Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
+    Write-Host "  Deep import check passed — all Azure async transport modules present." -ForegroundColor Green
+} catch {
+    # Try to get the response body for error details
+    $errBody = ""
+    if ($_.Exception.Response) {
+        try {
+            $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+            $errBody = $reader.ReadToEnd()
+            $reader.Close()
+        } catch {}
+    }
+    Write-Error "Deep import check FAILED: $($_.Exception.Message)`n$errBody"
+    Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+
+# Kill the smoke-test process
+Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+
 Write-Host "  Smoke test passed — backend.exe starts and responds to health checks." -ForegroundColor Green
 
 # Clean up smoke test output files
