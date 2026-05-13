@@ -25,6 +25,7 @@ from src.models.video import (
     TranscriptSegment,
     VideoMetadata,
 )
+from src.utils.url import url_join
 
 logger = structlog.get_logger()
 
@@ -104,8 +105,8 @@ class VideoIndexerService:
 
         # Step 2 — Exchange for VI access token
         url = (
-            f"https://management.azure.com{self._resource_id}"
-            f"/generateAccessToken?api-version={ARM_API_VERSION}"
+            f"{url_join('https://management.azure.com', self._resource_id, 'generateAccessToken')}"
+            f"?api-version={ARM_API_VERSION}"
         )
         try:
             response = await self._http_client.post(

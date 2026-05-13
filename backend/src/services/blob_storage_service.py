@@ -11,6 +11,7 @@ from azure.storage.blob import BlobSasPermissions, generate_blob_sas
 from azure.storage.blob.aio import BlobServiceClient
 
 from src.config import Settings, get_settings
+from src.utils.url import url_join
 
 logger = structlog.get_logger()
 
@@ -89,8 +90,7 @@ class BlobStorageService:
                 permission=BlobSasPermissions(read=True),
                 expiry=expiry,
             )
-            account_url = self._settings.blob_account_url.rstrip("/")
-            url = f"{account_url}/{self._container}/{blob_name}?{sas_token}"
+            url = f"{url_join(self._settings.blob_account_url, self._container, blob_name)}?{sas_token}"
             logger.info("blob.sas_url_generated", blob_name=blob_name, expiry_hours=expiry_hours)
             return url
         except Exception as e:

@@ -11,6 +11,7 @@ import structlog
 
 from src.config import get_settings
 from src.models.video import TranscriptSegment
+from src.utils.url import url_join
 
 if TYPE_CHECKING:
     from src.config import Settings
@@ -45,8 +46,10 @@ class SpeechService:
         Returns:
             List of TranscriptSegment sorted by start time.
         """
-        endpoint = self._settings.speech_service_endpoint.rstrip("/")
-        url = f"{endpoint}/speechtotext/transcriptions:transcribe?api-version={_API_VERSION}"
+        url = (
+            f"{url_join(self._settings.speech_service_endpoint, 'speechtotext/transcriptions:transcribe')}"
+            f"?api-version={_API_VERSION}"
+        )
 
         token = await self._get_auth_token()
         headers = {"Authorization": f"Bearer {token}"}
