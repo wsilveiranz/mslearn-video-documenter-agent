@@ -89,9 +89,8 @@ class BlobStorageService:
                 permission=BlobSasPermissions(read=True),
                 expiry=expiry,
             )
-            url = (
-                f"{self._settings.blob_account_url}/{self._container}/{blob_name}?{sas_token}"
-            )
+            account_url = self._settings.blob_account_url.rstrip("/")
+            url = f"{account_url}/{self._container}/{blob_name}?{sas_token}"
             logger.info("blob.sas_url_generated", blob_name=blob_name, expiry_hours=expiry_hours)
             return url
         except Exception as e:
