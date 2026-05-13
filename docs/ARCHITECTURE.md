@@ -864,6 +864,41 @@ EXPOSE 8000
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
+### 7.4 Blob storage lifecycle policy (recommended)
+
+The application deletes video blobs immediately after extraction completes. However, process crashes or restarts can leave orphaned blobs. Configure a lifecycle management policy on the storage account as a safety net:
+
+```azurecli
+az storage account management-policy create \
+  --account-name <storage-account-name> \
+  --resource-group <resource-group> \
+  --policy '{
+    "rules": [
+      {
+        "name": "delete-video-blobs-after-1-day",
+        "enabled": true,
+        "type": "Lifecycle",
+        "definition": {
+          "filters": {
+            "blobTypes": ["blockBlob"],
+            "prefixMatch": ["video-documenter/"]
+          },
+          "actions": {
+            "baseBlob": {
+              "delete": {
+                "daysAfterCreationGreaterThan": 1
+              }
+            }
+          }
+        }
+      }
+    ]
+  }'
+```
+
+> [!NOTE]
+> This policy deletes all blobs in the `video-documenter` container prefix older than 1 day. Since normal processing completes within minutes, this only affects orphaned blobs from failed runs.
+
 ---
 
 ## 8. Model Selection Strategy
