@@ -274,8 +274,8 @@ class TestWaitForIndex:
             patch("src.services.video_indexer_service.asyncio.sleep", AsyncMock()),
             patch("src.services.video_indexer_service.time") as mock_time,
         ):
-            # First call sets deadline=1.0, second call returns 1000.0 (past deadline)
-            mock_time.time.side_effect = [0.0, 1000.0]
+            # First call sets start_time=0.0/deadline=1.0, second for elapsed calc, third returns 1000.0 (past deadline)
+            mock_time.time.side_effect = [0.0, 500.0, 1000.0]
             with pytest.raises(TimeoutError):
                 await service.wait_for_index("vi-123", timeout_s=1, poll_interval_s=0)
 

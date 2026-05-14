@@ -14,6 +14,7 @@ export interface StatusResponse {
     step: number;
     total_steps: number;
     current_stage: string;
+    progress_detail?: string;
     document_id: string | null;
     extraction_summary: {
         transcript_segments: number;

@@ -31,6 +31,8 @@ def mock_settings(tmp_path):
     s.output_directory = str(tmp_path)
     s.blob_account_url = "https://testaccount.blob.core.windows.net"
     s.blob_container_name = "test-container"
+    s.vi_indexing_timeout_s = 1200
+    s.vi_poll_interval_s = 15
     return s
 
 

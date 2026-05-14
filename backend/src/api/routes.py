@@ -84,6 +84,7 @@ class StatusResponse(BaseModel):
     step: int
     total_steps: int
     current_stage: str
+    progress_detail: str = ""
     document_id: str | None = None
     extraction_summary: ExtractionSummary | None = None
     data_quality: DataQualityReport | None = None
@@ -311,6 +312,7 @@ async def _run_extraction(video_id: str) -> None:
             video_metadata = ingestion_result.metadata
 
         async def _on_extraction_progress(progress: str) -> None:
+            job.progress_detail = f"Step 2/6: Video Indexer processing ({progress})..."
             manager.send_progress(
                 video_id, "extracting", 2, 6,
                 f"Step 2/6: Video Indexer processing ({progress})...",
@@ -382,6 +384,7 @@ async def _run_pipeline(
                 video_metadata = ingestion_result.metadata
 
             async def _on_pipeline_extraction_progress(progress: str) -> None:
+                job.progress_detail = f"Step 2/6: Video Indexer processing ({progress})..."
                 manager.send_progress(
                     video_id, "extracting", 2, 6,
                     f"Step 2/6: Video Indexer processing ({progress})...",
@@ -548,6 +551,7 @@ async def get_video_status(video_id: str) -> StatusResponse:
         step=job.step,
         total_steps=job.total_steps,
         current_stage=job.current_stage,
+        progress_detail=job.progress_detail,
         document_id=job.document_id,
         extraction_summary=extraction_summary,
         data_quality=job.quality_report,

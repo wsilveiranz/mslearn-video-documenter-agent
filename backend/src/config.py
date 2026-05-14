@@ -67,6 +67,14 @@ class Settings(BaseSettings):
         description="Full ARM resource ID for Video Indexer",
     )
     video_indexer_location: str = Field(default="trial", description="Video Indexer account location")
+    vi_indexing_timeout_s: int = Field(
+        default=1200,
+        description="Maximum time in seconds to wait for Video Indexer to process a video (default: 20 min)",
+    )
+    vi_poll_interval_s: int = Field(
+        default=15,
+        description="Seconds between Video Indexer polling requests",
+    )
 
     # --- Local Mode Settings ---
     whisper_model: str = Field(

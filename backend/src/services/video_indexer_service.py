@@ -218,8 +218,9 @@ class VideoIndexerService:
         """
         logger.info("vi.indexing_wait_started", vi_video_id=vi_video_id, timeout_s=timeout_s)
         last_progress = ""
+        start_time = time.time()
 
-        deadline = time.time() + timeout_s
+        deadline = start_time + timeout_s
         while True:
             token = await self.get_access_token()
             url = (
@@ -261,9 +262,17 @@ class VideoIndexerService:
                     )
 
                 # Report progress if changed
-                if on_progress and progress and progress != last_progress:
+                if progress and progress != last_progress:
                     last_progress = progress
-                    await on_progress(progress)
+
+                # Always emit progress with elapsed time on every poll cycle
+                elapsed = int(time.time() - start_time)
+                elapsed_str = f"{elapsed // 60}m {elapsed % 60}s"
+                if on_progress:
+                    if progress:
+                        await on_progress(f"{progress} ({elapsed_str} elapsed)")
+                    else:
+                        await on_progress(f"Processing... ({elapsed_str} elapsed)")
 
             if time.time() >= deadline:
                 raise TimeoutError(

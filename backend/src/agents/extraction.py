@@ -99,8 +99,16 @@ class ExtractionAgent:
                 raise
 
             # 3. Poll for indexing completion
+            # Scale timeout: at least configured minimum, or 3x video duration (whichever is larger)
+            video_duration_s = metadata.duration_seconds if metadata.duration_seconds else 0
+            dynamic_timeout = max(settings.vi_indexing_timeout_s, video_duration_s * 3)
             try:
-                await vi_service.wait_for_index(vi_video_id, on_progress=on_progress)
+                await vi_service.wait_for_index(
+                    vi_video_id,
+                    timeout_s=dynamic_timeout,
+                    poll_interval_s=settings.vi_poll_interval_s,
+                    on_progress=on_progress,
+                )
             except Exception as e:
                 logger.error("extraction.vi_indexing_failed", video_id=video_id, vi_video_id=vi_video_id, error=str(e))
                 raise

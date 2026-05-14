@@ -160,7 +160,7 @@ export async function handleGenerate(
         // 7. Poll for completion (no progress display — WebSocket handles that)
         let documentId: string | undefined;
         const startTime = Date.now();
-        const timeoutMs = 600000; // 10 minutes for full pipeline
+        const timeoutMs = 1800000; // 30 minutes — backend controls actual pipeline timeout
 
         try {
             while (Date.now() - startTime < timeoutMs) {

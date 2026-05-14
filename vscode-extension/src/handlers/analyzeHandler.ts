@@ -90,7 +90,7 @@ export async function handleAnalyze(
         // current_stage = 'ingestion_complete' with status still 'queued'. Use a custom loop.
         let complete = false;
         const startTime = Date.now();
-        const timeoutMs = 300000; // 5 minutes
+        const timeoutMs = 600000; // 10 minutes — ingestion is local, shouldn't need more
         let lastPollStage = '';
 
         while (!complete && Date.now() - startTime < timeoutMs) {
@@ -162,7 +162,7 @@ export async function handleAnalyze(
 
         let extractionComplete = false;
         const extractStartTime = Date.now();
-        const extractTimeoutMs = 600000; // 10 minutes
+        const extractTimeoutMs = 1800000; // 30 minutes — backend controls actual VI timeout
         let lastExtractPollStage = '';
 
         while (!extractionComplete && Date.now() - extractStartTime < extractTimeoutMs) {
@@ -176,7 +176,9 @@ export async function handleAnalyze(
 
             try {
                 const status = await client.getVideoStatus(videoId);
-                if (status.current_stage !== lastExtractPollStage) {
+                if (status.progress_detail) {
+                    stream.progress(status.progress_detail);
+                } else if (status.current_stage !== lastExtractPollStage) {
                     lastExtractPollStage = status.current_stage;
                     stream.progress(`${status.current_stage}`);
                 }
