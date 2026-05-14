@@ -35,7 +35,7 @@ def service(mock_settings, mock_service_client):
         yield BlobStorageService(settings=mock_settings)
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestUploadVideo:
     async def test_blob_name_uses_video_id_and_filename(self, service, mock_service_client, tmp_path):
         video_file = tmp_path / "demo.mp4"
@@ -66,7 +66,7 @@ class TestUploadVideo:
             await service.upload_video(video_file, "vid123")
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestGenerateSasUrl:
     async def test_sas_token_appended_to_url(self, service, mock_service_client):
         with patch(
@@ -88,7 +88,7 @@ class TestGenerateSasUrl:
             await service.generate_sas_url("vid123/demo.mp4")
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestUploadKeyframe:
     async def test_path_pattern_uses_video_id_and_keyframe_id(self, service, mock_service_client):
         mock_blob_client = MagicMock()
@@ -115,7 +115,7 @@ class TestUploadKeyframe:
             await service.upload_keyframe(b"data", "vid123", "kf_001")
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestDownloadBlob:
     async def test_file_written_to_correct_path(self, service, mock_service_client, tmp_path):
         dest = tmp_path / "downloaded.mp4"
@@ -141,7 +141,7 @@ class TestDownloadBlob:
             await service.download_blob("vid123/demo.mp4", dest)
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestDeleteVideoBlobs:
     async def test_lists_and_deletes_all_blobs_under_prefix(self, service, mock_service_client):
         async def _list_blobs(name_starts_with=None):

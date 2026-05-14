@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from urllib.parse import urlparse
 
 import structlog
 
@@ -12,6 +11,7 @@ from src.config import get_settings
 from src.models.video import IngestionResult, ProcessingMode, VideoSourceType
 from src.services.blob_storage_service import BlobStorageService
 from src.services.ffmpeg_service import FFmpegService
+from src.utils.url import validate_blob_url
 
 logger = structlog.get_logger()
 
@@ -55,7 +55,9 @@ class IngestionAgent:
 
         if source_type == VideoSourceType.BLOB_URL:
             # Download blob to a temp location under the output directory for probing/staging
-            blob_name = self._blob_name_from_url(video_source, settings.blob_container_name)
+            blob_name = self._blob_name_from_url(
+                video_source, settings.blob_account_url, settings.blob_container_name
+            )
             filename = Path(blob_name).name
             download_dir = Path(settings.output_directory) / "_downloads"
             download_dir.mkdir(parents=True, exist_ok=True)
@@ -135,6 +137,19 @@ class IngestionAgent:
         staged_path = working_dir / video_path.name
         shutil.copy2(video_path, staged_path)
 
+        # Clean up temp download now that file is staged in working directory
+        if source_type == VideoSourceType.BLOB_URL:
+            try:
+                video_path.unlink()
+                logger.info("ingestion.temp_cleaned", operation="ingestion", path=str(video_path.name))
+            except OSError as e:
+                logger.warning(
+                    "ingestion.temp_cleanup_failed",
+                    operation="ingestion",
+                    path=str(video_path.name),
+                    error=str(e),
+                )
+
         # Update source_path to the stable staged location so downstream
         # agents read from the working directory, not the original (or temp) path.
         metadata.source_path = str(staged_path)
@@ -186,18 +201,15 @@ class IngestionAgent:
             return VideoSourceType.STREAM
         return VideoSourceType.LOCAL_FILE
 
-    def _blob_name_from_url(self, blob_url: str, container_name: str) -> str:
-        """Extract the blob name from a full Azure Blob Storage URL.
+    def _blob_name_from_url(
+        self, blob_url: str, account_url: str, container_name: str
+    ) -> str:
+        """Extract and validate the blob name from a full Azure Blob Storage URL.
 
         Given ``https://account.blob.core.windows.net/container/video_id/file.mp4``
         and container ``container``, returns ``video_id/file.mp4``.
+
+        Raises:
+            ValueError: If the URL doesn't match the expected account or container.
         """
-        path = urlparse(blob_url).path  # /<container>/<blob_name>
-        # Strip the leading "/" and the container segment
-        after_slash = path.lstrip("/")
-        prefix = f"{container_name}/"
-        if after_slash.startswith(prefix):
-            return after_slash[len(prefix):]
-        # Fallback: return everything after the first path segment
-        parts = after_slash.split("/", 1)
-        return parts[1] if len(parts) > 1 else after_slash
+        return validate_blob_url(blob_url, account_url, container_name)

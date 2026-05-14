@@ -29,6 +29,8 @@ from src.models.video import (
 def mock_settings(tmp_path):
     s = MagicMock()
     s.output_directory = str(tmp_path)
+    s.blob_account_url = "https://testaccount.blob.core.windows.net"
+    s.blob_container_name = "test-container"
     return s
 
 
@@ -95,7 +97,7 @@ def agent():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestCloudExtractionHappyPath:
     async def test_returns_cloud_extraction_result(
         self, agent, video_metadata, mock_settings, mock_blob_service, mock_vi_service
@@ -150,7 +152,7 @@ class TestCloudExtractionHappyPath:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestCloudExtractionErrors:
     async def test_video_indexer_upload_failure_propagates(
         self, agent, video_metadata, mock_settings, mock_blob_service, mock_vi_service
@@ -214,7 +216,7 @@ class TestCloudExtractionErrors:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestCloudExtractionNoKeyframes:
     async def test_pipeline_continues_without_vision_analysis(
         self, video_metadata, mock_settings, mock_blob_service, mock_vi_service
@@ -250,7 +252,7 @@ class TestCloudExtractionNoKeyframes:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestCloudExtractionVision:
     async def test_vision_analysis_called_when_foundry_client_and_keyframes_present(
         self, video_metadata, mock_settings, mock_blob_service, mock_vi_service, sample_extraction_result

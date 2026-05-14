@@ -176,7 +176,7 @@ class TestParseViTime:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestGetAccessToken:
     async def test_exchanges_arm_token_for_vi_token(self, service):
         mock_resp = MagicMock(status_code=200)
@@ -214,7 +214,7 @@ class TestGetAccessToken:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestUploadVideo:
     async def test_returns_vi_video_id(self, service):
         mock_resp = MagicMock(status_code=200)
@@ -244,7 +244,7 @@ class TestUploadVideo:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestWaitForIndex:
     async def test_returns_processed_after_poll(self, service):
         resp_processing = MagicMock(status_code=200)
@@ -297,7 +297,7 @@ class TestWaitForIndex:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestMapToExtractionResult:
     def test_full_mapping_from_sample_insights(self, service, sample_video_metadata):
         keyframe_paths = [Path(f"/fake/kf_{i:03d}.jpg") for i in range(3)]

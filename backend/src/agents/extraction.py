@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
 
 import structlog
 
@@ -16,6 +15,7 @@ from src.services.ffmpeg_service import FFmpegService
 from src.services.scene_detection_service import SceneDetectionService
 from src.services.video_indexer_service import VideoIndexerService
 from src.services.whisper_service import WhisperService
+from src.utils.url import validate_blob_url
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -69,15 +69,12 @@ class ExtractionAgent:
         frames_dir = work_dir / "frames"
         frames_dir.mkdir(exist_ok=True)
 
-        # Extract blob_name from blob_url:
-        # URL format: https://<account>.blob.core.windows.net/<container>/<blob_name>
-        parsed = urlparse(str(metadata.blob_url))
-        path_parts = str(parsed.path).lstrip("/").split("/", 1)
-        if len(path_parts) != 2:
-            raise ValueError(
-                f"Cannot parse blob_name from blob_url: {metadata.blob_url!r}"
-            )
-        blob_name = path_parts[1]
+        # Validate blob URL and extract blob_name
+        blob_name = validate_blob_url(
+            str(metadata.blob_url),
+            settings.blob_account_url,
+            settings.blob_container_name,
+        )
 
         blob_service = BlobStorageService(settings)
         vi_service = VideoIndexerService(settings)
@@ -172,8 +169,14 @@ class ExtractionAgent:
                     video_id=video_id,
                     error=str(e),
                 )
-            await vi_service.close()
-            await blob_service.close()
+            try:
+                await vi_service.close()
+            except Exception as e:
+                logger.warning("extraction.vi_close_failed", video_id=video_id, error=str(e))
+            try:
+                await blob_service.close()
+            except Exception as e:
+                logger.warning("extraction.blob_close_failed", video_id=video_id, error=str(e))
 
     async def _extract_local(self, metadata: VideoMetadata) -> ExtractionResult:
         """Local extraction using FFmpeg + PySceneDetect + Whisper."""

@@ -127,7 +127,7 @@ class SpeechService:
         definition: dict = {
             "locales": [locale],
             "profanityFilterMode": "None",
-            "channels": [0, 1],
+            "channels": [0],
         }
         if enable_diarization:
             definition["diarizationSettings"] = {"minSpeakers": 1, "maxSpeakers": 4}

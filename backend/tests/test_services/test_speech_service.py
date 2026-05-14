@@ -35,7 +35,7 @@ def _make_mock_response(phrases: list[dict]) -> MagicMock:
     return resp
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestTranscribeFile:
     async def test_sends_multipart_form_data(self, service, tmp_path):
         audio_file = tmp_path / "audio.wav"
@@ -108,7 +108,7 @@ class TestTranscribeFile:
             await service.transcribe(audio_file)
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestTranscribeUrl:
     async def test_sends_json_body_with_content_urls(self, service):
         sas_url = "https://storage.blob.core.windows.net/container/video.mp4?sas=token"
@@ -151,7 +151,7 @@ class TestTranscribeUrl:
             await service.transcribe(sas_url)
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestDiarization:
     async def test_speaker_id_mapped_to_speaker_name(self, service, tmp_path):
         audio_file = tmp_path / "audio.wav"
@@ -190,7 +190,7 @@ class TestDiarization:
         assert segments[0].speaker is None
 
 
-@pytest.mark.cloud
+@pytest.mark.unit
 class TestEmptyResponse:
     async def test_empty_phrases_returns_empty_list(self, service, tmp_path):
         audio_file = tmp_path / "audio.wav"
