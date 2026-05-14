@@ -304,7 +304,15 @@ async def _run_extraction(video_id: str) -> None:
             ingestion_result = await ingestion_agent.process(job.source_path or "", mode)
             video_metadata = ingestion_result.metadata
 
-        extraction_result = await extraction_agent.process(video_metadata, mode)
+        async def _on_extraction_progress(progress: str) -> None:
+            manager.send_progress(
+                video_id, "extracting", 2, 6,
+                f"Step 2/6: Video Indexer processing ({progress})...",
+            )
+
+        extraction_result = await extraction_agent.process(
+            video_metadata, mode, on_progress=_on_extraction_progress
+        )
 
         if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
             logger.error(
@@ -367,7 +375,15 @@ async def _run_pipeline(
                 ingestion_result = await ingestion_agent.process(job.source_path or "", mode)
                 video_metadata = ingestion_result.metadata
 
-            extraction_result = await extraction_agent.process(video_metadata, mode)
+            async def _on_pipeline_extraction_progress(progress: str) -> None:
+                manager.send_progress(
+                    video_id, "extracting", 2, 6,
+                    f"Step 2/6: Video Indexer processing ({progress})...",
+                )
+
+            extraction_result = await extraction_agent.process(
+                video_metadata, mode, on_progress=_on_pipeline_extraction_progress
+            )
 
             if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
                 raise RuntimeError("Extraction produced no transcript, scenes, or keyframes.")
