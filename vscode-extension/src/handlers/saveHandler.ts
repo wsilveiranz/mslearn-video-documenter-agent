@@ -84,6 +84,7 @@ export async function handleSave(
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(doc.markdown_content, 'utf-8'));
 
         // Copy media files to a media subdirectory
+        let mediaCopyFailures: string[] = [];
         if (mediaFiles.length > 0) {
             const mediaDirUri = vscode.Uri.joinPath(
                 vscode.Uri.file(path.dirname(targetUri.fsPath)),
@@ -97,11 +98,15 @@ export async function handleSave(
                     const sourceUri = vscode.Uri.file(media.sourcePath);
                     await vscode.workspace.fs.copy(sourceUri, destUri, { overwrite: true });
                 } catch {
-                    // Log but don't fail if a media file can't be copied
-                    console.warn(`Failed to copy media file: ${media.sourcePath}`);
+                    mediaCopyFailures.push(media.filename);
                 }
             }
         }
+
+        const warnings = mediaCopyFailures.length > 0
+            ? `\n\n⚠️ **${mediaCopyFailures.length} media file(s) could not be copied:** ${mediaCopyFailures.join(', ')}. ` +
+              `Image references in the document may be broken.`
+            : '';
 
         stream.markdown(
             `✅ **Document saved**\n\n` +
@@ -109,7 +114,8 @@ export async function handleSave(
             `|-------|-------|\n` +
             `| Path | \`${targetUri.fsPath}\` |\n` +
             `| Word count | ${doc.word_count} |\n` +
-            `| Revision | ${doc.revision_number} |\n`
+            `| Revision | ${doc.revision_number} |\n` +
+            warnings
         );
 
         // Non-blocking notification — don't await to avoid freezing the chat

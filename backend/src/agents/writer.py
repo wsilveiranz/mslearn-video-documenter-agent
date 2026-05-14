@@ -248,24 +248,56 @@ class WriterAgent:
         return "\n".join(lines)
 
     def _normalize_image_paths(self, markdown: str, screenshots: list[Screenshot]) -> str:
-        """Replace any :::image source paths with the correct output_path from the screenshot manifest."""
+        """Replace any :::image source paths with the correct output_path from the screenshot manifest.
+
+        Matches images by alt-text to avoid positional coupling — if the LLM
+        reorders or omits screenshots, paths are still assigned correctly.
+        Falls back to positional matching only when alt-text lookup fails.
+        """
         if not screenshots:
             return markdown
 
+        # Build alt-text → output_path lookup (case-insensitive, stripped)
+        alt_to_path: dict[str, str] = {}
+        for s in screenshots:
+            if s.output_path and s.alt_text:
+                alt_to_path[s.alt_text.strip().lower()] = s.output_path
+
+        # Positional fallback list
         output_paths = [s.output_path for s in screenshots if s.output_path]
-        if not output_paths:
+        if not output_paths and not alt_to_path:
             return markdown
 
-        pattern = r'(:::image\s[^:]*?source=")([^"]*?)("[^:]*?:::)'
+        pattern = r'(:::image\s[^:]*?source=")([^"]*?)("\s[^:]*?alt-text=")([^"]*?)("[^:]*?:::)'
         matches = list(re.finditer(pattern, markdown))
         if not matches:
-            return markdown
+            # Try simpler pattern without alt-text capture for fallback
+            simple_pattern = r'(:::image\s[^:]*?source=")([^"]*?)("[^:]*?:::)'
+            matches = list(re.finditer(simple_pattern, markdown))
+            if not matches:
+                return markdown
+            # Positional fallback only
+            result = markdown
+            for i, match in enumerate(reversed(matches)):
+                idx = len(matches) - 1 - i
+                if idx < len(output_paths):
+                    result = result[:match.start(2)] + output_paths[idx] + result[match.end(2):]
+            return result
 
+        # Match by alt-text, fall back to positional index
         result = markdown
+        positional_idx = 0
         for i, match in enumerate(reversed(matches)):
             idx = len(matches) - 1 - i
-            if idx < len(output_paths):
-                result = result[:match.start(2)] + output_paths[idx] + result[match.end(2):]
+            alt_text = match.group(4).strip().lower()
+            if alt_text in alt_to_path:
+                new_path = alt_to_path[alt_text]
+            elif positional_idx < len(output_paths):
+                new_path = output_paths[positional_idx]
+                positional_idx += 1
+            else:
+                continue
+            result = result[:match.start(2)] + new_path + result[match.end(2):]
 
         return result
 

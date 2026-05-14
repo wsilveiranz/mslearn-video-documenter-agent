@@ -470,11 +470,13 @@ async def _run_pipeline(
             score=evaluation.scores.overall,
         )
         manager.send_progress(video_id, "completed", 6, 6, "Document generated!")
+        manager.clear_progress(video_id)
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.pipeline_failed", video_id=video_id, error=repr(exc), exc_info=True)
         manager.send_progress(video_id, "failed", job.step, 6, str(exc))
+        manager.clear_progress(video_id)
 
 
 # ---- Video Endpoints ----
@@ -759,10 +761,12 @@ async def refine_document(
             logger.info("api.refine_complete", doc_id=document_id, revision=refined.revision_number)
             if video_id:
                 manager.send_progress(video_id, "refined", 2, 2, "Refinement complete")
+                manager.clear_progress(video_id)
         except Exception as exc:
             logger.error("api.refine_failed", doc_id=document_id, error=repr(exc), exc_info=True)
             if video_id:
                 manager.send_progress(video_id, "failed", 0, 1, f"Refinement failed: {exc}")
+                manager.clear_progress(video_id)
 
     background_tasks.add_task(_refine)
 
