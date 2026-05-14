@@ -75,3 +75,8 @@ class TestValidateBlobUrl:
         url = "https://myaccount.blob.core.windows.net/video-documenter/vid%2B1/demo%23v2.mp4"
         result = validate_blob_url(url, ACCOUNT_URL, CONTAINER)
         assert result == "vid+1/demo#v2.mp4"
+
+    def test_rejects_userinfo_in_url(self) -> None:
+        url = "https://attacker.com@myaccount.blob.core.windows.net/video-documenter/file.mp4"
+        with pytest.raises(ValueError, match="must not contain credentials"):
+            validate_blob_url(url, ACCOUNT_URL, CONTAINER)

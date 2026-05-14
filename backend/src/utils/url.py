@@ -30,6 +30,13 @@ def validate_blob_url(blob_url: str, account_url: str, container_name: str) -> s
     parsed_blob = urlparse(blob_url)
     parsed_account = urlparse(account_url)
 
+    # SECURITY: Reject URLs with userinfo to prevent SSRF via user@host bypass
+    if parsed_blob.username is not None or parsed_blob.password is not None:
+        raise ValueError(
+            f"Blob URL must not contain credentials. "
+            f"Blob URL: {_redact_url(blob_url)}"
+        )
+
     if (parsed_blob.hostname or "").lower() != (parsed_account.hostname or "").lower():
         raise ValueError(
             f"Blob URL host '{parsed_blob.hostname}' does not match "

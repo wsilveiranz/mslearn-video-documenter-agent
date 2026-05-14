@@ -11,7 +11,7 @@ from src.config import get_settings
 from src.models.video import IngestionResult, ProcessingMode, VideoSourceType
 from src.services.blob_storage_service import BlobStorageService
 from src.services.ffmpeg_service import FFmpegService
-from src.utils.url import validate_blob_url
+from src.utils.url import _redact_url, validate_blob_url
 
 logger = structlog.get_logger()
 
@@ -69,8 +69,9 @@ class IngestionAgent:
                 blob_name=blob_name,
                 local_path=str(download_path.name),
             )
-            blob_service = BlobStorageService(settings)
+            blob_service: BlobStorageService | None = None
             try:
+                blob_service = BlobStorageService(settings)
                 video_path = await blob_service.download_blob(blob_name, download_path)
             except Exception as e:
                 logger.error(
@@ -81,7 +82,8 @@ class IngestionAgent:
                 )
                 raise
             finally:
-                await blob_service.close()
+                if blob_service is not None:
+                    await blob_service.close()
         else:
             video_path = Path(video_source)
             if not video_path.exists():
@@ -162,7 +164,7 @@ class IngestionAgent:
                 "ingestion.blob_url_retained",
                 operation="ingestion",
                 video_id=metadata.video_id,
-                blob_url=video_source,
+                blob_url=_redact_url(video_source),
             )
         elif processing_mode == ProcessingMode.CLOUD:
             # Upload to Blob Storage in cloud mode

@@ -76,11 +76,13 @@ class ExtractionAgent:
             settings.blob_container_name,
         )
 
-        blob_service = BlobStorageService(settings)
-        vi_service = VideoIndexerService(settings)
+        blob_service: BlobStorageService | None = None
+        vi_service: VideoIndexerService | None = None
         vi_video_id: str | None = None
 
         try:
+            blob_service = BlobStorageService(settings)
+            vi_service = VideoIndexerService(settings)
             # 1. Generate SAS URL for Video Indexer to access the blob
             try:
                 sas_url = await blob_service.generate_sas_url(blob_name)
@@ -169,14 +171,16 @@ class ExtractionAgent:
                     video_id=video_id,
                     error=str(e),
                 )
-            try:
-                await vi_service.close()
-            except Exception as e:
-                logger.warning("extraction.vi_close_failed", video_id=video_id, error=str(e))
-            try:
-                await blob_service.close()
-            except Exception as e:
-                logger.warning("extraction.blob_close_failed", video_id=video_id, error=str(e))
+            if vi_service is not None:
+                try:
+                    await vi_service.close()
+                except Exception as e:
+                    logger.warning("extraction.vi_close_failed", video_id=video_id, error=str(e))
+            if blob_service is not None:
+                try:
+                    await blob_service.close()
+                except Exception as e:
+                    logger.warning("extraction.blob_close_failed", video_id=video_id, error=str(e))
 
     async def _extract_local(self, metadata: VideoMetadata) -> ExtractionResult:
         """Local extraction using FFmpeg + PySceneDetect + Whisper."""
