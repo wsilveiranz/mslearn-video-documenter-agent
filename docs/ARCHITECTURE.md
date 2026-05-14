@@ -96,7 +96,7 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
-| **Agent Framework** | Microsoft Agent Framework (MAF) v1.0 | Microsoft's unified, production-ready successor to Semantic Kernel and AutoGen. Provides graph-based orchestration, human-in-the-loop, checkpointing, streaming, MCP support, and native Foundry hosting. |
+| **Agent Framework** | Microsoft Agent Framework (MAF) v1.0 | Microsoft's unified, production-ready successor to Semantic Kernel and AutoGen. Provides workflow orchestration, human-in-the-loop, checkpointing, streaming, MCP support, and native Foundry hosting. |
 | **Language** | Python 3.10+ | Best ecosystem for video/audio processing (FFmpeg, OpenCV, PySceneDetect), ML/AI libraries, and MAF Python SDK. |
 | **API Layer** | FastAPI | High-performance async API; serves both VS Code extension and future web UI. |
 | **VS Code Extension** | TypeScript + Chat Participant API | VS Code extensions require TypeScript. Extension acts as a thin client calling the Python backend. |
@@ -204,6 +204,30 @@ flowchart LR
     qa -.->|quality_report| writer
     qa -.->|quality_report| evaluate
     editor -->|Refinement Loop| writer
+```
+
+#### Orchestration Model
+
+The pipeline uses MAF's `@workflow` decorator with sequential agent invocation and an iterative refinement loop between Writer→Editor→Evaluate agents (max 3 iterations). The orchestrator maintains a shared LLM client initialized at pipeline start and passes it to each sequential agent. If the Evaluate agent determines the document hasn't met quality thresholds (overall score >= 0.7 and all dimensions >= 0.5), the Editor agent refines the document and the Evaluate agent re-scores, up to the maximum revision iterations.
+
+```python
+# Simplified orchestration flow
+@workflow
+async def run_pipeline(request: PipelineInput):
+    # Sequential stages
+    ingestion_result = await ingestion_agent.process(...)
+    extraction_result = await extraction_agent.process(...)
+    outline = await structure_agent.process(...)
+    document = await writer_agent.process(...)
+    
+    # Refinement loop
+    for iteration in range(MAX_REVISION_ITERATIONS):
+        document = await editor_agent.process(document)
+        evaluation = await evaluate_agent.process(document)
+        if evaluation.passed:
+            break
+    
+    return PipelineResult(document, evaluation, extraction_result)
 ```
 
 #### Agent 1: Ingestion Agent
@@ -507,9 +531,12 @@ The extension detects if a backend is already running on the configured port and
       "description": "Analyzes screen recordings and generates MS Learn documentation",
       "isSticky": true,
       "commands": [
+        { "name": "plan", "description": "Documentation planning workflow" },
         { "name": "analyze", "description": "Analyze a screen recording video" },
         { "name": "generate", "description": "Generate documentation from analyzed video" },
-        { "name": "refine", "description": "Refine a section of generated documentation" }
+        { "name": "refine", "description": "Refine a section of generated documentation" },
+        { "name": "save", "description": "Save generated documentation to file" },
+        { "name": "status", "description": "Check processing status" }
       ]
     }]
   }
@@ -566,7 +593,7 @@ backend/
 │   ├── main.py                       # FastAPI app entry point
 │   ├── config.py                     # Environment configuration
 │   ├── agents/
-│   │   ├── orchestrator.py           # MAF orchestrator (pipeline routing)
+│   │   ├── orchestrator.py           # MAF orchestrator (sequential pipeline with refinement loop)
 │   │   ├── ingestion.py              # Video ingestion agent
 │   │   ├── extraction.py             # Video analysis agent
 │   │   ├── quality.py                # Data quality assessment agent (side-step)
@@ -584,6 +611,9 @@ backend/
 │   │   ├── video_indexer_service.py  # Azure Video Indexer client (cloud mode)
 │   │   ├── vision_service.py         # GPT-4o Vision analysis
 │   │   └── whisper_service.py        # OpenAI Whisper transcription (local mode)
+│   ├── utils/
+│   │   ├── markdown_helpers.py       # MS Learn markdown formatting utilities
+│   │   └── text_processing.py        # Text processing and cleanup utilities
 │   ├── templates/
 │   │   ├── quickstart.md             # MS Learn Quickstart template
 │   │   ├── tutorial.md               # MS Learn Tutorial template
@@ -597,7 +627,7 @@ backend/
 │   │   ├── structure_system.md       # Structure agent system prompt
 │   │   └── quality_system.md         # Quality Assessment agent system prompt
 │   ├── models/
-│   │   ├── video.py                  # Video/extraction data models
+│   │   ├── video.py                  # Video/extraction data models and DataQualityReport
 │   │   ├── document.py               # Document/outline data models
 │   │   ├── evaluation.py             # Evaluation report models
 │   │   └── services.py               # Azure service slug list
@@ -608,6 +638,12 @@ backend/
 │   ├── test_agents/
 │   ├── test_services/
 │   └── fixtures/
+├── scripts/
+│   ├── setup.py                      # Development environment setup
+│   └── preprocess_video.py           # Video preprocessing utilities
+├── infra/
+│   ├── terraform/                    # Infrastructure as Code (Azure)
+│   └── docker-compose.yml            # Local development stack
 ├── Dockerfile                        # Container build
 └── docker-compose.yml                # Local development stack
 ```
@@ -618,12 +654,17 @@ backend/
 POST   /api/v1/videos/ingest                    # Upload/register video
 GET    /api/v1/videos/{id}/status               # Check processing status; includes data_quality when assessed
 GET    /api/v1/videos/{id}/extraction           # Get extraction results
+POST   /api/v1/videos/{id}/extract              # Trigger extraction only
 POST   /api/v1/videos/{id}/assess-quality       # Assess extraction data quality; returns DataQualityReport
 POST   /api/v1/documents/generate               # Generate document from extraction
 POST   /api/v1/documents/{id}/refine            # Iterative refinement
 GET    /api/v1/documents/{id}                   # Get generated document
-POST   /api/v1/classify-intent                  # Classify user message intent (save/refine/general)
-WS     /ws/progress/{video_id}                  # Step-based progress streaming (fire-and-forget)
+GET    /api/v1/health                           # Basic health check
+GET    /api/v1/health/deep                      # Deep health check with service connectivity
+GET    /api/v1/services                         # List available services and their status
+POST   /api/v1/config/lm-proxy                  # Handshake endpoint for VS Code extension to configure Copilot proxy
+POST   /api/v1/classify-intent                  # Classify user message intent
+WS     /api/v1/ws/progress/{video_id}           # Step-based progress streaming (fire-and-forget)
 ```
 
 #### WebSocket Progress Payload
@@ -649,12 +690,13 @@ Pipeline steps: 1=Ingestion, 2=Extraction, 3=Structure, 4=Writer, 5=Editor, 6=Ev
 # config.py - Environment-based configuration
 class Settings(BaseSettings):
     # Processing mode
-    processing_mode: Literal["cloud", "local"] = "cloud"
+    processing_mode: Literal["cloud", "local"] = "local"
     
     # Azure AI Foundry
-    azure_openai_endpoint: str
-    azure_openai_api_key: str
-    azure_openai_deployment: str = "gpt-4o"
+    foundry_project_endpoint: str
+    foundry_model: str = "gpt-4o"
+    foundry_model_mini: str = "gpt-4o-mini"
+    # Authentication: Uses DefaultAzureCredential (no API keys needed)
     
     # Azure Video Indexer (cloud mode)
     video_indexer_account_id: str = ""
@@ -696,7 +738,7 @@ Key data models are defined in `backend/src/models/`:
 | `ExtractionResult` | `video.py` | Transcript, scenes, keyframes, OCR, entities from video analysis |
 | `DocumentOutline` | `document.py` | Structured outline mapping video content to MS Learn template |
 | `EvaluationReport` | `evaluation.py` | 5-dimension quality scores + overall + pass/fail decision |
-| `DataQualityReport` | `quality.py` | Extraction data quality assessment; feeds Writer guardrails and Evaluate grounding |
+| `DataQualityReport` | `video.py` | Extraction data quality assessment; feeds Writer guardrails and Evaluate grounding |
 
 `EvaluationReport.overall` is the average of all 5 scoring dimensions. `EvaluationReport.passed` is `True` when `overall >= 0.7` and all individual dimensions score `>= 0.5`.
 
@@ -916,6 +958,8 @@ Different agents use different models based on task requirements:
 | **Editor** | GPT-4o-mini | Phi-4 | Targeted edits, lower complexity |
 | **Evaluate** | GPT-4o | GPT-4o-mini | Quality assessment needs strong reasoning |
 
+**Current implementation note:** All agents currently use a shared LLM client configured at pipeline start. Per-agent model routing (using `foundry_model_mini` for Structure/Editor) is planned for cost optimization in a future phase.
+
 ### 8.2 Token Budget Estimation (10-minute video)
 
 | Step | Input Tokens | Output Tokens | Model |
@@ -1038,7 +1082,7 @@ A common question is whether to use **Microsoft Agent Framework (MAF)** or **Azu
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| **Framework** (how you build agents) | Microsoft Agent Framework (MAF) | Agent logic, multi-agent orchestration, graph-based workflows, human-in-the-loop, checkpointing |
+| **Framework** (how you build agents) | Microsoft Agent Framework (MAF) | Agent logic, multi-agent orchestration, sequential workflow orchestration with refinement loops, human-in-the-loop, checkpointing |
 | **Runtime** (where agents run in production) | Azure AI Foundry Agent Service (Hosted Agents) | Managed hosting, enterprise identity (Entra/OBO), governance, RAI enforcement, observability, durable execution |
 
 ### Internal Guidance (FY26 Q3/Q4)
@@ -1064,7 +1108,7 @@ Per Microsoft internal strategy docs and the MAF FAQ:
 
 | Our Requirement | Addressed By |
 |----------------|-------------|
-| 7-agent pipeline orchestration (Ingestion → Extraction → Quality Assessment → Structure → Writer → Editor → Evaluate) | **MAF** — graph-based agent coordination |
+| 7-agent pipeline orchestration (Ingestion → Extraction → Quality Assessment → Structure → Writer → Editor → Evaluate) | **MAF** — sequential agent coordination with iterative refinement loop |
 | Iterative refinement with human-in-the-loop | **MAF** — native HITL support + checkpointing |
 | Local development with only GPT-4o dependency | **MAF** — runs locally without Foundry runtime |
 | Production deployment on Azure | **Foundry Agent Service** — managed microVM runtime |
