@@ -177,7 +177,8 @@ class TestCloudExtractionErrors:
         with (
             patch("src.agents.extraction.get_settings", return_value=mock_settings),
             patch("src.agents.extraction.BlobStorageService", return_value=mock_blob_service),
-            patch("src.agents.extraction.VideoIndexerService", return_value=mock_vi_service),pytest.raises(RuntimeError)
+            patch("src.agents.extraction.VideoIndexerService", return_value=mock_vi_service),
+            pytest.raises(RuntimeError),
         ):
             await agent.process(video_metadata, ProcessingMode.CLOUD)
 
@@ -193,7 +194,8 @@ class TestCloudExtractionErrors:
         with (
             patch("src.agents.extraction.get_settings", return_value=mock_settings),
             patch("src.agents.extraction.BlobStorageService", return_value=mock_blob_service),
-            patch("src.agents.extraction.VideoIndexerService", return_value=mock_vi_service),pytest.raises(RuntimeError)
+            patch("src.agents.extraction.VideoIndexerService", return_value=mock_vi_service),
+            pytest.raises(RuntimeError),
         ):
             await agent.process(video_metadata, ProcessingMode.CLOUD)
 
