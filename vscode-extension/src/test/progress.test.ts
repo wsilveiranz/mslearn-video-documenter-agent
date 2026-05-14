@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { formatPipelineProgress, createDefaultStages, PipelineStage } from '../utils/progress';
+import { formatPipelineProgress, createDefaultStages, PipelineStage, formatElapsed } from '../utils/progress';
 
 describe('progress utilities', () => {
     describe('createDefaultStages', () => {
@@ -50,6 +50,32 @@ describe('progress utilities', () => {
             ];
             const result = formatPipelineProgress(stages);
             assert.ok(result.includes('❌'));
+        });
+    });
+
+    describe('formatElapsed', () => {
+        it('should format seconds only when under 1 minute', () => {
+            const start = Date.now() - 30_000; // 30 seconds ago
+            const result = formatElapsed(start);
+            assert.strictEqual(result, '30s');
+        });
+
+        it('should format minutes and seconds', () => {
+            const start = Date.now() - 90_000; // 1m 30s ago
+            const result = formatElapsed(start);
+            assert.strictEqual(result, '1m 30s');
+        });
+
+        it('should pad seconds with zero', () => {
+            const start = Date.now() - 300_000; // 5m 0s ago
+            const result = formatElapsed(start);
+            assert.strictEqual(result, '5m 00s');
+        });
+
+        it('should return 0s for future timestamps', () => {
+            const start = Date.now() + 10_000; // future
+            const result = formatElapsed(start);
+            assert.strictEqual(result, '0s');
         });
     });
 });

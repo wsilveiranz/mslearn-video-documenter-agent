@@ -5,6 +5,7 @@ import { detectVideoPath } from '../utils/fileDetection';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { AZURE_SERVICE_ITEMS, AzureServiceItem } from '../constants/azureServices';
 import { getProgressUpdateIntervalMs } from '../utils/config';
+import { formatElapsed } from '../utils/progress';
 
 /**
  * Attempt to detect a doc type from the user's prompt text.
@@ -335,6 +336,8 @@ export async function handlePlan(
         const extractStartTime = Date.now();
         const extractTimeoutMs = 1800000; // 30 minutes — backend controls actual VI timeout
         let lastExtractPollStage = '';
+        let lastExtractPollDetail = '';
+        let lastExtractPollEmitTime = 0;
 
         while (!extractionComplete && Date.now() - extractStartTime < extractTimeoutMs) {
             if (token.isCancellationRequested) {
@@ -347,11 +350,16 @@ export async function handlePlan(
 
             try {
                 const status = await client.getVideoStatus(videoId);
-                if (status.progress_detail) {
-                    stream.progress(status.progress_detail);
-                } else if (status.current_stage !== lastExtractPollStage) {
-                    lastExtractPollStage = status.current_stage;
-                    stream.progress(`${status.current_stage}`);
+                const elapsed = formatElapsed(extractStartTime);
+                const now = Date.now();
+                const baseDetail = status.progress_detail || status.current_stage;
+                const detailChanged = baseDetail !== lastExtractPollDetail;
+                const intervalElapsed = (now - lastExtractPollEmitTime) >= extractProgressIntervalMs;
+
+                if (baseDetail && (detailChanged || intervalElapsed)) {
+                    lastExtractPollDetail = baseDetail;
+                    lastExtractPollEmitTime = now;
+                    stream.progress(`${baseDetail} (${elapsed})`);
                 }
 
                 if (status.current_stage === 'extraction_complete') {
@@ -399,9 +407,10 @@ export async function handlePlan(
             try {
                 stream.progress('Assessing extraction quality...');
                 let qualityDone = false;
+                const qualityStartTime = Date.now();
                 const qualityInterval = setInterval(() => {
                     if (!qualityDone) {
-                        stream.progress('Assessing extraction quality...');
+                        stream.progress(`Assessing extraction quality... (${formatElapsed(qualityStartTime)})`);
                     }
                 }, 10000);
 

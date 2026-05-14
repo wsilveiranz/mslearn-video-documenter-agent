@@ -312,11 +312,9 @@ async def _run_extraction(video_id: str) -> None:
             video_metadata = ingestion_result.metadata
 
         async def _on_extraction_progress(progress: str) -> None:
-            job.progress_detail = f"Step 2/6: Video Indexer processing ({progress})..."
-            manager.send_progress(
-                video_id, "extracting", 2, 6,
-                f"Step 2/6: Video Indexer processing ({progress})...",
-            )
+            detail = f"Video Indexer processing ({progress})"
+            job.progress_detail = detail
+            manager.send_progress(video_id, "extracting", 2, 6, detail)
 
         extraction_result = await extraction_agent.process(
             video_metadata, mode, on_progress=_on_extraction_progress
@@ -384,11 +382,9 @@ async def _run_pipeline(
                 video_metadata = ingestion_result.metadata
 
             async def _on_pipeline_extraction_progress(progress: str) -> None:
-                job.progress_detail = f"Step 2/6: Video Indexer processing ({progress})..."
-                manager.send_progress(
-                    video_id, "extracting", 2, 6,
-                    f"Step 2/6: Video Indexer processing ({progress})...",
-                )
+                detail = f"Video Indexer processing ({progress})"
+                job.progress_detail = detail
+                manager.send_progress(video_id, "extracting", 2, 6, detail)
 
             extraction_result = await extraction_agent.process(
                 video_metadata, mode, on_progress=_on_pipeline_extraction_progress

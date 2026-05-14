@@ -6,6 +6,7 @@ import { OutputManager, sanitizeFilename } from '../utils/outputManager';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { BackendMetadata } from '../api/backendClient';
 import { getProgressUpdateIntervalMs } from '../utils/config';
+import { formatElapsed } from '../utils/progress';
 
 export async function handleGenerate(
     request: vscode.ChatRequest,
@@ -157,20 +158,22 @@ export async function handleGenerate(
         let lastGenWsDetail = '';
         let lastGenProgressTime = 0;
         const progressIntervalMs = getProgressUpdateIntervalMs();
+        const genStartTime = Date.now();
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {
             const text = msg.detail || `Step ${msg.step}/${msg.total_steps}: ${msg.stage}`;
             const now = Date.now();
             if (text !== lastGenWsDetail && now - lastGenProgressTime >= progressIntervalMs) {
                 lastGenWsDetail = text;
                 lastGenProgressTime = now;
-                stream.progress(text);
+                stream.progress(`${text} (${formatElapsed(genStartTime)})`);
             }
         });
 
-        // 7. Poll for completion (no progress display — WebSocket handles that)
+        // 7. Poll for completion with elapsed-time heartbeat
         let documentId: string | undefined;
         const startTime = Date.now();
         const timeoutMs = 1800000; // 30 minutes — backend controls actual pipeline timeout
+        let lastHeartbeatTime = Date.now();
 
         try {
             while (Date.now() - startTime < timeoutMs) {
@@ -190,6 +193,14 @@ export async function handleGenerate(
                         stateManager.setStage('analyzed');
                         stream.markdown('❌ **Document generation failed.** Please check the backend logs and try again.');
                         return { metadata: { command: 'generate' } };
+                    }
+
+                    // Heartbeat: if no WS message recently, show elapsed time
+                    const now = Date.now();
+                    if ((now - lastGenProgressTime) >= progressIntervalMs && (now - lastHeartbeatTime) >= progressIntervalMs) {
+                        lastHeartbeatTime = now;
+                        const detail = status.progress_detail || status.current_stage;
+                        stream.progress(`${detail} (${formatElapsed(genStartTime)})`);
                     }
                 } catch (pollError) {
                     if (pollError instanceof BackendError && pollError.statusCode === 404) {
