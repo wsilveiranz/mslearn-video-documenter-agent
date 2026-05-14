@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 def validate_blob_url(blob_url: str, account_url: str, container_name: str) -> str:
@@ -34,7 +34,7 @@ def validate_blob_url(blob_url: str, account_url: str, container_name: str) -> s
     path_segments = parsed_blob.path.lstrip("/").split("/", 1)
     url_container = path_segments[0] if path_segments else ""
 
-    if url_container != container_name:
+    if url_container.lower() != container_name.lower():
         raise ValueError(
             f"Blob URL container '{url_container}' does not match "
             f"expected container '{container_name}'. Blob URL: {blob_url}"
@@ -46,7 +46,7 @@ def validate_blob_url(blob_url: str, account_url: str, container_name: str) -> s
             f"Blob URL: {blob_url}"
         )
 
-    return path_segments[1]
+    return unquote(path_segments[1])
 
 
 def url_join(base: str, *segments: str) -> str:

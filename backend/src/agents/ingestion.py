@@ -135,20 +135,21 @@ class IngestionAgent:
         working_dir = Path(settings.output_directory) / metadata.video_id
         working_dir.mkdir(parents=True, exist_ok=True)
         staged_path = working_dir / video_path.name
-        shutil.copy2(video_path, staged_path)
-
-        # Clean up temp download now that file is staged in working directory
-        if source_type == VideoSourceType.BLOB_URL:
-            try:
-                video_path.unlink()
-                logger.info("ingestion.temp_cleaned", operation="ingestion", path=str(video_path.name))
-            except OSError as e:
-                logger.warning(
-                    "ingestion.temp_cleanup_failed",
-                    operation="ingestion",
-                    path=str(video_path.name),
-                    error=str(e),
-                )
+        try:
+            shutil.copy2(video_path, staged_path)
+        finally:
+            # Clean up temp download regardless of copy success/failure
+            if source_type == VideoSourceType.BLOB_URL:
+                try:
+                    video_path.unlink()
+                    logger.info("ingestion.temp_cleaned", operation="ingestion", path=str(video_path.name))
+                except OSError as e:
+                    logger.warning(
+                        "ingestion.temp_cleanup_failed",
+                        operation="ingestion",
+                        path=str(video_path.name),
+                        error=str(e),
+                    )
 
         # Update source_path to the stable staged location so downstream
         # agents read from the working directory, not the original (or temp) path.

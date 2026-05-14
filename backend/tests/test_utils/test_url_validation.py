@@ -60,3 +60,18 @@ class TestValidateBlobUrl:
         url = "https://myaccount.blob.core.windows.net/video-documenter/abc/demo.mp4"
         result = validate_blob_url(url, "https://MYACCOUNT.BLOB.CORE.WINDOWS.NET", CONTAINER)
         assert result == "abc/demo.mp4"
+
+    def test_case_insensitive_container_comparison(self) -> None:
+        url = "https://myaccount.blob.core.windows.net/Video-Documenter/abc/demo.mp4"
+        result = validate_blob_url(url, ACCOUNT_URL, "video-documenter")
+        assert result == "abc/demo.mp4"
+
+    def test_percent_encoded_blob_name_decoded(self) -> None:
+        url = "https://myaccount.blob.core.windows.net/video-documenter/My%20Demo/file%20name.mp4"
+        result = validate_blob_url(url, ACCOUNT_URL, CONTAINER)
+        assert result == "My Demo/file name.mp4"
+
+    def test_percent_encoded_special_chars(self) -> None:
+        url = "https://myaccount.blob.core.windows.net/video-documenter/vid%2B1/demo%23v2.mp4"
+        result = validate_blob_url(url, ACCOUNT_URL, CONTAINER)
+        assert result == "vid+1/demo#v2.mp4"
