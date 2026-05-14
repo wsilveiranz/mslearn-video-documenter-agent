@@ -23,6 +23,23 @@ Before you begin, make sure you have:
 - (Optional) Access to [Azure AI Studio](https://ai.azure.com) for portal-based model deployments
 - (Optional) Access to [Video Indexer portal](https://www.videoindexer.ai/) for Video Indexer account management
 
+### VSIX bundled deployment prerequisites
+
+For packaging and deploying the extension as a VSIX file, additional tools are needed:
+
+- **PyInstaller** — bundles the Python backend into standalone executables inside the VSIX
+- **Node.js 24+** with npm — required for building the extension package
+- **PowerShell** — the build script (`scripts/build-vsix.ps1`) orchestrates the packaging process
+- **Important:** Always clean `__pycache__` directories before running PyInstaller builds to avoid stale bytecode issues:
+
+  ```bash
+  # Clean before build
+  Get-ChildItem -Path . -Directory -Name "__pycache__" -Recurse | ForEach-Object { Remove-Item -Path $_ -Recurse -Force }
+  
+  # Then run the build script
+  powershell -ExecutionPolicy Bypass -File scripts/build-vsix.ps1
+  ```
+
 ---
 
 ## Quick start with azd (recommended)
@@ -485,8 +502,10 @@ PROCESSING_MODE=cloud
 # Endpoint from: az cognitiveservices account show (section 2.4)
 FOUNDRY_PROJECT_ENDPOINT=https://ai-video-documenter.cognitiveservices.azure.com/
 
-# Deployment name you chose in Azure AI Studio (section 2.2)
+# Primary model for generation and vision analysis (section 2.2)
 FOUNDRY_MODEL=gpt-4o
+
+# Lighter model for intent classification and evaluation (section 2.3)
 FOUNDRY_MODEL_MINI=gpt-4o-mini
 
 # ──────────────────────────────────────
@@ -702,6 +721,46 @@ WHISPER_MODEL=base
 FFMPEG_PATH=ffmpeg
 OUTPUT_DIRECTORY=./output
 ```
+
+---
+
+## Local development with Copilot LM Proxy (zero Azure)
+
+For local development without any Azure resources, the VS Code extension can route LLM calls through your GitHub Copilot subscription:
+
+1. Set `PROCESSING_MODE=local` in `.env`
+2. Install the VS Code extension (or run in dev mode with F5)
+3. The extension automatically starts an LM Proxy server and configures the backend
+
+**How it works:**
+
+- Extension starts a local HTTP proxy on a random port
+- Calls `POST /api/v1/config/lm-proxy` to configure the backend
+- Backend routes all LLM calls through the proxy using your Copilot subscription
+- No Azure AI Foundry endpoint needed
+
+**Environment variables (auto-configured by extension):**
+
+- `COPILOT_PROXY_URL` — Proxy URL (e.g., http://localhost:3001)
+- `COPILOT_PROXY_MODEL` — Model name (default: copilot-auto)
+- `COPILOT_PROXY_SECRET` — Shared authentication secret
+
+---
+
+## VS Code Extension settings
+
+The extension mirrors backend configuration as VS Code settings (prefix: `videoDocumenter.`). Key settings:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `processingMode` | `cloud` or `local` | `local` |
+| `backendUrl` | Backend API URL | `http://127.0.0.1:8000` |
+| `foundryProjectEndpoint` | Azure AI Foundry endpoint | — |
+| `foundryModel` | Primary model (gpt-4o) | `gpt-4o` |
+| `author` | GitHub ID for frontmatter | — |
+| `msAuthor` | MS alias for frontmatter | — |
+
+See `vscode-extension/package.json` for the complete list.
 
 ---
 

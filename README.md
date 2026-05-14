@@ -174,7 +174,7 @@ python src/main.py process path/to/video.mp4 --mode local --doc-type tutorial --
 ```
 
 > [!IMPORTANT]
-> The `--mode` flag controls how video extraction runs. Use `--mode local` for local processing with FFmpeg + Whisper (recommended for development). Cloud mode (`--mode cloud`) requires Azure Video Indexer, which isn't yet implemented. If omitted, the mode defaults to the `PROCESSING_MODE` value in your `.env` file.
+> The `--mode` flag controls how video extraction runs. Use `--mode local` for local processing with FFmpeg + Whisper (recommended for development). Cloud mode (`--mode cloud`) requires Azure Video Indexer, Speech Service, and Blob Storage. See `docs/AZURE-SETUP.md` for provisioning instructions. If omitted, the mode defaults to the `PROCESSING_MODE` value in your `.env` file.
 
 **Output:** The generated Markdown file and media assets are saved to the output directory (default: `./output/`).
 
@@ -217,13 +217,19 @@ API endpoints:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/health` | Health check |
+| `GET` | `/api/v1/health/deep` | Deep health check (verifies service connectivity) |
+| `GET` | `/api/v1/services` | List available services and status |
 | `POST` | `/api/v1/videos/ingest` | Upload and ingest a video |
 | `GET` | `/api/v1/videos/{video_id}/status` | Check processing status |
 | `GET` | `/api/v1/videos/{video_id}/extraction` | Get extraction results |
+| `POST` | `/api/v1/videos/{video_id}/extract` | Trigger extraction step only |
+| `POST` | `/api/v1/videos/{video_id}/assess-quality` | Run quality assessment on extracted data |
 | `POST` | `/api/v1/documents/generate` | Generate documentation from ingested video |
 | `GET` | `/api/v1/documents/{document_id}` | Retrieve a generated document |
 | `POST` | `/api/v1/documents/{document_id}/refine` | Refine a generated document with feedback |
-| `WS` | `/api/v1/ws/{video_id}` | WebSocket for real-time progress |
+| `POST` | `/api/v1/config/lm-proxy` | Configure Copilot LM Proxy (called by VS Code extension) |
+| `POST` | `/api/v1/classify-intent` | Classify user message intent |
+| `WS` | `/api/v1/ws/progress/{video_id}` | WebSocket for real-time progress |
 
 Interactive API docs available at `http://127.0.0.1:8000/docs` when the server is running.
 
@@ -265,6 +271,7 @@ Select a document type (Tutorial, Quickstart, How-to, Concept, or Overview). The
 
 | Command | Description |
 |---------|-------------|
+| `/plan` | Plan documentation: select video, collect metadata (title, author, ms.service), choose template, and trigger the full generation pipeline |
 | `/analyze <path>` | Analyze a screen recording video |
 | `/generate [type]` | Generate MS Learn documentation |
 | `/refine <feedback>` | Refine the generated document |
@@ -281,9 +288,17 @@ You can also right-click any video file (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`
 | `video-documenter.outputDirectory` | `docs` | Workspace-relative output folder |
 | `video-documenter.autoOpenPreview` | `true` | Open markdown preview after generation |
 | `video-documenter.useCopilotModels` | `true` | Route LLM calls through Copilot in local mode |
+| `video-documenter.processingMode` | `local` | Video processing mode (local or cloud) |
 | `video-documenter.lmProxyPort` | `0` (auto) | Port for the LM Proxy server |
 | `video-documenter.autoStartBackend` | `true` | Auto-start the Python backend on extension activation |
 | `video-documenter.backendPath` | `""` | Path to backend directory (empty = auto-detect from monorepo) |
+| `video-documenter.foundryProjectEndpoint` | `""` | Azure AI Foundry project endpoint (cloud mode only) |
+| `video-documenter.foundryModel` | `gpt-4o` | Default LLM model (cloud mode only) |
+| `video-documenter.blobAccountUrl` | `""` | Azure Blob Storage account URL (cloud mode only) |
+| `video-documenter.speechServiceEndpoint` | `""` | Azure AI Speech service endpoint (cloud mode only) |
+| `video-documenter.videoIndexerAccountId` | `""` | Azure Video Indexer account ID (cloud mode only) |
+| `video-documenter.author` | `""` | Default GitHub username for document metadata |
+| `video-documenter.msAuthor` | `""` | Default MS alias for document metadata |
 
 > [!TIP]
 > See [Manual Test Plan](docs/MANUAL-TEST-PLAN.md) for a comprehensive list of test scenarios.
@@ -475,10 +490,16 @@ backend/
 │   │   ├── evaluate.py      # Quality-gate scoring
 │   │   └── orchestrator.py  # Pipeline coordinator
 │   ├── services/        # Azure + local service clients
-│   │   ├── ffmpeg_service.py
-│   │   ├── whisper_service.py
-│   │   ├── scene_detect_service.py
-│   │   └── vision_service.py
+│   │   ├── ffmpeg_service.py            # Local video frame extraction
+│   │   ├── scene_detection_service.py   # Scene detection via PySceneDetect
+│   │   ├── transcription_service.py     # Local Whisper transcription
+│   │   ├── vision_service.py            # GPT-4o vision analysis of keyframes
+│   │   ├── blob_storage_service.py      # Azure Blob Storage with SAS tokens
+│   │   ├── speech_service.py            # Azure AI Speech fast transcription
+│   │   ├── video_indexer_service.py     # Azure Video Indexer integration
+│   │   ├── copilot_client.py            # Copilot LM Proxy client for local mode
+│   │   └── intent_classifier.py         # User message intent classification
+│   ├── utils/           # Markdown helpers, text processing utilities
 │   ├── models/          # Pydantic data models
 │   ├── prompts/         # Agent system prompts (Markdown)
 │   ├── templates/       # MS Learn article templates
@@ -494,10 +515,16 @@ backend/
 vscode-extension/        # VS Code Chat Participant (TypeScript)
 docs/
 ├── PRD.md               # Product requirements
-├── ARCHITECTURE.md       # System architecture
+├── ARCHITECTURE.md      # System architecture
 ├── ROADMAP.md           # Implementation roadmap
-└── EVAL-PLAN.md         # Evaluation strategy + grader docs
+├── EVAL-PLAN.md         # Evaluation strategy + grader docs
+└── AZURE-SETUP.md       # Azure resource provisioning guide
+infra/                   # Azure Bicep templates for provisioning
+scripts/                 # Build and packaging scripts
 ```
+
+> [!NOTE]
+> **Quality Assessment**: After the Extraction agent completes, a quality assessment step evaluates the sufficiency of extracted data (grades: rich, adequate, thin, minimal). This assessment gates the Writer agent's behavior — when data is thin or minimal, the Writer applies guardrails and includes TODO placeholders for reviewers to fill in missing details.
 
 ## Documentation
 
@@ -505,7 +532,19 @@ docs/
 - [Architecture](docs/ARCHITECTURE.md)
 - [Implementation Roadmap](docs/ROADMAP.md)
 - [Evaluation Plan](docs/EVAL-PLAN.md)
+- [Azure Setup Guide](docs/AZURE-SETUP.md)
+- [Manual Test Plan](docs/MANUAL-TEST-PLAN.md)
+
+## Provisioning Azure resources
+
+Azure resources (Video Indexer, AI Foundry, Storage, Speech) can be provisioned using the included Bicep templates:
+
+```bash
+azd up
+```
+
+This automatically deploys the infrastructure defined in `infra/` and configures your `.env` file with the necessary endpoints and credentials. See [Azure Setup Guide](docs/AZURE-SETUP.md) for detailed provisioning instructions.
 
 ## License
 
-TBD
+MIT
