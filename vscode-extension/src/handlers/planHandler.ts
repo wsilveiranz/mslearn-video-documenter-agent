@@ -4,6 +4,7 @@ import { ConversationStateManager, DocumentMetadata } from '../utils/conversatio
 import { detectVideoPath } from '../utils/fileDetection';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { AZURE_SERVICE_ITEMS, AzureServiceItem } from '../constants/azureServices';
+import { getProgressUpdateIntervalMs } from '../utils/config';
 
 /**
  * Attempt to detect a doc type from the user's prompt text.
@@ -242,10 +243,14 @@ export async function handlePlan(
         stream.progress('Video uploaded, starting analysis...');
 
         let lastWsDetail = '';
+        let lastWsProgressTime = 0;
+        const progressIntervalMs = getProgressUpdateIntervalMs();
         const progressDisposable = client.connectProgress(videoId, (msg) => {
             const text = msg.detail || msg.stage;
-            if (text !== lastWsDetail) {
+            const now = Date.now();
+            if (text !== lastWsDetail && now - lastWsProgressTime >= progressIntervalMs) {
                 lastWsDetail = text;
+                lastWsProgressTime = now;
                 stream.progress(text);
             }
         });
@@ -314,10 +319,14 @@ export async function handlePlan(
         }
 
         let lastExtractWsDetail = '';
+        let lastExtractProgressTime = 0;
+        const extractProgressIntervalMs = getProgressUpdateIntervalMs();
         const extractProgressDisposable = client.connectProgress(videoId, (msg) => {
             const text = msg.detail || msg.stage;
-            if (text !== lastExtractWsDetail) {
+            const now = Date.now();
+            if (text !== lastExtractWsDetail && now - lastExtractProgressTime >= extractProgressIntervalMs) {
                 lastExtractWsDetail = text;
+                lastExtractProgressTime = now;
                 stream.progress(text);
             }
         });
@@ -375,6 +384,7 @@ export async function handlePlan(
         let extractionInfo = '';
         let qualityWarning = '';
         try {
+            stream.progress('Fetching extraction summary...');
             const finalStatus = await client.getVideoStatus(videoId);
             if (finalStatus.extraction_summary) {
                 const es = finalStatus.extraction_summary;
@@ -385,9 +395,20 @@ export async function handlePlan(
                     `| Vision analysis | ${es.has_vision_descriptions ? '✓' : '✗ (no descriptions)'} |\n`;
             }
 
-            // Run quality assessment
+            // Run quality assessment with periodic progress
             try {
+                stream.progress('Assessing extraction quality...');
+                let qualityDone = false;
+                const qualityInterval = setInterval(() => {
+                    if (!qualityDone) {
+                        stream.progress('Assessing extraction quality...');
+                    }
+                }, 10000);
+
                 const quality = await client.assessQuality(videoId, selectedModel);
+                qualityDone = true;
+                clearInterval(qualityInterval);
+
                 const confidence = Math.round(quality.grounding_confidence * 100);
                 extractionInfo += `| Data quality | **${quality.quality_level}** (${confidence}% grounding confidence) |\n`;
 
@@ -411,6 +432,8 @@ export async function handlePlan(
         } catch {
             // Non-fatal — just skip extraction info in summary
         }
+
+        stream.progress('Preparing plan summary...');
 
         // Step 10: Store state + show summary
         const metadata: DocumentMetadata = {

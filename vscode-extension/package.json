@@ -2,7 +2,7 @@
   "name": "mslearn-video-documenter",
   "displayName": "MS Learn Video Documenter",
   "description": "Analyzes screen recordings and generates MS Learn-style documentation",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "publisher": "video-documenter",
   "icon": "media/icon.png",
   "license": "MIT",
@@ -200,6 +200,13 @@
           "type": "string",
           "default": "ffmpeg",
           "description": "Path to FFmpeg binary (local mode only). Default uses PATH lookup."
+        },
+        "video-documenter.progressUpdateIntervalSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 120,
+          "description": "Minimum interval (in seconds) between progress updates shown in chat during video processing"
         }
       }
     }

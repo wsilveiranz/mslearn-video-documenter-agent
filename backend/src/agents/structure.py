@@ -209,6 +209,7 @@ class StructureAgent:
             )
             ms_service = data.get("ms_service", "")
             ms_topic = _MS_TOPIC_MAP.get(doc_type, doc_type.value)
+            customer_intent = data.get("customer_intent", "")
 
             frontmatter = Frontmatter(
                 title=title,
@@ -217,6 +218,7 @@ class StructureAgent:
                 ms_service=ms_service,
                 ms_date=datetime.now().strftime("%m/%d/%Y"),
                 ai_usage="ai-assisted",
+                customer_intent=customer_intent,
             )
 
             # Override with user-provided metadata when available

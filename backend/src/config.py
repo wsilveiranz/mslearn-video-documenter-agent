@@ -75,6 +75,10 @@ class Settings(BaseSettings):
         default=15,
         description="Seconds between Video Indexer polling requests",
     )
+    vi_progress_interval_s: int = Field(
+        default=30,
+        description="Minimum seconds between progress emissions to WebSocket (independent of poll frequency)",
+    )
 
     # --- Local Mode Settings ---
     whisper_model: str = Field(

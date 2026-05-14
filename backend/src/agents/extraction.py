@@ -64,7 +64,7 @@ class ExtractionAgent:
         settings = get_settings()
         video_id = metadata.video_id
 
-        work_dir = Path(settings.output_directory) / video_id
+        work_dir = (Path(settings.output_directory) / video_id).resolve()
         work_dir.mkdir(parents=True, exist_ok=True)
         frames_dir = work_dir / "frames"
         frames_dir.mkdir(exist_ok=True)
@@ -107,6 +107,7 @@ class ExtractionAgent:
                     vi_video_id,
                     timeout_s=dynamic_timeout,
                     poll_interval_s=settings.vi_poll_interval_s,
+                    progress_interval_s=settings.vi_progress_interval_s,
                     on_progress=on_progress,
                 )
             except Exception as e:
@@ -196,7 +197,7 @@ class ExtractionAgent:
         video_id = metadata.video_id
 
         # Set up per-video working directory
-        work_dir = Path(settings.output_directory) / video_id
+        work_dir = (Path(settings.output_directory) / video_id).resolve()
         work_dir.mkdir(parents=True, exist_ok=True)
         frames_dir = work_dir / "frames"
         frames_dir.mkdir(exist_ok=True)

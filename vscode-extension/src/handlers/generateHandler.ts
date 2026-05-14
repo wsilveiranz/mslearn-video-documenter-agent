@@ -5,6 +5,7 @@ import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager, sanitizeFilename } from '../utils/outputManager';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { BackendMetadata } from '../api/backendClient';
+import { getProgressUpdateIntervalMs } from '../utils/config';
 
 export async function handleGenerate(
     request: vscode.ChatRequest,
@@ -153,8 +154,17 @@ export async function handleGenerate(
         await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata, selectedModel);
 
         // 6. Connect WebSocket for progress
+        let lastGenWsDetail = '';
+        let lastGenProgressTime = 0;
+        const progressIntervalMs = getProgressUpdateIntervalMs();
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {
-            stream.progress(msg.detail || `Step ${msg.step}/${msg.total_steps}: ${msg.stage}`);
+            const text = msg.detail || `Step ${msg.step}/${msg.total_steps}: ${msg.stage}`;
+            const now = Date.now();
+            if (text !== lastGenWsDetail && now - lastGenProgressTime >= progressIntervalMs) {
+                lastGenWsDetail = text;
+                lastGenProgressTime = now;
+                stream.progress(text);
+            }
         });
 
         // 7. Poll for completion (no progress display — WebSocket handles that)
