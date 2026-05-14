@@ -42,6 +42,12 @@ export interface DocumentResponse {
     markdown_content: string;
     word_count: number;
     revision_number: number;
+    media_files: Array<{
+        filename: string;
+        source_path: string;
+        output_path: string;
+        alt_text: string;
+    }>;
 }
 
 export interface DataQualityResponse {

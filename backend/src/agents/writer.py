@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import structlog
 from agent_framework import Agent
 
-from src.models.document import DocType, DocumentOutline, GeneratedDocument
+from src.models.document import DocType, DocumentOutline, GeneratedDocument, Screenshot
 from src.utils.paths import get_prompts_dir, get_templates_dir
 
 if TYPE_CHECKING:
@@ -109,6 +109,16 @@ class WriterAgent:
                 f"{gaps}\n\n"
             )
 
+        screenshot_manifest = ""
+        if outline.screenshots:
+            manifest_lines = [
+                "## Screenshot Manifest\n",
+                "Use these EXACT paths for :::image::: references:\n",
+            ]
+            for s in outline.screenshots:
+                manifest_lines.append(f"- `{s.output_path}` — {s.alt_text}")
+            screenshot_manifest = "\n".join(manifest_lines) + "\n\n"
+
         user_message = (
             quality_guardrail +
             "## Document Outline\n\n"
@@ -117,6 +127,7 @@ class WriterAgent:
             f"{template}\n\n"
             "## Extraction Data\n\n"
             f"{extraction_context}\n\n"
+            f"{screenshot_manifest}"
             "## Instructions\n\n"
             "Generate a complete MS Learn article following the outline and template. "
             "Include YAML frontmatter, all sections, numbered steps, and :::image::: references for screenshots. "
@@ -131,6 +142,7 @@ class WriterAgent:
         )
 
         markdown_content = await self._generate_with_retry(agent, user_message, outline, template, outline_json)
+        markdown_content = self._normalize_image_paths(markdown_content, outline.screenshots)
 
         doc_id = uuid.uuid4().hex[:12]
         word_count = self._count_words(markdown_content)
@@ -234,6 +246,28 @@ class WriterAgent:
                 )
                 lines.append("")
         return "\n".join(lines)
+
+    def _normalize_image_paths(self, markdown: str, screenshots: list[Screenshot]) -> str:
+        """Replace any :::image source paths with the correct output_path from the screenshot manifest."""
+        if not screenshots:
+            return markdown
+
+        output_paths = [s.output_path for s in screenshots if s.output_path]
+        if not output_paths:
+            return markdown
+
+        pattern = r'(:::image\s[^:]*?source=")([^"]*?)("[^:]*?:::)'
+        matches = list(re.finditer(pattern, markdown))
+        if not matches:
+            return markdown
+
+        result = markdown
+        for i, match in enumerate(reversed(matches)):
+            idx = len(matches) - 1 - i
+            if idx < len(output_paths):
+                result = result[:match.start(2)] + output_paths[idx] + result[match.end(2):]
+
+        return result
 
     def _build_extraction_context(self, extraction: ExtractionResult) -> str:
         """Build a text summary of extraction data for the LLM."""

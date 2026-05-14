@@ -89,12 +89,20 @@ class StatusResponse(BaseModel):
     data_quality: DataQualityReport | None = None
 
 
+class MediaFileResponse(BaseModel):
+    filename: str
+    source_path: str
+    output_path: str
+    alt_text: str
+
+
 class DocumentResponse(BaseModel):
     document_id: str
     doc_type: DocType
     markdown_content: str
     word_count: int
     revision_number: int
+    media_files: list[MediaFileResponse] = []
 
 
 
@@ -677,12 +685,23 @@ async def get_document(document_id: str) -> DocumentResponse:
     if doc is None:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")
 
+    media_files = [
+        MediaFileResponse(
+            filename=Path(s.output_path).name if s.output_path else Path(s.source_path).name,
+            source_path=s.source_path,
+            output_path=s.output_path or f"./media/{Path(s.source_path).name}",
+            alt_text=s.alt_text,
+        )
+        for s in doc.media_files
+    ]
+
     return DocumentResponse(
         document_id=doc.document_id,
         doc_type=doc.doc_type,
         markdown_content=doc.markdown_content,
         word_count=doc.word_count,
         revision_number=doc.revision_number,
+        media_files=media_files,
     )
 
 

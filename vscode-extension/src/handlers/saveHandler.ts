@@ -72,10 +72,36 @@ export async function handleSave(
         stream.progress('Fetching document...');
         const doc = await client.getDocument(state.currentDocumentId);
 
+        // Prepare media files for copying
+        const mediaFiles = (doc.media_files ?? []).map(mf => ({
+            filename: mf.filename,
+            sourcePath: mf.source_path,
+        }));
+
         // Ensure parent directory exists and write the file
         const parentDirUri = vscode.Uri.file(path.dirname(targetUri.fsPath));
         await vscode.workspace.fs.createDirectory(parentDirUri);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(doc.markdown_content, 'utf-8'));
+
+        // Copy media files to a media subdirectory
+        if (mediaFiles.length > 0) {
+            const mediaDirUri = vscode.Uri.joinPath(
+                vscode.Uri.file(path.dirname(targetUri.fsPath)),
+                'media'
+            );
+            await vscode.workspace.fs.createDirectory(mediaDirUri);
+
+            for (const media of mediaFiles) {
+                const destUri = vscode.Uri.joinPath(mediaDirUri, media.filename);
+                try {
+                    const sourceUri = vscode.Uri.file(media.sourcePath);
+                    await vscode.workspace.fs.copy(sourceUri, destUri, { overwrite: true });
+                } catch {
+                    // Log but don't fail if a media file can't be copied
+                    console.warn(`Failed to copy media file: ${media.sourcePath}`);
+                }
+            }
+        }
 
         stream.markdown(
             `✅ **Document saved**\n\n` +

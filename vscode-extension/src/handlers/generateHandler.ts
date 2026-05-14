@@ -208,14 +208,16 @@ export async function handleGenerate(
         stateManager.setDocumentId(documentId);
         stateManager.setStage('generated');
 
-        // 10. Save to workspace and open
-        // TODO(Phase 3): Pass media files from extraction results once the
-        // /documents/{id} response includes referenced image paths.
+        // 10. Save to workspace and open (with extracted screenshots)
+        const mediaFiles = (doc.media_files ?? []).map(mf => ({
+            filename: mf.filename,
+            sourcePath: mf.source_path,
+        }));
         try {
             const savedUri = await outputManager.saveAndOpen(
                 documentId,
                 doc.markdown_content,
-                [],
+                mediaFiles,
                 desiredFilename,
             );
             stateManager.setSavedFilename(desiredFilename ? sanitizeFilename(desiredFilename) : `${documentId}.md`);
