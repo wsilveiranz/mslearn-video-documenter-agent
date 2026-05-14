@@ -14,7 +14,7 @@ export interface PrerequisiteStatus {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const MIN_PYTHON_MAJOR = 3;
-const MIN_PYTHON_MINOR = 10;
+const MIN_PYTHON_MINOR = 11;
 const PYTHON_INSTALL_URL = 'https://www.python.org/downloads/';
 const FFMPEG_INSTALL_URL = 'https://ffmpeg.org/download.html';
 
@@ -105,7 +105,7 @@ export class PrerequisiteManager implements vscode.Disposable {
         );
     }
 
-    /** Check if Python 3.10+ is available. */
+    /** Check if Python 3.11+ is available. */
     async checkPython(): Promise<{ available: boolean; version?: string; path?: string }> {
         // 1. Try VS Code Python extension API
         const pyExt = vscode.extensions.getExtension('ms-python.python');
@@ -140,28 +140,28 @@ export class PrerequisiteManager implements vscode.Disposable {
             return py;
         }
 
-        this._log('Python 3.10+ was not found on the system.');
+        this._log('Python 3.11+ was not found on the system.');
         return { available: false };
     }
 
-    /** Check if FFmpeg is available on PATH. */
+    /** Check if FFmpeg is available (configured path first, then PATH). */
     async checkFfmpeg(): Promise<{ available: boolean; version?: string }> {
-        try {
-            const output = execSync('ffmpeg -version', {
-                encoding: 'utf-8',
-                timeout: 10_000,
-                stdio: ['ignore', 'pipe', 'pipe'],
-            });
-            // First line is typically: ffmpeg version N.N.N ...
-            const firstLine = output.split('\n')[0]?.trim() ?? '';
-            const versionMatch = /ffmpeg version (\S+)/i.exec(firstLine);
-            const version = versionMatch?.[1] ?? 'unknown';
-            this._log(`FFmpeg found: ${version}`);
-            return { available: true, version };
-        } catch {
-            this._log('FFmpeg was not found on PATH.');
-            return { available: false };
+        // Try user-configured path first
+        const configuredPath = vscode.workspace
+            .getConfiguration('video-documenter')
+            .get<string>('ffmpegPath', '');
+
+        if (configuredPath && configuredPath !== 'ffmpeg') {
+            const result = this._tryFfmpegVersion(configuredPath);
+            if (result) { return result; }
         }
+
+        // Fall back to PATH
+        const pathResult = this._tryFfmpegVersion('ffmpeg');
+        if (pathResult) { return pathResult; }
+
+        this._log('FFmpeg was not found on PATH or configured path.');
+        return { available: false };
     }
 
     /**
@@ -203,7 +203,7 @@ export class PrerequisiteManager implements vscode.Disposable {
             // Check if the backend package is already installed
             let alreadyInstalled = false;
             try {
-                execSync(`"${venvPythonPath}" -c "import src"`, {
+                execSync(`"${venvPythonPath}" -c "import fastapi; import structlog"`, {
                     cwd: backendPath,
                     timeout: 10_000,
                     stdio: ['ignore', 'pipe', 'pipe'],
@@ -252,7 +252,7 @@ export class PrerequisiteManager implements vscode.Disposable {
     private async installPython(): Promise<boolean> {
         if (process.platform !== 'win32') {
             void vscode.window.showWarningMessage(
-                `Video Documenter: Python 3.10+ is required but was not found. ` +
+                `Video Documenter: Python 3.11+ is required but was not found. ` +
                     `Install it from ${PYTHON_INSTALL_URL} and reload VS Code.`,
             );
             return false;
@@ -347,7 +347,7 @@ export class PrerequisiteManager implements vscode.Disposable {
 
     /**
      * Try to run `<cmd> --version`, parse the version, and verify it meets the
-     * minimum requirement (3.10+). Returns status on success, `null` on failure.
+     * minimum requirement (3.11+). Returns status on success, `null` on failure.
      */
     private _tryParsePythonVersion(
         cmd: string,
@@ -375,6 +375,24 @@ export class PrerequisiteManager implements vscode.Disposable {
 
             this._log(`Python ${version} found at "${cmd}".`);
             return { available: true, version, path: cmd };
+        } catch {
+            return null;
+        }
+    }
+
+    /** Try to run ffmpeg -version with a given command/path. */
+    private _tryFfmpegVersion(cmd: string): { available: boolean; version?: string } | null {
+        try {
+            const output = execSync(`"${cmd}" -version`, {
+                encoding: 'utf-8',
+                timeout: 10_000,
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            const firstLine = output.split('\n')[0]?.trim() ?? '';
+            const versionMatch = /ffmpeg version (\S+)/i.exec(firstLine);
+            const version = versionMatch?.[1] ?? 'unknown';
+            this._log(`FFmpeg found: ${version} (${cmd})`);
+            return { available: true, version };
         } catch {
             return null;
         }

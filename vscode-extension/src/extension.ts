@@ -140,22 +140,23 @@ export async function activate(context: vscode.ExtensionContext) {
             backendManager = new BackendProcessManager();
             prerequisiteManager = new PrerequisiteManager();
 
+            // Start LM Proxy BEFORE backend so it's available for the handshake
+            // inside startBackendInBackground (which checks `if (lmProxyServer)`).
+            const config = vscode.workspace.getConfiguration('video-documenter');
+            if (config.get<boolean>('useCopilotModels', true) && getProcessingMode() === 'local') {
+                const preferredPort = config.get<number>('lmProxyPort', 0);
+                lmProxyServer = new LmProxyServer();
+                try {
+                    const proxyPort = await lmProxyServer.start(preferredPort);
+                    console.log(`[video-documenter] LM Proxy started on port ${proxyPort}`);
+                } catch (err) {
+                    console.warn('[video-documenter] LM Proxy failed to start:', err);
+                    lmProxyServer = undefined;
+                }
+            }
+
             // Start backend in the background so activation completes instantly.
             void startBackendInBackground(resolvedPath, port, host, backendUrl);
-        }
-
-        // Start LM Proxy if enabled (handshake is done in startBackendInBackground)
-        const config = vscode.workspace.getConfiguration('video-documenter');
-        if (config.get<boolean>('useCopilotModels', true) && getProcessingMode() === 'local') {
-            const preferredPort = config.get<number>('lmProxyPort', 0);
-            lmProxyServer = new LmProxyServer();
-            try {
-                const proxyPort = await lmProxyServer.start(preferredPort);
-                console.log(`[video-documenter] LM Proxy started on port ${proxyPort}`);
-            } catch (err) {
-                console.warn('[video-documenter] LM Proxy failed to start:', err);
-                lmProxyServer = undefined;
-            }
         }
 
         context.subscriptions.push(participant);

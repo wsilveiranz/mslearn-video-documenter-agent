@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getProcessingMode, getFoundryProjectEndpoint, getBlobAccountUrl } from './config';
+import { getProcessingMode, getFoundryProjectEndpoint, getBlobAccountUrl, getVideoIndexerAccountId, getVideoIndexerResourceId, getSpeechServiceEndpoint } from './config';
 
 /**
  * Validate that required settings are configured for the selected processing mode.
@@ -17,6 +17,15 @@ export function validateSettings(): void {
     }
     if (!getBlobAccountUrl()) {
         missing.push('Blob Account URL');
+    }
+    if (!getVideoIndexerAccountId()) {
+        missing.push('Video Indexer Account ID');
+    }
+    if (!getVideoIndexerResourceId()) {
+        missing.push('Video Indexer Resource ID');
+    }
+    if (!getSpeechServiceEndpoint()) {
+        missing.push('Speech Service Endpoint');
     }
 
     if (missing.length > 0) {

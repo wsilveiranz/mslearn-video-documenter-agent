@@ -127,7 +127,17 @@ Write-Host "  Running import smoke test..." -ForegroundColor Gray
 $smokeExe = Join-Path $backendDir 'dist' 'backend' 'backend.exe'
 $smokeStderr = Join-Path $backendDir 'dist' 'smoke_stderr.txt'
 $smokeStdout = Join-Path $backendDir 'dist' 'smoke_stdout.txt'
+
+# Find a free port for smoke test
+$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+$listener.Start()
+$smokePort = $listener.LocalEndpoint.Port
+$listener.Stop()
+Write-Host "  Using port $smokePort for smoke test..." -ForegroundColor Gray
+
 $env:PYTHONIOENCODING = 'utf-8'
+$oldPort = $env:PORT
+$env:PORT = $smokePort
 $smokeProcess = Start-Process -FilePath $smokeExe -NoNewWindow -PassThru -RedirectStandardError $smokeStderr -RedirectStandardOutput $smokeStdout
 
 # Give the server up to 15 seconds to start and respond to health check
@@ -144,7 +154,7 @@ while (((Get-Date) - $smokeStart).TotalSeconds -lt $smokeTimeout) {
     }
     # Try health endpoint
     try {
-        $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health' -TimeoutSec 2 -ErrorAction Stop
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:$smokePort/api/v1/health" -TimeoutSec 2 -ErrorAction Stop
         if ($response.StatusCode -eq 200) {
             $smokeHealthy = $true
             break
@@ -157,13 +167,16 @@ while (((Get-Date) - $smokeStart).TotalSeconds -lt $smokeTimeout) {
 if (-not $smokeHealthy) {
     $stderr = Get-Content $smokeStderr -Raw -ErrorAction SilentlyContinue
     Write-Error "Smoke test FAILED — backend.exe did not become healthy within ${smokeTimeout}s.`n$stderr"
+    Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
+    Remove-Item -Force $smokeStderr -ErrorAction SilentlyContinue
+    Remove-Item -Force $smokeStdout -ErrorAction SilentlyContinue
     exit 1
 }
 
 # 3c. Deep import check — verify Azure async transport modules are bundled
 Write-Host "  Running deep import check..." -ForegroundColor Gray
 try {
-    $deepResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/v1/health/deep' -TimeoutSec 10 -ErrorAction Stop
+    $deepResponse = Invoke-WebRequest -Uri "http://127.0.0.1:$smokePort/api/v1/health/deep" -TimeoutSec 10 -ErrorAction Stop
     if ($deepResponse.StatusCode -ne 200) {
         $body = $deepResponse.Content
         Write-Error "Deep import check FAILED (HTTP $($deepResponse.StatusCode)): $body"
@@ -191,6 +204,9 @@ Stop-Process -Id $smokeProcess.Id -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 
 Write-Host "  Smoke test passed — backend.exe starts and responds to health checks." -ForegroundColor Green
+
+# Restore previous PORT env var
+if ($oldPort) { $env:PORT = $oldPort } else { Remove-Item Env:\PORT -ErrorAction SilentlyContinue }
 
 # Clean up smoke test output files
 Remove-Item -Force $smokeStderr -ErrorAction SilentlyContinue

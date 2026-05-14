@@ -5,6 +5,12 @@ from __future__ import annotations
 from urllib.parse import unquote, urlparse
 
 
+def _redact_url(url: str) -> str:
+    """Return URL without query/fragment to avoid leaking SAS tokens in logs."""
+    parsed = urlparse(url)
+    return parsed._replace(query="", fragment="").geturl()
+
+
 def validate_blob_url(blob_url: str, account_url: str, container_name: str) -> str:
     """Validate a blob URL matches the expected account and container, and return the blob name.
 
@@ -28,7 +34,7 @@ def validate_blob_url(blob_url: str, account_url: str, container_name: str) -> s
         raise ValueError(
             f"Blob URL host '{parsed_blob.hostname}' does not match "
             f"expected account host '{parsed_account.hostname}'. "
-            f"Blob URL: {blob_url}, Account URL: {account_url}"
+            f"Blob URL: {_redact_url(blob_url)}, Account URL: {_redact_url(account_url)}"
         )
 
     path_segments = parsed_blob.path.lstrip("/").split("/", 1)
@@ -37,13 +43,13 @@ def validate_blob_url(blob_url: str, account_url: str, container_name: str) -> s
     if url_container.lower() != container_name.lower():
         raise ValueError(
             f"Blob URL container '{url_container}' does not match "
-            f"expected container '{container_name}'. Blob URL: {blob_url}"
+            f"expected container '{container_name}'. Blob URL: {_redact_url(blob_url)}"
         )
 
     if len(path_segments) < 2 or not path_segments[1]:
         raise ValueError(
             f"Blob URL has no blob path after container '{container_name}'. "
-            f"Blob URL: {blob_url}"
+            f"Blob URL: {_redact_url(blob_url)}"
         )
 
     return unquote(path_segments[1])

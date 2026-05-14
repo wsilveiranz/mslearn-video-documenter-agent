@@ -149,14 +149,12 @@ async def health_check() -> dict[str, str]:
 
 
 @router.get("/health/deep")
-async def health_deep() -> dict:
+async def health_deep() -> dict[str, object]:
     """Deep health check — validates the full Azure async import chain.
 
     Used by the VSIX build smoke test to catch missing PyInstaller hidden
     imports at build time.  Does NOT require Azure credentials or env vars.
     """
-    from fastapi.responses import JSONResponse
-
     critical_modules: list[str | tuple[str, str]] = [
         "aiohttp",
         "multidict",
@@ -187,14 +185,14 @@ async def health_deep() -> dict:
                 missing_module=module_name,
                 error=str(exc),
             )
-            return JSONResponse(
+            raise HTTPException(
                 status_code=500,
-                content={
+                detail={
                     "status": "error",
                     "missing_module": module_name,
                     "error": str(exc),
                 },
-            )
+            ) from exc
 
     return {"status": "ok", "imports_verified": len(critical_modules)}
 

@@ -41,9 +41,14 @@ jobs:
         working-directory: vscode-extension
         run: npm run compile
 
+      - name: Clean Python bytecode cache
+        working-directory: backend
+        shell: pwsh
+        run: Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+
       - name: Build backend executable
         working-directory: backend
-        run: pyinstaller --noconfirm backend.spec
+        run: pyinstaller --noconfirm --clean backend.spec
 
       - name: Bundle backend into extension
         shell: pwsh
@@ -53,6 +58,54 @@ jobs:
           if (-not (Test-Path vscode-extension\backend\backend.exe)) {
             Write-Error "backend.exe not found in bundle"
             exit 1
+          }
+
+      - name: Smoke test backend executable
+        shell: pwsh
+        run: |
+          $exe = "vscode-extension\backend\backend.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "backend.exe not found at $exe"
+            exit 1
+          }
+          # Find a free port
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = $listener.LocalEndpoint.Port
+          $listener.Stop()
+
+          $env:PORT = $port
+          $env:HOST = "127.0.0.1"
+          $env:PYTHONIOENCODING = "utf-8"
+          $proc = Start-Process -FilePath $exe -NoNewWindow -PassThru
+          try {
+            $timeout = 15
+            $start = Get-Date
+            $healthy = $false
+            while (((Get-Date) - $start).TotalSeconds -lt $timeout) {
+              Start-Sleep -Milliseconds 500
+              if ($proc.HasExited) {
+                Write-Error "backend.exe exited with code $($proc.ExitCode)"
+                exit 1
+              }
+              try {
+                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/v1/health" -TimeoutSec 2 -ErrorAction Stop
+                if ($resp.StatusCode -eq 200) { $healthy = $true; break }
+              } catch { }
+            }
+            if (-not $healthy) {
+              Write-Error "backend.exe did not become healthy within ${timeout}s"
+              exit 1
+            }
+            # Deep import check
+            $deep = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/v1/health/deep" -TimeoutSec 10 -ErrorAction Stop
+            if ($deep.StatusCode -ne 200) {
+              Write-Error "Deep health check failed: $($deep.Content)"
+              exit 1
+            }
+            Write-Host "Smoke test passed"
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
 
       - name: Create release directory

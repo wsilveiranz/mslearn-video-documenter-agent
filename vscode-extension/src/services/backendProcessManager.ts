@@ -68,7 +68,7 @@ async function findPythonInterpreter(): Promise<string> {
     }
 
     throw new Error(
-        'No Python interpreter found. Install Python 3.10+ and ensure it is on your PATH, ' +
+        'No Python interpreter found. Install Python 3.11+ and ensure it is on your PATH, ' +
             'or configure the Python extension in VS Code.',
     );
 }
@@ -137,7 +137,7 @@ export class BackendProcessManager implements vscode.Disposable {
                 const message = err instanceof Error ? err.message : String(err);
                 this._outputChannel.appendLine(`[BackendProcessManager] ${message}`);
                 void vscode.window.showErrorMessage(
-                    `Video Documenter: ${message}\n\nInstall Python 3.10+ from https://www.python.org and reload VS Code.`,
+                    `Video Documenter: ${message}\n\nInstall Python 3.11+ from https://www.python.org and reload VS Code.`,
                 );
                 return;
             }
@@ -185,6 +185,7 @@ export class BackendProcessManager implements vscode.Disposable {
             cwd,
             env: envVars,
             stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
         });
 
         child.stdout?.on('data', (data: Buffer) => {
