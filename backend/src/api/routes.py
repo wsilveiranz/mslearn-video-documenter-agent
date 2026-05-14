@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import tempfile
 import uuid
 from pathlib import Path
@@ -147,6 +148,55 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok", "service": "video-documenter"}
 
 
+@router.get("/health/deep")
+async def health_deep() -> dict[str, object]:
+    """Deep health check — validates the full Azure async import chain.
+
+    Used by the VSIX build smoke test to catch missing PyInstaller hidden
+    imports at build time.  Does NOT require Azure credentials or env vars.
+    """
+    critical_modules: list[str | tuple[str, str]] = [
+        "aiohttp",
+        "multidict",
+        "yarl",
+        "frozenlist",
+        "aiosignal",
+        "charset_normalizer",
+        "azure.core.pipeline.transport._aiohttp",
+        "azure.ai.projects.aio",
+        "azure.ai.inference.aio",
+        ("agent_framework_foundry", "FoundryChatClient"),
+        ("azure.identity.aio", "DefaultAzureCredential"),
+    ]
+
+    for entry in critical_modules:
+        if isinstance(entry, tuple):
+            module_name, attr = entry
+        else:
+            module_name, attr = entry, None
+
+        try:
+            mod = importlib.import_module(module_name)
+            if attr is not None:
+                getattr(mod, attr)
+        except Exception as exc:
+            logger.error(
+                "health.deep_failed",
+                missing_module=module_name,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "status": "error",
+                    "missing_module": module_name,
+                    "error": str(exc),
+                },
+            ) from exc
+
+    return {"status": "ok", "imports_verified": len(critical_modules)}
+
+
 # ---- Services ----
 
 @router.get("/services")
@@ -252,7 +302,15 @@ async def _run_extraction(video_id: str) -> None:
             ingestion_result = await ingestion_agent.process(job.source_path or "", mode)
             video_metadata = ingestion_result.metadata
 
-        extraction_result = await extraction_agent.process(video_metadata, mode)
+        async def _on_extraction_progress(progress: str) -> None:
+            manager.send_progress(
+                video_id, "extracting", 2, 6,
+                f"Step 2/6: Video Indexer processing ({progress})...",
+            )
+
+        extraction_result = await extraction_agent.process(
+            video_metadata, mode, on_progress=_on_extraction_progress
+        )
 
         if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
             logger.error(
@@ -315,7 +373,15 @@ async def _run_pipeline(
                 ingestion_result = await ingestion_agent.process(job.source_path or "", mode)
                 video_metadata = ingestion_result.metadata
 
-            extraction_result = await extraction_agent.process(video_metadata, mode)
+            async def _on_pipeline_extraction_progress(progress: str) -> None:
+                manager.send_progress(
+                    video_id, "extracting", 2, 6,
+                    f"Step 2/6: Video Indexer processing ({progress})...",
+                )
+
+            extraction_result = await extraction_agent.process(
+                video_metadata, mode, on_progress=_on_pipeline_extraction_progress
+            )
 
             if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
                 raise RuntimeError("Extraction produced no transcript, scenes, or keyframes.")

@@ -51,6 +51,10 @@ class Settings(BaseSettings):
         description="Azure Blob Storage account URL (e.g., https://stvideodocumenter.blob.core.windows.net)",
     )
     blob_container_name: str = Field(default="video-documenter", description="Container name for video files")
+    blob_retention_hours: int = Field(
+        default=1,
+        description="Maximum blob retention in hours — used as SAS token expiry",
+    )
 
     # --- Azure AI Speech (cloud mode) ---
     speech_service_endpoint: str = Field(default="", description="Azure AI Speech endpoint URL")

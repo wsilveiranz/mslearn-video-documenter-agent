@@ -63,8 +63,6 @@ Both modes use Azure AI Foundry (GPT-4o) for vision analysis and document genera
 | **Runtime (Production)** | Azure AI Foundry Agent Service (Hosted Agents) | Framework-agnostic managed runtime |
 | **Backend** | Python 3.10+ / FastAPI | Video processing ecosystem |
 | **VS Code Extension** | TypeScript / Chat Participant API | Primary user interface |
-| **Video Analysis (Cloud)** | Azure AI Video Indexer | Scenes, keyframes, OCR, transcript |
-| **Video Analysis (Local)** | FFmpeg + PySceneDetect + OpenCV | Free, containerizable |
 | **Transcription** | Azure AI Speech / OpenAI Whisper | Fast transcription API / local fallback |
 | **LLM** | Azure AI Foundry (GPT-4o, GPT-4o-mini) | Vision + generation |
 | **Storage** | Azure Blob Storage / local filesystem | Video staging, keyframe images |
@@ -152,18 +150,6 @@ The `ms.service` values are configurable per team. The agent presents a selectab
 
 ---
 
-## Internal Microsoft Tooling
-
-These internal tools are relevant to this project:
-
-| Tool | Use For | Status |
-|------|---------|--------|
-| **Content Mentor (DocuMentor)** | Validate and refine generated docs | VS Code Marketplace — use as companion |
-| **Doc-Kit** | Architecture reference (4-agent doc pipeline) | Internal pilot (`microsoft-foundry/doc-kit`) |
-| **Learn Authoring Pack** | Preview generated MS Learn Markdown | VS Code Marketplace (`docsmsft.docs-authoring-pack`) |
-
----
-
 ## Design & Security Principles
 
 - **Privacy first**: Video files may contain sensitive content. Process locally when possible; use Blob Storage with time-limited SAS tokens; no permanent video storage in cloud
@@ -193,27 +179,17 @@ logger.info("video_processed", video_id=video_id, duration_s=duration, scenes=le
 logger.error("extraction_failed", video_id=video_id, error=str(e))
 ```
 
-**Mandatory log fields:** Every log entry must include `operation` (what was attempted) and enough context to reproduce the issue (e.g., `video_id`, `agent_name`, `step`). Never log API keys or full file paths containing usernames.
+Every log entry must include enough context to reproduce the issue (e.g., `video_id`, `agent_name`, `step`). Never log API keys or full file paths containing usernames.
 
-**Log levels:** `error` = operation failed; `warn` = degraded but continuing; `info` = significant state change; `debug` = dev only, never in production.
+Log levels: `error` = operation failed; `warn` = degraded but continuing; `info` = significant state change; `debug` = dev only.
 
 ### Configuration
 
-Environment-based configuration via `pydantic-settings`. All secrets in `.env` (gitignored).
-
-```python
-class Settings(BaseSettings):
-    processing_mode: Literal["cloud", "local"] = "cloud"
-    azure_openai_endpoint: str
-    azure_openai_api_key: str
-    azure_openai_deployment: str = "gpt-4o"
-    # ... see docs/ARCHITECTURE.md §5.3 for full spec
-```
+Environment-based configuration via `pydantic-settings`. All secrets in `.env` (gitignored). See `docs/ARCHITECTURE.md §5.3` for the full settings spec.
 
 ### Error Handling
 
 - Wrap all Azure service calls in try/except with structured error logging
-- Agent failures should be retryable — use MAF's checkpointing for recovery
 - Never swallow exceptions silently; always log with context before re-raising
 
 ---
@@ -230,15 +206,14 @@ class Settings(BaseSettings):
 - User invokes via `@video-documenter` in Copilot Chat
 - Three input patterns for video files: chat prompt path, context menu, file picker dialog
 - Stream progress via `stream.progress()`, content via `stream.markdown()`
-- Support commands: `/analyze`, `/generate`, `/refine`
+- Commands: `/plan`, `/analyze`, `/generate`, `/refine`, `/save`, `/status`
 
 ---
 
 ## Documentation Conventions
 
-- **Use mermaid for diagrams**: All diagrams in markdown documents should use mermaid syntax rather than ASCII art. Mermaid renders natively in GitHub and VS Code
-- **Update docs after architectural changes**: After changing the agent pipeline, service integrations, or data models, update the relevant section in `docs/ARCHITECTURE.md`. Do not wait for the user to ask
-- **Prompt changes require documentation**: When modifying agent system prompts in `backend/src/prompts/`, document what changed and why in the commit message
+- **Use mermaid for diagrams** in markdown documents, not ASCII art
+- **Update `docs/ARCHITECTURE.md`** after changing the agent pipeline, service integrations, or data models
 
 ---
 
@@ -246,18 +221,25 @@ class Settings(BaseSettings):
 
 - **Issue-first rule**: Before writing any code, create a GitHub issue (or confirm one exists). The issue number is required for the commit message (`Fixes #N`). If the user reports a bug or requests a feature, create the issue as the first step — not after committing.
 - **Commit locally in small, logical groups** so individual features can be cherry-picked if needed
-- **Do NOT push to GitHub** until the user has confirmed local testing is complete and they are happy with the changes
-- When the user explicitly asks to push, then push to the remote
-- **Always close issues in commit messages**: when a commit fully resolves a GitHub issue, include `Closes #N` (or `Fixes #N` for bugs) in the commit message body. This auto-closes the issue when pushed to `main`. Example:
-  ```
-  feat: implement extraction agent with FFmpeg + PySceneDetect
-
-  Fixes #12
-
-  Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
-  ```
+- **Do NOT push to GitHub** unless the user explicitly asks — local commits only until they confirm
+- **Always close issues in commit messages**: when a commit fully resolves a GitHub issue, include `Closes #N` (or `Fixes #N` for bugs). Example: `feat: implement extraction agent\n\nFixes #12\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
 - Multiple issues can be closed in one commit: `Fixes #18, Fixes #21`
 - **Task completion gate**: Before reporting a task as done, check these three items in order: (1) GitHub issue exists → (2) commit includes `Fixes #N` → (3) build/tests pass. If any is missing, do it now — do not ask the user to confirm or remind you
+
+### PR Review Workflow
+
+When fixing PR review comments, follow this exact sequence — do NOT skip steps:
+
+1. **Fix** — implement all requested changes
+2. **Commit** — `git add` + `git commit` with conventional commit prefix
+3. **Push** — `git push` to the remote branch
+4. **Reply** — for each review thread, post a brief comment explaining what was fixed
+5. **Resolve** — resolve each review thread via the GitHub GraphQL `resolveReviewThread` mutation
+
+Common mistakes to avoid:
+- Do NOT report "all comments addressed" without also pushing and resolving threads on GitHub
+- Do NOT resolve threads without first posting a reply explaining the fix
+- If the user says "fix the comments" or "address the review", this means the full 5-step cycle — not just local commits
 
 ### Branch Strategy
 
@@ -278,7 +260,7 @@ Use conventional commit prefixes:
 | `docs:` | Documentation only |
 | `test:` | Adding or updating tests |
 | `chore:` | Build config, dependencies, tooling |
-| `prompt:` | Agent system prompt changes |
+| `prompt:` | Agent system prompt changes (document what changed and why in the commit body) |
 
 ---
 
@@ -286,144 +268,114 @@ Use conventional commit prefixes:
 
 - **Instrument before investigating**: If structured logging or error handling is missing from code under investigation, add it first — treat missing instrumentation as a bug to fix before diagnosing
 - **Never commit speculative fixes** for runtime bugs without evidence. If a fix doesn't work on the first attempt, stop guessing and add diagnostics (logs, try-catch)
-- **Stop spinning once the fix works**: If uncommitted changes resolve the reported issue, run `git add` and `git commit` immediately. Do not continue investigating — commit first, then ask the user if they want deeper analysis
-- **For Azure service errors**: Check structured logs first; verify environment variables are loaded; check Azure resource provisioning status; then escalate
+- **Stop spinning once the fix works**: Commit immediately. Ask before investigating further.
+- **For Azure service errors**: Check structured logs → verify env vars → check resource provisioning → escalate
+
+---
+
+## VS Code Extension Packaging
+
+The extension runs in **two different layouts** — code must handle both:
+
+| Layout | When | Backend location | Extension path |
+|--------|------|------------------|---------------|
+| **Monorepo (dev)** | `F5` debug or `code --extensionDevelopmentPath` | `../backend` (sibling directory) | Repository root `/vscode-extension` |
+| **VSIX (installed)** | Production install via `.vsix` file | `{extensionPath}/backend` (bundled inside) | `~/.vscode/extensions/{ext-name}` |
+
+**Rules:**
+- **Always resolve paths relative to `context.extensionPath`**, never relative to the workspace or `../`
+- **Detect layout at activation**: check if `{extensionPath}/backend/pyproject.toml` exists → bundled VSIX; otherwise → monorepo dev
+- **Cache prerequisite state**: don't re-run `pip install -e` on every activation — check if the venv and package already exist
+- **Activate on `onStartupFinished`**: prereqs and backend should start in the background before the user first invokes `@video-documenter`, not on first chat message
 
 ---
 
 ## Implementation Quality
 
-- **Verify new data flows end-to-end**: When adding a new field or data type to the pipeline, trace it through every layer — agent → service → API response → data model → output file — and confirm it's present and correctly typed in each
-- **Test with real video**: Before delivering any pipeline change, run it against a sample screen recording. Verify the output Markdown is valid and screenshots are correctly referenced
-- **Prompt changes require A/B comparison**: When modifying agent system prompts, generate output with both old and new prompts against the same video and compare quality
+- **Verify new data flows end-to-end**: Trace new fields through every layer (agent → service → API → model → output) and confirm each is present and correctly typed
+- **Test with real video**: Before delivering pipeline changes, run against a sample screen recording and verify the output Markdown
+- **Run eval suite before and after pipeline changes**: Run `pytest -m eval` before and after any change to agents, prompts, or the orchestrator. Flag any dimension that drops >5% as a regression. Do NOT skip this even if the change seems minor
+- **Model routing changes require output comparison**: If changing how models are selected or routed, generate a test document with old and new routing and compare quality before committing
 
 ---
 
 ## Session Management
 
-- **Track turn count** throughout the session. At **turn 15**, briefly note: _"We're at ~15 turns — on track."_
-- At **turn 25**, warn: _"We're at ~25 turns. Consider wrapping up or deferring remaining items to a new session."_
-- At **turn 35**, strongly recommend: _"This session is getting long (35+ turns). Let's create issues for remaining work and start fresh."_
-- If the user asks to continue past 35 turns, respect that — but remind them again at 45
-- **To start a fresh session** without leaving the CLI: use `/clear` to reset conversation context. Memories and instructions carry over automatically
-
-### When to Split vs. Continue Sessions
-- **Don't split causally-connected work.** If you're testing what you just built and discover a bug during testing, that's one session
-- **Do split independently-plannable work.** Bug fixes, documentation, infra setup, and test infrastructure are separate sessions
-- **Use GitHub issues as context bridges.** When a session ends with unfinished work, update the issue with what was tried and what failed
+- At **turn 25**, warn: _"Consider wrapping up or deferring remaining items to a new session."_
+- At **turn 35**, strongly recommend creating issues for remaining work and starting fresh
+- **Don't split causally-connected work** — if you're testing what you just built and discover a bug, that's one session
+- **Do split independently-plannable work** — bug fixes, documentation, infra setup are separate sessions
+- **Use GitHub issues as context bridges** — when a session ends with unfinished work, update the issue with what was tried and what failed
 
 ---
 
 ## Fleet Mode
 
-Plans should be optimised for **fleet mode** (parallel subagent execution) by default. When creating implementation plans:
+All plans must be optimised for **fleet mode** (parallel subagent execution). When creating implementation plans:
 
 - **Structure todos as independent, parallelisable units** wherever possible — avoid unnecessary sequential dependencies between tasks
 - **Group work by component** (e.g., extraction agent, writer agent, VS Code extension, FastAPI routes) so each subagent gets a self-contained scope
-- **Provide full context per todo** — each task description must include enough detail for an independent subagent to execute without cross-referencing other todos. **Every todo must specify which GitHub issue it closes** (e.g., "Closes #12") so the sub-agent includes it in the commit message
+- **Provide full context per todo** — sub-agents do NOT receive copilot-instructions, so each task description must include commit rules (`Fixes #N` + `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer), the assigned model, and any project conventions (MS Learn style, `structlog` logging) relevant to that task
 - **Mark true dependencies explicitly** in `todo_deps` — only add a dependency when one todo genuinely cannot start until another completes (e.g., data models must exist before agent uses them)
 - **Include an issue-to-todo mapping table** in every plan
 
 ### Model Assignment Per Task — MANDATORY
 
-Since all plans are optimised for fleet mode by default (see above), model selection **MUST** always be embedded directly in each task description — not only when the user explicitly requests `/fleet`. Sub-agents do NOT receive copilot-instructions or global context — model guidance that lives only in a summary section will be lost during subagent invocation.
+Sub-agents do NOT receive copilot-instructions. Model guidance in a summary section will be lost. Every task must have a model assigned **during planning**, not as an afterthought.
 
-**Rules (strictly enforced):**
+**Rules:**
 
-1. **Every task MUST include an explicit model assignment** — no task may omit the model.
-2. **The model must be stated inside the task description itself** — not only in a global "Recommended Model" section.
-3. **Repeat the model requirement in the task instruction** to ensure it is preserved during prompt rewriting. Model instructions are part of the execution instruction, not a separate metadata note.
-4. **Do NOT rely on global model guidance alone** — it must be localised per task.
-5. **Use the Model Complexity Map** (see [Model Selection](#model-selection)) to assign the appropriate model based on task complexity.
-6. **Plans intended for `/fleet` must be directly usable** as input without requiring additional model instructions to be injected.
-7. **Prefer redundancy over brevity** for model instructions — it is better to repeat the model requirement than risk it being dropped.
+1. **Embed the model in the task description text** — not as a separate field, not in a global "Recommended Models" section. It must be part of the execution instruction so it survives prompt rewriting.
+2. **Use the complexity map below** to assign the right model. Do not blanket-assign the same model to all tasks regardless of complexity.
+3. **Include the GitHub issue reference** (e.g., "Closes #12") in every task.
 
-**Required task format:**
+**Complexity map:**
 
-Each task in a fleet plan must follow this structure:
+- 🟢 Simple — single-file changes, config, boilerplate, docs, straightforward bug fixes: `claude-haiku-4.5` or `gpt-4.1`
+- 🟡 Medium — feature implementation, service clients, UI components, most new code: `claude-sonnet-4.6` or `gpt-5.2-codex`
+- 🔴 Complex — multi-component coordination, system prompts, pipeline orchestration, architectural decisions: `claude-opus-4.6`
 
-```
-Task: <short task name>
-Description:
-  - Clearly describe the work to be done
-  - Explicitly state the model to use (e.g., "Use claude-sonnet-4.6 to implement the service client")
-  - Ensure the model instruction is part of the execution instruction, not a separate note
-  - Include the GitHub issue reference (e.g., "Closes #12")
-```
+**Classification rule**: If a task touches one file and requires no design decisions → 🟢. If it implements a feature within a single component → 🟡. If it spans multiple components or determines output quality (prompts, orchestration) → 🔴.
+
+**Self-check gate**: Before presenting a plan, verify (1) every task has a model in its description, and (2) tasks at different complexity levels use different models. If all tasks say `claude-sonnet-4.6`, the complexity map wasn't consulted.
 
 **Examples:**
 
-❌ BAD — model is separated from execution context (will be lost in subagent prompt):
+❌ BAD — model as separate metadata (lost in subagent prompt):
 ```
 Task: Design architecture
 Model: claude-opus-4.6
 Description: Define system design including components, boundaries, and trade-offs.
 ```
 
-✅ GOOD — model is embedded in the execution instruction:
+❌ BAD — same model blanket-assigned regardless of complexity:
 ```
-Task: Design architecture
-Description:
-  Use claude-opus-4.6 to perform deep architectural analysis and define system design,
-  including components, boundaries, and trade-offs. The model choice is claude-opus-4.6
-  because this is a complex (🔴) multi-component design task. Closes #7.
+1. Update .gitignore — Use claude-sonnet-4.6. Closes #10.
+2. Implement extraction agent — Use claude-sonnet-4.6. Closes #11.
+3. Update ARCHITECTURE.md — Use claude-sonnet-4.6. Closes #12.
 ```
 
-❌ BAD — model only in global section, not in task:
+✅ GOOD — model embedded in description, varies by complexity:
 ```
-## Tasks
-1. Implement extraction agent — extract keyframes and transcript
-2. Write unit tests for extraction
-
-## Recommended Models
-- Task 1: claude-sonnet-4.6
-- Task 2: claude-haiku-4.5
+1. Update .gitignore — Use claude-haiku-4.5 (🟢 simple config change). Closes #10.
+2. Implement extraction agent — Use claude-sonnet-4.6 to implement the extraction agent
+   that extracts keyframes and transcript via FFmpeg + PySceneDetect (🟡 medium). Closes #11.
+3. Design pipeline orchestration — Use claude-opus-4.6 to define multi-agent pipeline
+   coordination and error recovery (🔴 complex). Closes #12.
 ```
 
-✅ GOOD — model stated in each task description:
-```
-## Tasks
-1. Implement extraction agent — Use claude-sonnet-4.6 to implement the extraction agent
-   that extracts keyframes and transcript via FFmpeg + PySceneDetect. Medium complexity (🟡).
-   Closes #14.
-2. Write unit tests for extraction — Use claude-haiku-4.5 to write pytest unit tests
-   for the extraction agent. Simple complexity (🟢). Closes #15.
-```
+### Post-Fleet Cleanup and Verification
 
-### Sub-Agent Rules (mandatory — sub-agents do NOT receive copilot-instructions)
+After a fleet deployment completes, the orchestrator must clean up and verify before reporting success:
 
-The orchestrator must include the following in every sub-agent prompt:
+**Cleanup (do this FIRST):**
+1. **`git status`** — check for uncommitted files left behind by sub-agents
+2. **Stage and commit** any legitimate files sub-agents forgot to commit
+3. **Remove stray files** — sub-agents sometimes create `.vscode/tasks.json`, temp files, or other artifacts. Delete anything that wasn't part of the plan
+4. **Verify `git diff --stat`** — confirm only expected files were modified
 
-1. **Commit rules**: The GitHub issue number, `Fixes #N` format, and `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` trailer
-2. **Model assignment**: The specific model to use for the task, as determined by the Model Complexity Map. This MUST be part of the task description text, not a separate parameter — sub-agents lose context that isn't in their prompt
-3. **MS Learn style rules**: If the sub-agent generates or modifies prompts/templates, include the voice principles and formatting rules from this document
-4. **Logging requirement**: Use `structlog`, never raw `print()`
-
-### Post-Fleet Verification
-
-After a fleet deployment completes, the orchestrator must verify integration before reporting success:
-
+**Verification:**
 1. **Type check** — run `pyright` on the backend
 2. **Lint** — run `ruff check` on the backend
 3. **Test** — run `pytest` for all modified modules
 4. **Build extension** — if VS Code extension was modified, verify it compiles
-
----
-
-## Model Selection
-
-After completing any plan (plan.md), always end with a "Recommended Model" section:
-
-- 🟢 Simple (config, boilerplate, docs, single-file changes): recommend `claude-haiku-4.5` or `gpt-4.1`
-- 🟡 Medium (feature builds, agent implementation, service clients): recommend `claude-sonnet-4.6` or `gpt-5.2-codex`
-- 🔴 Complex (multi-agent orchestration, pipeline integration, prompt engineering): recommend `claude-opus-4.6`
-
-### Component-specific defaults
-- **Individual agent implementation**: 🟡 medium
-- **System prompt engineering**: 🔴 complex — quality of prompts directly determines output quality
-- **Service clients (Video Indexer, Speech, Blob)**: 🟡 medium
-- **VS Code extension**: 🟡 medium
-- **Pipeline orchestration / MAF integration**: 🔴 complex
-- **Configuration, tests, docs**: 🟢 simple
-
-Format: **Suggested model for implementation:** `model-name` — [one-line justification]

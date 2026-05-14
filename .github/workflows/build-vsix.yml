@@ -1,0 +1,135 @@
+name: Build VSIX
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install npm dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: Compile TypeScript
+        working-directory: vscode-extension
+        run: npm run compile
+
+      - name: Clean Python bytecode cache
+        working-directory: backend
+        shell: pwsh
+        run: Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+
+      - name: Build backend executable
+        working-directory: backend
+        run: pyinstaller --noconfirm --clean backend.spec
+
+      - name: Bundle backend into extension
+        shell: pwsh
+        run: |
+          # PyInstaller onedir produces dist/backend/ directory
+          Copy-Item -Recurse -Force backend\dist\backend vscode-extension\backend
+          if (-not (Test-Path vscode-extension\backend\backend.exe)) {
+            Write-Error "backend.exe not found in bundle"
+            exit 1
+          }
+
+      - name: Smoke test backend executable
+        shell: pwsh
+        run: |
+          $exe = "vscode-extension\backend\backend.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "backend.exe not found at $exe"
+            exit 1
+          }
+          # Find a free port
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = $listener.LocalEndpoint.Port
+          $listener.Stop()
+
+          $env:PORT = $port
+          $env:HOST = "127.0.0.1"
+          $env:PYTHONIOENCODING = "utf-8"
+          $proc = Start-Process -FilePath $exe -NoNewWindow -PassThru
+          try {
+            $timeout = 15
+            $start = Get-Date
+            $healthy = $false
+            while (((Get-Date) - $start).TotalSeconds -lt $timeout) {
+              Start-Sleep -Milliseconds 500
+              if ($proc.HasExited) {
+                Write-Error "backend.exe exited with code $($proc.ExitCode)"
+                exit 1
+              }
+              try {
+                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/v1/health" -TimeoutSec 2 -ErrorAction Stop
+                if ($resp.StatusCode -eq 200) { $healthy = $true; break }
+              } catch { }
+            }
+            if (-not $healthy) {
+              Write-Error "backend.exe did not become healthy within ${timeout}s"
+              exit 1
+            }
+            # Deep import check
+            $deep = Invoke-WebRequest -Uri "http://127.0.0.1:$port/api/v1/health/deep" -TimeoutSec 10 -ErrorAction Stop
+            if ($deep.StatusCode -ne 200) {
+              Write-Error "Deep health check failed: $($deep.Content)"
+              exit 1
+            }
+            Write-Host "Smoke test passed"
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Create release directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Path release -Force | Out-Null
+
+      - name: Package VSIX
+        working-directory: vscode-extension
+        run: npx vsce package --out ../release/ --allow-missing-repository --skip-license
+
+      - name: Clean up bundled backend
+        shell: pwsh
+        run: Remove-Item -Recurse -Force vscode-extension\backend -ErrorAction SilentlyContinue
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix-package
+          path: release/*.vsix
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.vsix
+          generate_release_notes: true

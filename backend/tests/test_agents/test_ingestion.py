@@ -62,7 +62,7 @@ class TestIngestionValidation:
             await agent.process(str(video_file), ProcessingMode.LOCAL)
 
     async def test_rejects_url_sources(self, agent):
-        with pytest.raises(ValueError, match="not supported in Phase 1"):
+        with pytest.raises(ValueError, match="not yet supported"):
             await agent.process("https://youtube.com/watch?v=abc", ProcessingMode.LOCAL)
 
 

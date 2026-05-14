@@ -382,3 +382,34 @@ class TestAzureConnectivity:
         assert response.status_code in (200, 401, 403), (
             f"Speech service unreachable: {response.status_code}"
         )
+
+    @pytest.mark.cloud
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_video_indexer_reachable(self):
+        """Azure Video Indexer account is accessible via ARM token exchange."""
+        from src.config import get_settings
+        settings = get_settings()
+        if not settings.video_indexer_account_id or not settings.video_indexer_resource_id:
+            pytest.skip("VIDEO_INDEXER_ACCOUNT_ID or VIDEO_INDEXER_RESOURCE_ID not set")
+
+        import httpx
+        from azure.identity import DefaultAzureCredential
+
+        credential = DefaultAzureCredential()
+        # Get ARM token for management.azure.com
+        arm_token = credential.get_token("https://management.azure.com/.default")
+
+        # Exchange ARM token for Video Indexer account access token
+        response = httpx.post(
+            f"https://management.azure.com{settings.video_indexer_resource_id}/generateAccessToken?api-version=2024-01-01",
+            headers={"Authorization": f"Bearer {arm_token.token}"},
+            json={"permissionType": "Reader", "scope": "Account"},
+            timeout=10,
+        )
+
+        assert response.status_code == 200, (
+            f"Video Indexer token exchange failed: {response.status_code} - {response.text}"
+        )
+        data = response.json()
+        assert "accessToken" in data, "Response missing accessToken field"

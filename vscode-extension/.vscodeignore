@@ -1,4 +1,18 @@
-.vscode/**
+# TypeScript source (compiled output is in out/)
 src/**
-node_modules/**
+
+# Development config
+.vscode/**
 tsconfig.json
+tsconfig.test.json
+eslint.config.mjs
+.mocharc.json
+
+# Node modules (vsce handles dependencies separately)
+node_modules/**
+
+# General exclusions
+**/.git/**
+**/.DS_Store
+**/Thumbs.db
+*.vsix

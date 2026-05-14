@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
 from agent_framework import Agent
+
+from src.utils.paths import get_prompts_dir
 
 if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
@@ -25,7 +26,7 @@ class EditorAgent:
         self._load_system_prompt()
 
     def _load_system_prompt(self) -> None:
-        prompt_path = Path(__file__).parent.parent / "prompts" / "editor_system.md"
+        prompt_path = get_prompts_dir() / "editor_system.md"
         try:
             self._system_prompt = prompt_path.read_text(encoding="utf-8")
         except FileNotFoundError:

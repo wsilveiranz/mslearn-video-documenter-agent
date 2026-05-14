@@ -575,12 +575,15 @@ backend/
 │   │   ├── editor.py                 # Refinement agent
 │   │   └── evaluate.py               # Quality evaluation agent
 │   ├── services/
-│   │   ├── video_indexer.py          # Azure Video Indexer client
-│   │   ├── speech.py                 # Azure Speech / Whisper client
-│   │   ├── vision.py                 # GPT-4o Vision analysis
-│   │   ├── blob_storage.py           # Azure Blob Storage client
-│   │   ├── ffmpeg.py                 # FFmpeg wrapper
-│   │   └── mcp_client.py            # MCP client (Microsoft Learn docs)
+│   │   ├── blob_storage_service.py   # Azure Blob Storage client (cloud mode)
+│   │   ├── copilot_client.py         # Copilot LM Proxy client (local mode)
+│   │   ├── ffmpeg_service.py         # FFmpeg wrapper (local mode)
+│   │   ├── intent_classifier.py      # User message intent classification
+│   │   ├── scene_detection_service.py # PySceneDetect wrapper (local mode)
+│   │   ├── speech_service.py         # Azure AI Speech Fast Transcription (cloud mode)
+│   │   ├── video_indexer_service.py  # Azure Video Indexer client (cloud mode)
+│   │   ├── vision_service.py         # GPT-4o Vision analysis
+│   │   └── whisper_service.py        # OpenAI Whisper transcription (local mode)
 │   ├── templates/
 │   │   ├── quickstart.md             # MS Learn Quickstart template
 │   │   ├── tutorial.md               # MS Learn Tutorial template
@@ -860,6 +863,41 @@ COPY src/ ./src/
 EXPOSE 8000
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
+
+### 7.4 Blob storage lifecycle policy (recommended)
+
+The application deletes video blobs immediately after extraction completes. However, process crashes or restarts can leave orphaned blobs. Configure a lifecycle management policy on the storage account as a safety net:
+
+```azurecli
+az storage account management-policy create \
+  --account-name <storage-account-name> \
+  --resource-group <resource-group> \
+  --policy '{
+    "rules": [
+      {
+        "name": "delete-video-blobs-after-1-day",
+        "enabled": true,
+        "type": "Lifecycle",
+        "definition": {
+          "filters": {
+            "blobTypes": ["blockBlob"],
+            "prefixMatch": ["video-documenter/"]
+          },
+          "actions": {
+            "baseBlob": {
+              "delete": {
+                "daysAfterCreationGreaterThan": 1
+              }
+            }
+          }
+        }
+      }
+    ]
+  }'
+```
+
+> [!NOTE]
+> This policy deletes all blobs in the `video-documenter` container prefix older than 1 day. Since normal processing completes within minutes, this only affects orphaned blobs from failed runs.
 
 ---
 

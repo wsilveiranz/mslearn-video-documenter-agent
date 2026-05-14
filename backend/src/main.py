@@ -137,10 +137,16 @@ if __name__ == "__main__":
         asyncio.run(cli_process(args.video_path, args.doc_type, args.output, args.mode))
     else:
         settings = get_settings()
+        # Disable reload when running as a frozen executable (PyInstaller .exe)
+        # because uvicorn's reloader cannot re-import modules in bundled builds.
+        is_frozen = getattr(sys, "frozen", False)
+        use_reload = settings.environment == "development" and not is_frozen
         uvicorn.run(
-            "src.main:app",
+            # Frozen exe: pass app object directly (string import can't find bundled modules).
+            # Dev mode: use string so uvicorn's reloader can re-import the module.
+            app if is_frozen else "src.main:app",
             host=settings.host,
             port=settings.port,
             log_level=settings.log_level,
-            reload=settings.environment == "development",
+            reload=use_reload,
         )

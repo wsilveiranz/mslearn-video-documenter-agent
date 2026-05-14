@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 
 from src.config import get_settings
 from src.models.video import ExtractionResult, Keyframe, ProcessingMode, VideoMetadata
+from src.services.blob_storage_service import BlobStorageService
 from src.services.ffmpeg_service import FFmpegService
 from src.services.scene_detection_service import SceneDetectionService
+from src.services.video_indexer_service import VideoIndexerService
 from src.services.whisper_service import WhisperService
+from src.utils.url import validate_blob_url
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = structlog.get_logger()
 
@@ -22,7 +29,12 @@ class ExtractionAgent:
     def __init__(self, foundry_client=None) -> None:
         self._foundry_client = foundry_client
 
-    async def process(self, video_metadata: VideoMetadata, processing_mode: ProcessingMode) -> ExtractionResult:
+    async def process(
+        self,
+        video_metadata: VideoMetadata,
+        processing_mode: ProcessingMode,
+        on_progress: Callable[[str], Awaitable[None]] | None = None,
+    ) -> ExtractionResult:
         """Extract structured content from a video.
 
         In cloud mode, uses Azure Video Indexer + Speech.
@@ -31,6 +43,7 @@ class ExtractionAgent:
         Args:
             video_metadata: Metadata from the ingestion stage.
             processing_mode: Cloud or local processing.
+            on_progress: Optional async callback for progress updates.
 
         Returns:
             ExtractionResult with transcript, scenes, keyframes, OCR, entities.
@@ -38,18 +51,136 @@ class ExtractionAgent:
         logger.info("extraction.start", video_id=video_metadata.video_id, mode=processing_mode)
 
         if processing_mode == ProcessingMode.CLOUD:
-            return await self._extract_cloud(video_metadata)
+            return await self._extract_cloud(video_metadata, on_progress=on_progress)
         else:
             return await self._extract_local(video_metadata)
 
-    async def _extract_cloud(self, metadata: VideoMetadata) -> ExtractionResult:
+    async def _extract_cloud(
+        self,
+        metadata: VideoMetadata,
+        on_progress: Callable[[str], Awaitable[None]] | None = None,
+    ) -> ExtractionResult:
         """Cloud extraction using Azure Video Indexer + Speech."""
-        msg = (
-            "Cloud extraction is not yet implemented (requires Phase 3 — Azure Video Indexer integration). "
-            "Use --mode local to process videos with FFmpeg + Whisper."
+        settings = get_settings()
+        video_id = metadata.video_id
+
+        work_dir = Path(settings.output_directory) / video_id
+        work_dir.mkdir(parents=True, exist_ok=True)
+        frames_dir = work_dir / "frames"
+        frames_dir.mkdir(exist_ok=True)
+
+        # Validate blob URL and extract blob_name
+        blob_name = validate_blob_url(
+            str(metadata.blob_url),
+            settings.blob_account_url,
+            settings.blob_container_name,
         )
-        logger.error("extraction.cloud_not_implemented", msg=msg)
-        raise NotImplementedError(msg)
+
+        blob_service: BlobStorageService | None = None
+        vi_service: VideoIndexerService | None = None
+        vi_video_id: str | None = None
+
+        try:
+            blob_service = BlobStorageService(settings)
+            vi_service = VideoIndexerService(settings)
+            # 1. Generate SAS URL for Video Indexer to access the blob
+            try:
+                sas_url = await blob_service.generate_sas_url(blob_name)
+            except Exception as e:
+                logger.error("extraction.sas_url_failed", video_id=video_id, blob_name=blob_name, error=str(e))
+                raise
+
+            # 2. Submit to Video Indexer
+            video_name = Path(metadata.source_path).stem
+            try:
+                vi_video_id = await vi_service.upload_video(sas_url, video_id, video_name=video_name)
+            except Exception as e:
+                logger.error("extraction.vi_upload_failed", video_id=video_id, error=str(e))
+                raise
+
+            # 3. Poll for indexing completion
+            try:
+                await vi_service.wait_for_index(vi_video_id, on_progress=on_progress)
+            except Exception as e:
+                logger.error("extraction.vi_indexing_failed", video_id=video_id, vi_video_id=vi_video_id, error=str(e))
+                raise
+
+            # 4. Retrieve insights
+            try:
+                insights = await vi_service.get_insights(vi_video_id)
+            except Exception as e:
+                logger.error("extraction.vi_insights_failed", video_id=video_id, vi_video_id=vi_video_id, error=str(e))
+                raise
+
+            # 5. Download keyframe thumbnails
+            try:
+                keyframe_paths = await vi_service.download_keyframe_thumbnails(vi_video_id, insights, frames_dir)
+            except Exception as e:
+                logger.error(
+                    "extraction.vi_thumbnails_failed",
+                    video_id=video_id,
+                    vi_video_id=vi_video_id,
+                    error=str(e),
+                )
+                raise
+
+            # 6. Map insights to ExtractionResult
+            result = vi_service.map_to_extraction_result(insights, keyframe_paths, metadata)
+
+            # 7. GPT-4o Vision analysis on keyframes (optional)
+            if self._foundry_client and result.keyframes:
+                from src.services.vision_service import VisionService
+
+                vision = VisionService()
+                try:
+                    result.keyframes = await vision.analyze_keyframes(result.keyframes, self._foundry_client)
+                except Exception as e:
+                    logger.error("extraction.vision_failed", video_id=video_id, error=str(e))
+
+            # 8. Ensure processing mode is CLOUD
+            result.processing_mode = ProcessingMode.CLOUD
+
+            logger.info(
+                "extraction.cloud_complete",
+                video_id=video_id,
+                transcript_segments=len(result.transcript),
+                scenes=len(result.scenes),
+                keyframes=len(result.keyframes),
+            )
+            return result
+
+        finally:
+            # Cleanup Video Indexer resource (best-effort)
+            if vi_video_id is not None:
+                try:
+                    await vi_service.delete_video(vi_video_id)
+                except Exception as e:
+                    logger.warning(
+                        "extraction.vi_delete_failed",
+                        video_id=video_id,
+                        vi_video_id=vi_video_id,
+                        error=str(e),
+                    )
+            # Cleanup blob storage (best-effort)
+            try:
+                deleted = await blob_service.delete_video_blobs(video_id)
+                logger.info("extraction.blob_cleanup_done", video_id=video_id, blobs_deleted=deleted)
+            except Exception as e:
+                logger.warning(
+                    "extraction.blob_cleanup_failed",
+                    video_id=video_id,
+                    error=str(e),
+                )
+            if vi_service is not None:
+                try:
+                    await vi_service.close()
+                except Exception as e:
+                    logger.warning("extraction.vi_close_failed", video_id=video_id, error=str(e))
+            if blob_service is not None:
+                try:
+                    await blob_service.close()
+                except Exception as e:
+                    logger.warning("extraction.blob_close_failed", video_id=video_id, error=str(e))
 
     async def _extract_local(self, metadata: VideoMetadata) -> ExtractionResult:
         """Local extraction using FFmpeg + PySceneDetect + Whisper."""
@@ -89,7 +220,7 @@ class ExtractionAgent:
         task_keys.append("scenes")
 
         results = await asyncio.gather(*coros, return_exceptions=True)
-        result_map = dict(zip(task_keys, results))
+        result_map = dict(zip(task_keys, results, strict=False))
 
         transcript = result_map.get("transcript", [])
         scenes = result_map["scenes"]

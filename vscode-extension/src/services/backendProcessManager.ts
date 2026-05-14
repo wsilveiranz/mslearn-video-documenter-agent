@@ -1,5 +1,22 @@
 import { execSync, spawn, exec, type ChildProcess } from 'child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
+import {
+    getProcessingMode,
+    getFoundryProjectEndpoint,
+    getFoundryModel,
+    getFoundryModelMini,
+    getBlobAccountUrl,
+    getBlobContainerName,
+    getSpeechServiceEndpoint,
+    getSpeechServiceRegion,
+    getVideoIndexerAccountId,
+    getVideoIndexerResourceId,
+    getVideoIndexerLocation,
+    getWhisperModel,
+    getFfmpegPath,
+} from '../utils/config';
 
 // ── Python interpreter discovery ───────────────────────────────────────────
 
@@ -51,7 +68,7 @@ async function findPythonInterpreter(): Promise<string> {
     }
 
     throw new Error(
-        'No Python interpreter found. Install Python 3.10+ and ensure it is on your PATH, ' +
+        'No Python interpreter found. Install Python 3.11+ and ensure it is on your PATH, ' +
             'or configure the Python extension in VS Code.',
     );
 }
@@ -96,33 +113,79 @@ export class BackendProcessManager implements vscode.Disposable {
             return;
         }
 
-        // Discover Python
-        let pythonPath: string;
-        try {
-            pythonPath = await findPythonInterpreter();
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            this._outputChannel.appendLine(`[BackendProcessManager] ${message}`);
-            void vscode.window.showErrorMessage(
-                `Video Documenter: ${message}\n\nInstall Python 3.10+ from https://www.python.org and reload VS Code.`,
+        // Determine how to start the backend: bundled exe or Python
+        const exePath = path.join(backendPath, 'backend.exe');
+        const isBundled = fs.existsSync(exePath);
+
+        let command: string;
+        let args: string[];
+        let cwd: string;
+
+        if (isBundled) {
+            command = exePath;
+            args = [];
+            cwd = backendPath;
+            this._outputChannel.appendLine(
+                `[BackendProcessManager] Starting bundled backend: ${exePath}`,
             );
-            return;
+        } else {
+            // Development mode: use Python interpreter
+            let pythonPath: string;
+            try {
+                pythonPath = await findPythonInterpreter();
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                this._outputChannel.appendLine(`[BackendProcessManager] ${message}`);
+                void vscode.window.showErrorMessage(
+                    `Video Documenter: ${message}\n\nInstall Python 3.11+ from https://www.python.org and reload VS Code.`,
+                );
+                return;
+            }
+            command = pythonPath;
+            args = ['-m', 'src.main'];
+            cwd = backendPath;
+            this._outputChannel.appendLine(
+                `[BackendProcessManager] Starting backend: ${pythonPath} -m src.main (cwd: ${backendPath})`,
+            );
         }
 
-        this._outputChannel.appendLine(
-            `[BackendProcessManager] Starting backend: ${pythonPath} -m src.main (cwd: ${backendPath})`,
-        );
+        const envVars: Record<string, string> = {
+            ...process.env as Record<string, string>,
+            HOST: resolvedHost,
+            PORT: String(port),
+            PROCESSING_MODE: getProcessingMode(),
+            PYTHONIOENCODING: 'utf-8',
+            // Bundled .exe must not use uvicorn reload (it can't re-import frozen modules)
+            ...(isBundled ? { ENVIRONMENT: 'production' } : {}),
+        };
 
-        const child = spawn(pythonPath, ['-m', 'src.main'], {
-            cwd: backendPath,
-            env: {
-                ...process.env,
-                HOST: resolvedHost,
-                PORT: String(port),
-                PROCESSING_MODE: 'local',
-                PYTHONIOENCODING: 'utf-8',
-            },
+        // Add cloud-mode settings (only if non-empty to not override .env defaults)
+        const conditionalVars: Record<string, string> = {
+            FOUNDRY_PROJECT_ENDPOINT: getFoundryProjectEndpoint(),
+            FOUNDRY_MODEL: getFoundryModel(),
+            FOUNDRY_MODEL_MINI: getFoundryModelMini(),
+            BLOB_ACCOUNT_URL: getBlobAccountUrl(),
+            BLOB_CONTAINER_NAME: getBlobContainerName(),
+            SPEECH_SERVICE_ENDPOINT: getSpeechServiceEndpoint(),
+            SPEECH_SERVICE_REGION: getSpeechServiceRegion(),
+            VIDEO_INDEXER_ACCOUNT_ID: getVideoIndexerAccountId(),
+            VIDEO_INDEXER_RESOURCE_ID: getVideoIndexerResourceId(),
+            VIDEO_INDEXER_LOCATION: getVideoIndexerLocation(),
+            WHISPER_MODEL: getWhisperModel(),
+            FFMPEG_PATH: getFfmpegPath(),
+        };
+
+        for (const [key, value] of Object.entries(conditionalVars)) {
+            if (value) {
+                envVars[key] = value;
+            }
+        }
+
+        const child = spawn(command, args, {
+            cwd,
+            env: envVars,
             stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
         });
 
         child.stdout?.on('data', (data: Buffer) => {

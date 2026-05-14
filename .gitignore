@@ -8,6 +8,7 @@ build/
 .eggs/
 *.egg
 .venv/
+.build-venv/
 venv/
 env/
 
@@ -27,6 +28,7 @@ env/
 vscode-extension/node_modules/
 vscode-extension/out/
 vscode-extension/*.vsix
+vscode-extension/backend/
 
 # Node
 node_modules/
@@ -67,3 +69,6 @@ backend/tests/eval/output/
 
 # Misc
 /test_videos/*.*
+
+# Release artifacts
+release/
