@@ -32,7 +32,7 @@ export function createDefaultStages(): PipelineStage[] {
 /**
  * Format elapsed time since `startTime` as a human-readable string.
  *
- * Examples: `"30s"`, `"1m 30s"`, `"5m 00s"`.
+ * Examples: `"30s elapsed"`, `"1m 30s elapsed"`, `"5m 00s elapsed"`.
  */
 export function formatElapsed(startTime: number): string {
     const elapsedMs = Date.now() - startTime;
@@ -40,7 +40,7 @@ export function formatElapsed(startTime: number): string {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     if (minutes > 0) {
-        return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+        return `${minutes}m ${seconds.toString().padStart(2, '0')}s elapsed`;
     }
-    return `${totalSeconds}s`;
+    return `${totalSeconds}s elapsed`;
 }
