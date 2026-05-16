@@ -60,8 +60,32 @@ async def test_evaluate_agent(eval_output, foundry_client):
         print(f"  - [{s.dimension}] {s.issue}: {s.suggestion}")
     print(f"\nSummary: {report.summary}")
 
+    # Print rubric appendix
+    if report.rubric_appendix:
+        print(f"\n{'─'*60}")
+        print("RUBRIC APPENDIX")
+        print(f"{'─'*60}")
+        for ra in report.rubric_appendix:
+            print(f"\n  [{ra.dimension}] score={ra.score:.2f}")
+            if ra.reasoning:
+                print(f"    Reasoning: {ra.reasoning[:200]}")
+            if ra.strengths:
+                print(f"    Strengths:")
+                for s in ra.strengths[:3]:
+                    print(f"      + {s}")
+            if ra.gaps:
+                print(f"    Gaps:")
+                for g in ra.gaps[:3]:
+                    print(f"      - {g}")
+            if ra.evidence:
+                print(f"    Evidence:")
+                for e in ra.evidence[:3]:
+                    print(f"      • {e}")
+    else:
+        print("\n  (No rubric appendix returned)")
+
     checks = {
-        "Scores are in valid range": all(
+        "Scores are in valid range":all(
             0 <= v <= 1
             for v in [
                 report.scores.completeness,
@@ -444,8 +468,32 @@ async def test_evaluate_known_good_document(eval_output, foundry_client):
         print(f"  - [{s.dimension}] {s.issue}: {s.suggestion}")
     print(f"Summary: {report.summary}")
 
+    # Print rubric appendix
+    if report.rubric_appendix:
+        print(f"\n{'─'*60}")
+        print("RUBRIC APPENDIX")
+        print(f"{'─'*60}")
+        for ra in report.rubric_appendix:
+            print(f"\n  [{ra.dimension}] score={ra.score:.2f}")
+            if ra.reasoning:
+                print(f"    Reasoning: {ra.reasoning[:200]}")
+            if ra.strengths:
+                print(f"    Strengths:")
+                for s in ra.strengths[:3]:
+                    print(f"      + {s}")
+            if ra.gaps:
+                print(f"    Gaps:")
+                for g in ra.gaps[:3]:
+                    print(f"      - {g}")
+            if ra.evidence:
+                print(f"    Evidence:")
+                for e in ra.evidence[:3]:
+                    print(f"      • {e}")
+    else:
+        print("\n  (No rubric appendix returned)")
+
     checks = {
-        "report.passed is True OR overall >= 0.7": report.passed or report.scores.overall >= 0.7,
+        "report.passed is True OR overall >= 0.7":report.passed or report.scores.overall >= 0.7,
         "overall >= 0.7": report.scores.overall >= 0.7,
         "completeness >= 0.5": report.scores.completeness >= 0.5,
         "accuracy >= 0.5": report.scores.accuracy >= 0.5,
@@ -507,8 +555,32 @@ async def test_evaluate_known_bad_document(eval_output, foundry_client):
         print(f"  - [{s.dimension}] {s.issue}: {s.suggestion}")
     print(f"Summary: {report.summary}")
 
+    # Print rubric appendix
+    if report.rubric_appendix:
+        print(f"\n{'─'*60}")
+        print("RUBRIC APPENDIX")
+        print(f"{'─'*60}")
+        for ra in report.rubric_appendix:
+            print(f"\n  [{ra.dimension}] score={ra.score:.2f}")
+            if ra.reasoning:
+                print(f"    Reasoning: {ra.reasoning[:200]}")
+            if ra.strengths:
+                print(f"    Strengths:")
+                for s in ra.strengths[:3]:
+                    print(f"      + {s}")
+            if ra.gaps:
+                print(f"    Gaps:")
+                for g in ra.gaps[:3]:
+                    print(f"      - {g}")
+            if ra.evidence:
+                print(f"    Evidence:")
+                for e in ra.evidence[:3]:
+                    print(f"      • {e}")
+    else:
+        print("\n  (No rubric appendix returned)")
+
     checks = {
-        "not passed OR overall < 0.7": not report.passed or report.scores.overall < 0.7,
+        "not passed OR overall < 0.7":not report.passed or report.scores.overall < 0.7,
         "has suggestions (agent identified issues)": len(report.suggestions) > 0,
     }
 
@@ -586,3 +658,97 @@ async def test_evaluate_score_differential(eval_output, foundry_client):
         f"Higher in {majority_higher}/4: completeness={diff_completeness:+.2f}, "
         f"accuracy={diff_accuracy:+.2f}, style={diff_style:+.2f}, readability={diff_readability:+.2f}"
     )
+
+
+@pytest.mark.asyncio
+async def test_evaluate_rubric_appendix_structure(eval_output, foundry_client):
+    """Evaluate agent should return a rubric appendix with per-dimension reasoning."""
+    from src.agents.evaluate import EvaluateAgent
+
+    document = _make_good_document()
+    extraction = _make_good_extraction()
+
+    agent = EvaluateAgent(foundry_client)
+    report = await agent.process(document, extraction)
+
+    artifact_path = eval_output / "evaluation_report_appendix.json"
+    artifact_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+
+    print(f"\n{'='*60}")
+    print("RUBRIC APPENDIX STRUCTURE VALIDATION")
+    print(f"{'='*60}")
+
+    # Display the full appendix
+    for ra in report.rubric_appendix:
+        print(f"\n  [{ra.dimension}] score={ra.score:.2f}")
+        if ra.reasoning:
+            print(f"    Reasoning: {ra.reasoning}")
+        if ra.strengths:
+            print(f"    Strengths:")
+            for s in ra.strengths:
+                print(f"      + {s}")
+        if ra.gaps:
+            print(f"    Gaps:")
+            for g in ra.gaps:
+                print(f"      - {g}")
+        if ra.evidence:
+            print(f"    Evidence:")
+            for e in ra.evidence:
+                print(f"      • {e}")
+
+    # Structural checks
+    expected_dimensions = {"completeness", "accuracy", "style_compliance", "readability", "grounding"}
+    appendix_dimensions = {ra.dimension for ra in report.rubric_appendix}
+
+    # Build score map from rubric appendix
+    appendix_scores = {ra.dimension: ra.score for ra in report.rubric_appendix}
+    report_scores = {
+        "completeness": report.scores.completeness,
+        "accuracy": report.scores.accuracy,
+        "style_compliance": report.scores.style_compliance,
+        "readability": report.scores.readability,
+        "grounding": report.scores.grounding,
+    }
+
+    checks = {
+        "rubric_appendix is not empty": len(report.rubric_appendix) > 0,
+        "has all 5 dimensions": expected_dimensions.issubset(appendix_dimensions),
+        "all entries have reasoning": all(ra.reasoning for ra in report.rubric_appendix),
+        "all entries have evidence": all(len(ra.evidence) > 0 for ra in report.rubric_appendix),
+        "all entries have strengths": all(len(ra.strengths) > 0 for ra in report.rubric_appendix),
+    }
+
+    # Check score consistency (appendix scores match report scores)
+    score_mismatches = []
+    for dim in expected_dimensions:
+        if dim in appendix_scores and dim in report_scores:
+            if abs(appendix_scores[dim] - report_scores[dim]) > 0.01:
+                score_mismatches.append(
+                    f"{dim}: appendix={appendix_scores[dim]:.2f} vs report={report_scores[dim]:.2f}"
+                )
+    checks["scores match between appendix and report"] = len(score_mismatches) == 0
+
+    print(f"\n{'─'*60}")
+    print("Validation checks:")
+    for check, passed in checks.items():
+        print(f"  {'PASS' if passed else 'FAIL'} {check}")
+
+    if score_mismatches:
+        print("\nScore mismatches:")
+        for m in score_mismatches:
+            print(f"  ⚠ {m}")
+
+    print(f"\nArtifact: {artifact_path}")
+
+    # Assertions — rubric appendix should exist and have all dimensions
+    assert len(report.rubric_appendix) > 0, (
+        "Rubric appendix should not be empty — the evaluate prompt requests it"
+    )
+    assert expected_dimensions.issubset(appendix_dimensions), (
+        f"Rubric appendix should cover all 5 dimensions. "
+        f"Missing: {expected_dimensions - appendix_dimensions}"
+    )
+    # All entries should have reasoning
+    for ra in report.rubric_appendix:
+        assert ra.reasoning, f"Rubric entry for '{ra.dimension}' should have reasoning"
+        assert len(ra.evidence) > 0, f"Rubric entry for '{ra.dimension}' should have evidence"
