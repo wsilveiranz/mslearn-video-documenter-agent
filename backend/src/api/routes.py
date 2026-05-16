@@ -333,6 +333,7 @@ async def _run_extraction(video_id: str) -> None:
             job.status = ProcessingStatus.FAILED
             job.error_message = "Extraction produced no transcript, scenes, or keyframes. The video may be unreadable or unsupported."
             manager.send_progress(video_id, "failed", 2, 6, "Extraction failed: no content could be extracted from the video.")
+            manager.clear_progress(video_id)
             return
         else:
             job.extraction_result = extraction_result
@@ -341,11 +342,13 @@ async def _run_extraction(video_id: str) -> None:
 
             logger.info("api.extraction_complete", video_id=video_id)
             manager.send_progress(video_id, "extraction_complete", 2, 6, "Step 2/6: Extraction complete ✓")
+            manager.clear_progress(video_id)
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.extraction_failed", video_id=video_id, error=repr(exc), exc_info=True)
         manager.send_progress(video_id, "failed", job.step, 6, str(exc))
+        manager.clear_progress(video_id)
 
 
 async def _run_pipeline(
