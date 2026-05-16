@@ -64,6 +64,14 @@ htmlcov/
 .mypy_cache/
 backend/tests/eval/output/
 
+# Evaluation corpus (videos are large)
+backend/tests/eval/corpus/*.mp4
+backend/tests/eval/corpus/*.mkv
+backend/tests/eval/corpus/*.webm
+backend/tests/eval/corpus/*.avi
+backend/tests/eval/corpus/*.mov
+backend/tests/eval/corpus/*.wav
+
 # Logs
 *.log
 
