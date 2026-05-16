@@ -70,15 +70,15 @@ async def test_evaluate_agent(eval_output, foundry_client):
             if ra.reasoning:
                 print(f"    Reasoning: {ra.reasoning[:200]}")
             if ra.strengths:
-                print(f"    Strengths:")
+                print("    Strengths:")
                 for s in ra.strengths[:3]:
                     print(f"      + {s}")
             if ra.gaps:
-                print(f"    Gaps:")
+                print("    Gaps:")
                 for g in ra.gaps[:3]:
                     print(f"      - {g}")
             if ra.evidence:
-                print(f"    Evidence:")
+                print("    Evidence:")
                 for e in ra.evidence[:3]:
                     print(f"      • {e}")
     else:
@@ -478,15 +478,15 @@ async def test_evaluate_known_good_document(eval_output, foundry_client):
             if ra.reasoning:
                 print(f"    Reasoning: {ra.reasoning[:200]}")
             if ra.strengths:
-                print(f"    Strengths:")
+                print("    Strengths:")
                 for s in ra.strengths[:3]:
                     print(f"      + {s}")
             if ra.gaps:
-                print(f"    Gaps:")
+                print("    Gaps:")
                 for g in ra.gaps[:3]:
                     print(f"      - {g}")
             if ra.evidence:
-                print(f"    Evidence:")
+                print("    Evidence:")
                 for e in ra.evidence[:3]:
                     print(f"      • {e}")
     else:
@@ -565,15 +565,15 @@ async def test_evaluate_known_bad_document(eval_output, foundry_client):
             if ra.reasoning:
                 print(f"    Reasoning: {ra.reasoning[:200]}")
             if ra.strengths:
-                print(f"    Strengths:")
+                print("    Strengths:")
                 for s in ra.strengths[:3]:
                     print(f"      + {s}")
             if ra.gaps:
-                print(f"    Gaps:")
+                print("    Gaps:")
                 for g in ra.gaps[:3]:
                     print(f"      - {g}")
             if ra.evidence:
-                print(f"    Evidence:")
+                print("    Evidence:")
                 for e in ra.evidence[:3]:
                     print(f"      • {e}")
     else:
@@ -684,15 +684,15 @@ async def test_evaluate_rubric_appendix_structure(eval_output, foundry_client):
         if ra.reasoning:
             print(f"    Reasoning: {ra.reasoning}")
         if ra.strengths:
-            print(f"    Strengths:")
+            print("    Strengths:")
             for s in ra.strengths:
                 print(f"      + {s}")
         if ra.gaps:
-            print(f"    Gaps:")
+            print("    Gaps:")
             for g in ra.gaps:
                 print(f"      - {g}")
         if ra.evidence:
-            print(f"    Evidence:")
+            print("    Evidence:")
             for e in ra.evidence:
                 print(f"      • {e}")
 
@@ -721,8 +721,7 @@ async def test_evaluate_rubric_appendix_structure(eval_output, foundry_client):
     # Check score consistency (appendix scores match report scores)
     score_mismatches = []
     for dim in expected_dimensions:
-        if dim in appendix_scores and dim in report_scores:
-            if abs(appendix_scores[dim] - report_scores[dim]) > 0.01:
+        if dim in appendix_scores and dim in report_scores and abs(appendix_scores[dim] - report_scores[dim]) > 0.01:
                 score_mismatches.append(
                     f"{dim}: appendix={appendix_scores[dim]:.2f} vs report={report_scores[dim]:.2f}"
                 )

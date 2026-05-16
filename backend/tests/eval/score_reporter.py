@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -94,11 +94,11 @@ class EvalRunReport:
         headers = ["Test", "Doc Type"] + [abbrev[d] for d in all_dims] + ["Style", "Result"]
 
         # Compute column widths
-        all_rows = [headers] + rows + [agg_row]
-        col_widths = [max(len(str(cell)) for cell in col) for col in zip(*all_rows)]
+        all_rows = [headers, *rows, agg_row]
+        col_widths = [max(len(str(cell)) for cell in col) for col in zip(*all_rows, strict=False)]
 
         def fmt_row(cells: list[str], widths: list[int]) -> str:
-            padded = [str(c).ljust(w) for c, w in zip(cells, widths)]
+            padded = [str(c).ljust(w) for c, w in zip(cells, widths, strict=False)]
             return "│ " + " │ ".join(padded) + " │"
 
         def separator(widths: list[int], left: str, mid: str, right: str, fill: str = "─") -> str:
@@ -215,7 +215,7 @@ def find_latest_report(output_dir: Path) -> Path | None:
 
 def make_run_id() -> str:
     """Generate a run ID using the current UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def print_summary(output_dir: Path) -> None:

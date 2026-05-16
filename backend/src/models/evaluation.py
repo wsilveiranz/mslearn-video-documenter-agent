@@ -43,7 +43,9 @@ class EvaluationSuggestion(BaseModel):
 class RubricAssessment(BaseModel):
     """Detailed assessment for a single evaluation dimension."""
 
-    dimension: str = Field(description="Dimension name: completeness, accuracy, style_compliance, readability, grounding")
+    dimension: str = Field(
+        description="Dimension name: completeness, accuracy, style_compliance, readability, grounding",
+    )
     score: float = Field(ge=0.0, le=1.0, description="Score for this dimension")
     reasoning: str = Field(default="", description="Why this score was assigned")
     evidence: list[str] = Field(default_factory=list, description="Specific quotes or examples from the document")
