@@ -40,6 +40,17 @@ class EvaluationSuggestion(BaseModel):
     severity: str = Field(default="medium", description="low, medium, high")
 
 
+class RubricAssessment(BaseModel):
+    """Detailed assessment for a single evaluation dimension."""
+
+    dimension: str = Field(description="Dimension name: completeness, accuracy, style_compliance, readability, grounding")
+    score: float = Field(ge=0.0, le=1.0, description="Score for this dimension")
+    reasoning: str = Field(default="", description="Why this score was assigned")
+    evidence: list[str] = Field(default_factory=list, description="Specific quotes or examples from the document")
+    strengths: list[str] = Field(default_factory=list, description="What the document does well in this dimension")
+    gaps: list[str] = Field(default_factory=list, description="What's missing or weak in this dimension")
+
+
 class EvaluationReport(BaseModel):
     """Complete evaluation report from the Evaluate Agent."""
 
@@ -49,3 +60,7 @@ class EvaluationReport(BaseModel):
     suggestions: list[EvaluationSuggestion] = Field(default_factory=list)
     summary: str = Field(default="", description="Human-readable evaluation summary")
     iteration: int = Field(default=1, description="Which revision iteration this evaluates")
+    rubric_appendix: list[RubricAssessment] = Field(
+        default_factory=list,
+        description="Per-dimension rubric appendix with reasoning, evidence, strengths, and gaps",
+    )
