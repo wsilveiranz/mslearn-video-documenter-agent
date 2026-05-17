@@ -49,7 +49,7 @@ function sanitizeOutputDir(dir: string): string {
 
 export interface MediaFile {
     filename: string;
-    sourcePath: string;
+    data: Uint8Array;
 }
 
 export class OutputManager {
@@ -88,11 +88,10 @@ export class OutputManager {
             for (const media of mediaFiles) {
                 const destUri = vscode.Uri.joinPath(mediaDirUri, media.filename);
                 try {
-                    const sourceUri = vscode.Uri.file(media.sourcePath);
-                    await vscode.workspace.fs.copy(sourceUri, destUri, { overwrite: true });
+                    await vscode.workspace.fs.writeFile(destUri, media.data);
                 } catch {
-                    // Log but don't fail if a media file can't be copied
-                    console.warn(`Failed to copy media file: ${media.sourcePath}`);
+                    // Log but don't fail if a media file can't be saved
+                    console.warn(`Failed to save media file: ${media.filename}`);
                 }
             }
         }

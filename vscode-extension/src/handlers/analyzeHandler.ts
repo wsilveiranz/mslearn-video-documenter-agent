@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { detectVideoPath } from '../utils/fileDetection';
+import { getProgressUpdateIntervalMs } from '../utils/config';
+import { formatElapsed } from '../utils/progress';
 
 export async function handleAnalyze(
     request: vscode.ChatRequest,
@@ -77,10 +79,14 @@ export async function handleAnalyze(
 
         // 7. Connect WebSocket for real-time progress updates (best-effort)
         let lastWsDetail = '';
+        let lastWsProgressTime = 0;
+        const progressIntervalMs = getProgressUpdateIntervalMs();
         const progressDisposable = client.connectProgress(videoId, (msg) => {
             const text = msg.detail || msg.stage;
-            if (text !== lastWsDetail) {
+            const now = Date.now();
+            if (text !== lastWsDetail && now - lastWsProgressTime >= progressIntervalMs) {
                 lastWsDetail = text;
+                lastWsProgressTime = now;
                 stream.progress(text);
             }
         });
@@ -90,7 +96,7 @@ export async function handleAnalyze(
         // current_stage = 'ingestion_complete' with status still 'queued'. Use a custom loop.
         let complete = false;
         const startTime = Date.now();
-        const timeoutMs = 300000; // 5 minutes
+        const timeoutMs = 600000; // 10 minutes — ingestion is local, shouldn't need more
         let lastPollStage = '';
 
         while (!complete && Date.now() - startTime < timeoutMs) {
@@ -152,18 +158,24 @@ export async function handleAnalyze(
         }
 
         let lastExtractWsDetail = '';
+        let lastExtractProgressTime = 0;
+        const extractProgressIntervalMs = getProgressUpdateIntervalMs();
         const extractProgressDisposable = client.connectProgress(videoId, (msg) => {
             const text = msg.detail || msg.stage;
-            if (text !== lastExtractWsDetail) {
+            const now = Date.now();
+            if (text !== lastExtractWsDetail && now - lastExtractProgressTime >= extractProgressIntervalMs) {
                 lastExtractWsDetail = text;
+                lastExtractProgressTime = now;
                 stream.progress(text);
             }
         });
 
         let extractionComplete = false;
         const extractStartTime = Date.now();
-        const extractTimeoutMs = 600000; // 10 minutes
+        const extractTimeoutMs = 1800000; // 30 minutes — backend controls actual VI timeout
         let lastExtractPollStage = '';
+        let lastExtractPollDetail = '';
+        let lastExtractPollEmitTime = 0;
 
         while (!extractionComplete && Date.now() - extractStartTime < extractTimeoutMs) {
             if (token.isCancellationRequested) {
@@ -176,9 +188,16 @@ export async function handleAnalyze(
 
             try {
                 const status = await client.getVideoStatus(videoId);
-                if (status.current_stage !== lastExtractPollStage) {
-                    lastExtractPollStage = status.current_stage;
-                    stream.progress(`${status.current_stage}`);
+                const elapsed = formatElapsed(extractStartTime);
+                const now = Date.now();
+                const baseDetail = status.progress_detail || status.current_stage;
+                const detailChanged = baseDetail !== lastExtractPollDetail;
+                const intervalElapsed = (now - lastExtractPollEmitTime) >= extractProgressIntervalMs;
+
+                if (baseDetail && (detailChanged || intervalElapsed)) {
+                    lastExtractPollDetail = baseDetail;
+                    lastExtractPollEmitTime = now;
+                    stream.progress(`${baseDetail} (${elapsed})`);
                 }
 
                 if (status.current_stage === 'extraction_complete') {
@@ -214,6 +233,7 @@ export async function handleAnalyze(
         let extractionRows = '';
         let qualityWarning = '';
         try {
+            stream.progress('Fetching extraction summary...');
             const finalStatus = await client.getVideoStatus(videoId);
             if (finalStatus.extraction_summary) {
                 const es = finalStatus.extraction_summary;
@@ -224,9 +244,20 @@ export async function handleAnalyze(
                     `| Vision analysis | ${es.has_vision_descriptions ? '✓' : '✗ (no descriptions)'} |\n`;
             }
 
-            // Run quality assessment
+            // Run quality assessment with periodic progress
+            let qualityInterval: ReturnType<typeof setInterval> | undefined;
             try {
+                stream.progress('Assessing extraction quality...');
+                const qualityStartTime = Date.now();
+                let qualityDone = false;
+                qualityInterval = setInterval(() => {
+                    if (!qualityDone) {
+                        stream.progress(`Assessing extraction quality... (${formatElapsed(qualityStartTime)})`);
+                    }
+                }, 10000);
+
                 const quality = await client.assessQuality(videoId, selectedModel);
+
                 const confidence = Math.round(quality.grounding_confidence * 100);
                 extractionRows += `| Data quality | **${quality.quality_level}** (${confidence}% grounding confidence) |\n`;
 
@@ -246,11 +277,14 @@ export async function handleAnalyze(
                 }
             } catch {
                 // Quality assessment failed — non-fatal, continue without it
+            } finally {
+                clearInterval(qualityInterval);
             }
         } catch {
             // Non-fatal
         }
 
+        stream.progress('Preparing analysis summary...');
         stream.markdown(
             `✅ **Video analyzed successfully!**\n\n` +
             `| Field | Value |\n` +

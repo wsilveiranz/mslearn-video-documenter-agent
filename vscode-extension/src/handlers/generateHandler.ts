@@ -5,6 +5,8 @@ import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager, sanitizeFilename } from '../utils/outputManager';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { BackendMetadata } from '../api/backendClient';
+import { getProgressUpdateIntervalMs } from '../utils/config';
+import { formatElapsed } from '../utils/progress';
 
 export async function handleGenerate(
     request: vscode.ChatRequest,
@@ -153,14 +155,25 @@ export async function handleGenerate(
         await client.generateDocument(state.currentVideoId, docType, fullContext, backendMetadata, selectedModel);
 
         // 6. Connect WebSocket for progress
+        let lastGenWsDetail = '';
+        let lastGenProgressTime = 0;
+        const progressIntervalMs = getProgressUpdateIntervalMs();
+        const genStartTime = Date.now();
         const progressDisposable = client.connectProgress(state.currentVideoId, (msg) => {
-            stream.progress(msg.detail || `Step ${msg.step}/${msg.total_steps}: ${msg.stage}`);
+            const text = msg.detail || `Step ${msg.step}/${msg.total_steps}: ${msg.stage}`;
+            const now = Date.now();
+            if (text !== lastGenWsDetail && now - lastGenProgressTime >= progressIntervalMs) {
+                lastGenWsDetail = text;
+                lastGenProgressTime = now;
+                stream.progress(`${text} (${formatElapsed(genStartTime)})`);
+            }
         });
 
-        // 7. Poll for completion (no progress display — WebSocket handles that)
+        // 7. Poll for completion with elapsed-time heartbeat
         let documentId: string | undefined;
         const startTime = Date.now();
-        const timeoutMs = 600000; // 10 minutes for full pipeline
+        const timeoutMs = 1800000; // 30 minutes — backend controls actual pipeline timeout
+        let lastHeartbeatTime = Date.now();
 
         try {
             while (Date.now() - startTime < timeoutMs) {
@@ -180,6 +193,14 @@ export async function handleGenerate(
                         stateManager.setStage('analyzed');
                         stream.markdown('❌ **Document generation failed.** Please check the backend logs and try again.');
                         return { metadata: { command: 'generate' } };
+                    }
+
+                    // Heartbeat: if no WS message recently, show elapsed time
+                    const now = Date.now();
+                    if ((now - lastGenProgressTime) >= progressIntervalMs && (now - lastHeartbeatTime) >= progressIntervalMs) {
+                        lastHeartbeatTime = now;
+                        const detail = status.progress_detail || status.current_stage;
+                        stream.progress(`${detail} (${formatElapsed(genStartTime)})`);
                     }
                 } catch (pollError) {
                     if (pollError instanceof BackendError && pollError.statusCode === 404) {
@@ -208,14 +229,21 @@ export async function handleGenerate(
         stateManager.setDocumentId(documentId);
         stateManager.setStage('generated');
 
-        // 10. Save to workspace and open
-        // TODO(Phase 3): Pass media files from extraction results once the
-        // /documents/{id} response includes referenced image paths.
+        // 10. Save to workspace and open (with extracted screenshots)
+        const mediaFiles: Array<{filename: string, data: Uint8Array}> = [];
+        for (const mf of doc.media_files ?? []) {
+            try {
+                const data = await client.downloadMedia(documentId, mf.filename);
+                mediaFiles.push({ filename: mf.filename, data });
+            } catch {
+                // Non-fatal: skip media that can't be downloaded
+            }
+        }
         try {
             const savedUri = await outputManager.saveAndOpen(
                 documentId,
                 doc.markdown_content,
-                [],
+                mediaFiles,
                 desiredFilename,
             );
             stateManager.setSavedFilename(desiredFilename ? sanitizeFilename(desiredFilename) : `${documentId}.md`);

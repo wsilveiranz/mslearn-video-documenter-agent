@@ -31,6 +31,7 @@ Write-Host "=== MS Learn Video Documenter VSIX Builder ===" -ForegroundColor Cya
 Write-Host ""
 
 # 0. Override version in package.json if specified
+$originalVersion = $null
 if ($Version) {
     if ($Version -notmatch '^\d+\.\d+\.\d+$') {
         Write-Error "Invalid version format '$Version'. Expected semver: major.minor.patch (e.g., 0.2.0)"
@@ -39,13 +40,29 @@ if ($Version) {
     Write-Host "[0/6] Setting version to $Version..." -ForegroundColor Yellow
     $packageJsonPath = Join-Path $extensionDir 'package.json'
     $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+    $originalVersion = $packageJson.version
     $packageJson.version = $Version
     $packageJson | ConvertTo-Json -Depth 100 | Set-Content $packageJsonPath -Encoding UTF8
-    Write-Host "  Updated package.json version to $Version" -ForegroundColor Gray
+    Write-Host "  Updated package.json version: $originalVersion -> $Version" -ForegroundColor Gray
 }
 
 # 1. Verify prerequisites
 Write-Host "[1/6] Checking prerequisites..." -ForegroundColor Yellow
+
+# Helper: revert package.json version on build failure
+function Restore-PackageVersion {
+    if ($originalVersion) {
+        Write-Host "  Reverting package.json version: $Version -> $originalVersion" -ForegroundColor Yellow
+        $pj = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+        $pj.version = $originalVersion
+        $pj | ConvertTo-Json -Depth 100 | Set-Content $packageJsonPath -Encoding UTF8
+    }
+}
+
+trap {
+    Restore-PackageVersion
+    exit 1
+}
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Error "Node.js is required but not found on PATH."

@@ -1,0 +1,15 @@
+{
+  "$schema": "eval-corpus-manifest-v1",
+  "description": "Test video corpus for end-to-end evaluation. Videos are .gitignored.",
+  "videos": [
+    {
+      "id": "sample-001",
+      "filename": "sample-demo.mp4",
+      "description": "Sample screen recording for evaluation testing",
+      "doc_types": ["overview", "concept", "how-to"],
+      "expected_topics": [],
+      "expected_actions": [],
+      "notes": "Replace with actual test video"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from src.agents.editor import EditorAgent
@@ -84,9 +85,16 @@ class StatusResponse(BaseModel):
     step: int
     total_steps: int
     current_stage: str
+    progress_detail: str = ""
     document_id: str | None = None
     extraction_summary: ExtractionSummary | None = None
     data_quality: DataQualityReport | None = None
+
+
+class MediaFileResponse(BaseModel):
+    filename: str
+    output_path: str
+    alt_text: str
 
 
 class DocumentResponse(BaseModel):
@@ -95,6 +103,7 @@ class DocumentResponse(BaseModel):
     markdown_content: str
     word_count: int
     revision_number: int
+    media_files: list[MediaFileResponse] = []
 
 
 
@@ -303,10 +312,12 @@ async def _run_extraction(video_id: str) -> None:
             video_metadata = ingestion_result.metadata
 
         async def _on_extraction_progress(progress: str) -> None:
-            manager.send_progress(
-                video_id, "extracting", 2, 6,
-                f"Step 2/6: Video Indexer processing ({progress})...",
-            )
+            if progress and progress != "Processing...":
+                detail = f"Video Indexer processing... {progress}"
+            else:
+                detail = "Video Indexer processing..."
+            job.progress_detail = detail
+            manager.send_progress(video_id, "extracting", 2, 6, detail)
 
         extraction_result = await extraction_agent.process(
             video_metadata, mode, on_progress=_on_extraction_progress
@@ -322,6 +333,7 @@ async def _run_extraction(video_id: str) -> None:
             job.status = ProcessingStatus.FAILED
             job.error_message = "Extraction produced no transcript, scenes, or keyframes. The video may be unreadable or unsupported."
             manager.send_progress(video_id, "failed", 2, 6, "Extraction failed: no content could be extracted from the video.")
+            manager.clear_progress(video_id)
             return
         else:
             job.extraction_result = extraction_result
@@ -330,11 +342,13 @@ async def _run_extraction(video_id: str) -> None:
 
             logger.info("api.extraction_complete", video_id=video_id)
             manager.send_progress(video_id, "extraction_complete", 2, 6, "Step 2/6: Extraction complete ✓")
+            manager.clear_progress(video_id)
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.extraction_failed", video_id=video_id, error=repr(exc), exc_info=True)
         manager.send_progress(video_id, "failed", job.step, 6, str(exc))
+        manager.clear_progress(video_id)
 
 
 async def _run_pipeline(
@@ -374,10 +388,12 @@ async def _run_pipeline(
                 video_metadata = ingestion_result.metadata
 
             async def _on_pipeline_extraction_progress(progress: str) -> None:
-                manager.send_progress(
-                    video_id, "extracting", 2, 6,
-                    f"Step 2/6: Video Indexer processing ({progress})...",
-                )
+                if progress and progress != "Processing...":
+                    detail = f"Video Indexer processing... {progress}"
+                else:
+                    detail = "Video Indexer processing..."
+                job.progress_detail = detail
+                manager.send_progress(video_id, "extracting", 2, 6, detail)
 
             extraction_result = await extraction_agent.process(
                 video_metadata, mode, on_progress=_on_pipeline_extraction_progress
@@ -388,6 +404,9 @@ async def _run_pipeline(
 
             job.extraction_result = extraction_result
             manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extraction complete ✓")
+
+        # Reset stale extraction progress detail before moving to subsequent stages
+        job.progress_detail = ""
 
         # Step 3/6: Structure
         job.current_stage = "structuring"
@@ -457,11 +476,13 @@ async def _run_pipeline(
             score=evaluation.scores.overall,
         )
         manager.send_progress(video_id, "completed", 6, 6, "Document generated!")
+        manager.clear_progress(video_id)
     except Exception as exc:
         job.status = ProcessingStatus.FAILED
         job.error_message = str(exc)
         logger.error("api.pipeline_failed", video_id=video_id, error=repr(exc), exc_info=True)
         manager.send_progress(video_id, "failed", job.step, 6, str(exc))
+        manager.clear_progress(video_id)
 
 
 # ---- Video Endpoints ----
@@ -540,6 +561,7 @@ async def get_video_status(video_id: str) -> StatusResponse:
         step=job.step,
         total_steps=job.total_steps,
         current_stage=job.current_stage,
+        progress_detail=job.progress_detail,
         document_id=job.document_id,
         extraction_summary=extraction_summary,
         data_quality=job.quality_report,
@@ -677,13 +699,45 @@ async def get_document(document_id: str) -> DocumentResponse:
     if doc is None:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")
 
+    media_files = [
+        MediaFileResponse(
+            filename=Path(s.output_path).name if s.output_path else Path(s.source_path).name,
+            output_path=s.output_path or f"./media/{Path(s.source_path).name}",
+            alt_text=s.alt_text,
+        )
+        for s in doc.media_files
+    ]
+
     return DocumentResponse(
         document_id=doc.document_id,
         doc_type=doc.doc_type,
         markdown_content=doc.markdown_content,
         word_count=doc.word_count,
         revision_number=doc.revision_number,
+        media_files=media_files,
     )
+
+
+@router.get("/documents/{document_id}/media/{filename}")
+async def download_media(document_id: str, filename: str) -> FileResponse:
+    """Download a media file associated with a document by filename."""
+    doc = _documents.get(document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")
+
+    for screenshot in doc.media_files:
+        mf_name = (
+            Path(screenshot.output_path).name
+            if screenshot.output_path
+            else Path(screenshot.source_path).name
+        )
+        if mf_name == filename:
+            source = Path(screenshot.source_path)
+            if not source.is_file():
+                raise HTTPException(status_code=404, detail="Media file not found on disk")
+            return FileResponse(path=str(source), filename=filename)
+
+    raise HTTPException(status_code=404, detail=f"Media file '{filename}' not found in document")
 
 
 @router.post("/documents/{document_id}/refine", response_model=GenerateResponse)
@@ -734,10 +788,12 @@ async def refine_document(
             logger.info("api.refine_complete", doc_id=document_id, revision=refined.revision_number)
             if video_id:
                 manager.send_progress(video_id, "refined", 2, 2, "Refinement complete")
+                manager.clear_progress(video_id)
         except Exception as exc:
             logger.error("api.refine_failed", doc_id=document_id, error=repr(exc), exc_info=True)
             if video_id:
                 manager.send_progress(video_id, "failed", 0, 1, f"Refinement failed: {exc}")
+                manager.clear_progress(video_id)
 
     background_tasks.add_task(_refine)
 

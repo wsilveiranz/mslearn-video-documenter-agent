@@ -197,13 +197,13 @@ In the Extension Development Host:
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
-| 1 | Open Settings → search "video-documenter" | 3 settings visible: `backendUrl`, `outputDirectory`, `autoOpenPreview` |
+| 1 | Open Settings → search "video-documenter" | ~20 settings visible, including `backendUrl`, `outputDirectory`, `autoOpenPreview`, `processingMode`, `foundryProjectEndpoint`, `azureSubscriptionId`, and others |
 | 2 | Change `outputDirectory` to `my-docs` | |
 | 3 | Generate a document | Saved to `<workspace>/my-docs/` instead of `docs/` |
 | 4 | Set `autoOpenPreview` to `false` | |
 | 5 | Generate a document | File opens in editor but no preview pane |
 
-### TC-14: Backend URL configuration
+### TC-15: Backend URL configuration
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
@@ -215,28 +215,28 @@ In the Extension Development Host:
 
 ## Error handling scenarios
 
-### TC-15: Invalid video file
+### TC-16: Invalid video file
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
 | 1 | Type `@video-documenter /analyze C:\path\to\document.pdf` | Path not detected (wrong extension), file picker shown |
 | 2 | Rename a `.txt` file to `.mp4` and analyze it | Backend returns error — extension shows error message |
 
-### TC-16: Very long video
+### TC-17: Very long video
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
 | 1 | Analyze a 30+ minute video | Ingestion takes longer but completes within 5 min timeout |
 | 2 | Generate a document | Pipeline may take 5–10 minutes; should not time out (10 min limit) |
 
-### TC-17: Cancel during processing
+### TC-18: Cancel during processing
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
 | 1 | Start `/analyze`, then click Stop in chat | Processing stops cleanly, state resets to idle |
 | 2 | Start `/generate`, then click Stop | State reverts to `analyzed` (not stuck in `generating`) |
 
-### TC-18: Network errors
+### TC-19: Network errors
 
 | Step | Action | Expected result |
 |------|--------|-----------------|
@@ -245,7 +245,100 @@ In the Extension Development Host:
 
 ---
 
-## Output quality checks
+## Extended test cases
+
+### TC-20: /plan command end-to-end flow
+
+**Preconditions**: Extension active, backend running
+
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Open Copilot Chat, type `@video-documenter /plan` | Agent prompts for video file selection |
+| 2 | Select a video file via the file picker or drag-and-drop | File accepted, metadata prompts begin |
+| 3 | Provide metadata (title, description, author, ms.service, template type) | Each prompt collects input |
+| 4 | Submit all metadata | Pipeline starts; progress messages stream via WebSocket |
+| 5 | Wait for completion | Final document presented in chat and opened in editor |
+
+**Expected**: Full pipeline execution from planning through document generation  
+**Priority**: P0 (primary user path)
+
+### TC-21: Copilot LM Proxy (local mode, no Azure)
+
+**Preconditions**: No Azure resources configured, `processingMode=local`
+
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Start the extension with no `foundryProjectEndpoint` configured | Extension starts and launches an LM Proxy server |
+| 2 | Verify proxy is running | Extension calls `POST /api/v1/config/lm-proxy` on the backend |
+| 3 | Run `/plan` with a short video | Pipeline begins using Copilot as the LLM provider |
+| 4 | Wait for completion | Document generation succeeds with no Azure errors |
+
+**Expected**: Full pipeline works with zero Azure configuration  
+**Priority**: P1 (key dev experience)
+
+### TC-22: Cloud mode end-to-end
+
+**Preconditions**: Azure resources provisioned (Video Indexer, Speech, Blob, Foundry), `processingMode=cloud`
+
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Configure all cloud settings in VS Code settings or `.env` | Settings accepted without validation errors |
+| 2 | Run `/plan` with a 2–3 minute screen recording | Video uploaded to Blob Storage; progress updates visible |
+| 3 | Monitor Video Indexer progress | Progress updates visible in chat as indexing runs |
+| 4 | Wait for transcription | Speech Service transcription completes (faster than Whisper) |
+| 5 | Review generated document | Quality matches or exceeds local mode output |
+
+**Expected**: Cloud pipeline produces high-quality documentation using Azure services  
+**Priority**: P1
+
+### TC-23: Backend auto-start on extension activation
+
+**Preconditions**: Extension installed, backend **not** manually started
+
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Open VS Code with the extension installed | Backend process starts automatically |
+| 2 | Open Output panel → "Video Documenter" channel | Backend startup logs appear |
+| 3 | Verify health check | `GET /api/v1/health` returns 200 |
+| 4 | Kill the backend process manually | Backend process stops |
+| 5 | Invoke `@video-documenter` in chat | Backend restarts automatically before responding |
+
+**Expected**: Extension manages backend lifecycle transparently  
+**Priority**: P1
+
+### TC-24: VSIX package install and first-run
+
+**Preconditions**: Fresh VS Code instance, VSIX package built via `vsce package`
+
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Install via "Extensions: Install from VSIX..." | Extension installs without errors |
+| 2 | Reload VS Code | Extension activates; no errors in the dev console |
+| 3 | Open Output panel → "Video Documenter" | Bundled backend starts automatically |
+| 4 | Call `GET /api/v1/health/deep` | All services report healthy |
+| 5 | Run a simple `/plan` workflow | End-to-end pipeline completes successfully |
+
+**Expected**: Extension works from VSIX without needing a dev environment  
+**Priority**: P2
+
+### TC-25: Quality assessment gates writer behavior
+
+**Preconditions**: Backend running, short video with minimal content (e.g., 10-second clip)
+
+| Step | Action | Expected result |
+|------|--------|-----------------|
+| 1 | Process a very short video (10–15 seconds) | Pipeline runs to completion |
+| 2 | Review progress messages | Quality assessment step reported with a quality level |
+| 3 | If quality is "thin" or "minimal" | Generated doc includes `TODO` placeholders for missing content |
+| 4 | If quality is "rich" or "adequate" | Generated doc has no `TODO` placeholders |
+| 5 | Check that quality report is visible | Quality level and dimensions shown in progress messages |
+
+**Expected**: Writer applies guardrails proportional to data quality  
+**Priority**: P1
+
+---
+
+
 
 These verify that the generated documentation meets MS Learn standards. Run after any successful TC-05 or TC-06.
 
@@ -290,8 +383,9 @@ These verify that the generated documentation meets MS Learn standards. Run afte
 
 After running through the scenarios:
 
-- [ ] All TC-01 through TC-14 pass (core functionality)
-- [ ] At least 2 error scenarios tested (TC-15 through TC-18)
+- [ ] All TC-01 through TC-15 pass (core functionality)
+- [ ] At least 2 error scenarios tested (TC-16 through TC-19)
+- [ ] At least 1 extended scenario tested (TC-20 through TC-25)
 - [ ] Output quality checked for at least 2 different doc types (QC-01 through QC-05)
 - [ ] No unhandled exceptions in the Extension Development Host debug console
 - [ ] No unhandled exceptions in the backend terminal

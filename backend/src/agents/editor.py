@@ -104,13 +104,14 @@ class EditorAgent:
                 error=str(exc),
             )
             try:
-                response = await self._client.complete(
-                    messages=[
-                        {"role": "system", "content": self._system_prompt},
-                        {"role": "user", "content": user_message},
-                    ]
-                )
-                response_text = response.choices[0].message.content
+                from agent_framework import Message
+
+                messages = [
+                    Message(role="system", contents=[self._system_prompt]),
+                    Message(role="user", contents=[user_message]),
+                ]
+                response = await self._client.get_response(messages)
+                response_text = response.text
             except Exception as inner_exc:
                 logger.error(
                     "editor.llm_failed",

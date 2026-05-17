@@ -75,3 +75,7 @@ export function getWhisperModel(): string {
 export function getFfmpegPath(): string {
     return getConfig().get<string>('ffmpegPath', 'ffmpeg');
 }
+
+export function getProgressUpdateIntervalMs(): number {
+    return getConfig().get<number>('progressUpdateIntervalSeconds', 30) * 1000;
+}

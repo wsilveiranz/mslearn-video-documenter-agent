@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 
 import structlog
@@ -18,6 +19,7 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, list[WebSocket]] = {}
         self._background_tasks: set[asyncio.Task[None]] = set()
+        self._latest_progress: dict[str, str] = {}  # video_id -> last progress JSON
 
     async def connect(self, websocket: WebSocket, video_id: str) -> None:
         await websocket.accept()
@@ -25,6 +27,14 @@ class ConnectionManager:
             self._connections[video_id] = []
         self._connections[video_id].append(websocket)
         logger.info("ws.connected", video_id=video_id)
+
+        # Send catch-up: latest progress for this video
+        if video_id in self._latest_progress:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(
+                    websocket.send_text(self._latest_progress[video_id]),
+                    timeout=2.0,
+                )
 
     def disconnect(self, websocket: WebSocket, video_id: str) -> None:
         if video_id in self._connections:
@@ -47,29 +57,6 @@ class ConnectionManager:
 
         Returns immediately so the pipeline is never blocked by WebSocket I/O.
         """
-        if video_id not in self._connections:
-            return
-
-        task = asyncio.create_task(self._broadcast(video_id, stage, step, total_steps, detail))
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-
-    async def _broadcast(
-        self,
-        video_id: str,
-        stage: str,
-        step: int,
-        total_steps: int,
-        detail: str,
-    ) -> None:
-        """Send a step-based progress update to all connections watching a video.
-
-        Sends to all clients concurrently with a 2s timeout per client.
-        Failures are silently handled (disconnected clients are removed).
-        """
-        if video_id not in self._connections:
-            return
-
         message = json.dumps({
             "type": "progress",
             "video_id": video_id,
@@ -78,6 +65,32 @@ class ConnectionManager:
             "total_steps": total_steps,
             "detail": detail,
         })
+        # Store for catch-up on new connections
+        self._latest_progress[video_id] = message
+
+        if video_id not in self._connections:
+            return
+
+        task = asyncio.create_task(self._broadcast_raw(video_id, message))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    def clear_progress(self, video_id: str) -> None:
+        """Remove stored progress for a completed video."""
+        self._latest_progress.pop(video_id, None)
+
+    async def _broadcast_raw(
+        self,
+        video_id: str,
+        message: str,
+    ) -> None:
+        """Send a pre-built progress message to all connections watching a video.
+
+        Sends to all clients concurrently with a 2s timeout per client.
+        Failures are silently handled (disconnected clients are removed).
+        """
+        if video_id not in self._connections:
+            return
 
         async def _send(ws: WebSocket) -> WebSocket | None:
             try:

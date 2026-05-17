@@ -14,6 +14,7 @@ export interface StatusResponse {
     step: number;
     total_steps: number;
     current_stage: string;
+    progress_detail?: string;
     document_id: string | null;
     extraction_summary: {
         transcript_segments: number;
@@ -42,6 +43,11 @@ export interface DocumentResponse {
     markdown_content: string;
     word_count: number;
     revision_number: number;
+    media_files: Array<{
+        filename: string;
+        output_path: string;
+        alt_text: string;
+    }>;
 }
 
 export interface DataQualityResponse {
@@ -172,6 +178,20 @@ export class BackendClient {
 
     async getDocument(documentId: string): Promise<DocumentResponse> {
         return this.get<DocumentResponse>(`/documents/${documentId}`);
+    }
+
+    async downloadMedia(documentId: string, filename: string): Promise<Buffer> {
+        const url = `${this.baseUrl}/api/v1/documents/${documentId}/media/${encodeURIComponent(filename)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            throw new BackendError(
+                response.status,
+                `Failed to download media '${filename}'${text ? `: ${text}` : ''}`,
+            );
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
     }
 
     async refineDocument(documentId: string, feedback: string, model?: string): Promise<GenerateResponse> {

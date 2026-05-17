@@ -201,7 +201,7 @@ US-14: As a documentation author, I want the system to use TODO placeholders ins
 | FR-32 | Classify extraction data into four quality levels: `rich`, `adequate`, `thin`, `minimal` | P0 |
 | FR-33 | Include `grounding_confidence` score (0.0–1.0), `coverage_gaps`, `warnings`, and `recommendations` in the quality report | P0 |
 | FR-34 | Display LLM-generated quality warnings in the VS Code extension after extraction completes | P0 |
-| FR-35 | Block document generation and prompt the user to provide supplementary materials when quality level is `thin` or `minimal` | P1 |
+| FR-35 | When data quality is thin or minimal, the Writer agent shall apply guardrails — inserting explicit quality notes and TODO placeholders — rather than blocking generation entirely | P1 |
 | FR-36 | Score a "grounding" dimension in the Evaluate Agent to verify every document step is traceable to transcript, OCR, or keyframe evidence | P0 |
 
 ---
@@ -371,7 +371,7 @@ Includes: Learn Markdown, Learn Preview, Learn YAML, Learn Article Templates, Le
 
 ### 9.4 AI Usage Disclosure
 
-All agent-generated content MUST include the `ai-usage: ai-assisted` metadata flag:
+All agent-generated content MUST include the `ms.custom: ai-assisted` metadata flag:
 
 ```yaml
 ms.custom: ai-assisted
@@ -499,3 +499,18 @@ The Microsoft Learn Authoring Assistant is an AI-powered VS Code extension that 
 | Q3 | Should we support MS Learn Module (training) format in addition to article format? | **Deferred to v2.** The 5 article types (Quickstart, Tutorial, How-to, Concept, Overview) cover most needs. Module format (`YamlMime:Module` + unit files) is significantly more complex. |
 | Q4 | What is the licensing situation for yt-dlp for downloading YouTube videos? | **Optional with documented risk.** yt-dlp is an optional dependency. Users must acknowledge YouTube ToS considerations. Direct file upload and Blob URLs are the primary supported paths. |
 | Q5 | Should we expose the agent as an MCP server for broader Copilot surface integration? | **Stretch goal in Phase 4.** The backend API is already MCP-compatible by design. Adding an MCP adapter in Phase 4 enables GitHub Copilot Chat across all surfaces (VS Code, JetBrains, GitHub.com, CLI). |
+
+---
+
+## 14. VS Code Chat Commands
+
+The agent provides the following chat commands when invoked as `@video-documenter` in Copilot Chat:
+
+| Command | Description |
+|---------|-------------|
+| `/plan` | Interactive documentation planning — guides user through video selection, metadata collection (title, description, author, ms.service), template selection, and triggers the full pipeline. This is the primary command new users invoke. |
+| `/analyze` | Analyzes a video and returns a detailed extraction report (transcript, keyframes, OCR, scenes, data quality assessment). |
+| `/generate` | Generates a complete MS Learn-compliant Markdown document from extraction data with full agent pipeline. |
+| `/refine` | Accepts natural language feedback on specific sections and revises targeted content without full regeneration. |
+| `/save` | Saves generated documents and extracted screenshots to a user-specified directory structure. |
+| `/status` | Returns current processing status and progress for long-running operations. |

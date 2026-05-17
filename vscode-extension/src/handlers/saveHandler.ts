@@ -77,13 +77,40 @@ export async function handleSave(
         await vscode.workspace.fs.createDirectory(parentDirUri);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(doc.markdown_content, 'utf-8'));
 
+        // Download and save media files to a media subdirectory
+        const docMediaFiles = doc.media_files ?? [];
+        let mediaCopyFailures: string[] = [];
+        if (docMediaFiles.length > 0) {
+            const mediaDirUri = vscode.Uri.joinPath(
+                vscode.Uri.file(path.dirname(targetUri.fsPath)),
+                'media'
+            );
+            await vscode.workspace.fs.createDirectory(mediaDirUri);
+
+            for (const mf of docMediaFiles) {
+                const destUri = vscode.Uri.joinPath(mediaDirUri, mf.filename);
+                try {
+                    const data = await client.downloadMedia(state.currentDocumentId, mf.filename);
+                    await vscode.workspace.fs.writeFile(destUri, data);
+                } catch {
+                    mediaCopyFailures.push(mf.filename);
+                }
+            }
+        }
+
+        const warnings = mediaCopyFailures.length > 0
+            ? `\n\n⚠️ **${mediaCopyFailures.length} media file(s) could not be copied:** ${mediaCopyFailures.join(', ')}. ` +
+              `Image references in the document may be broken.`
+            : '';
+
         stream.markdown(
             `✅ **Document saved**\n\n` +
             `| Field | Value |\n` +
             `|-------|-------|\n` +
             `| Path | \`${targetUri.fsPath}\` |\n` +
             `| Word count | ${doc.word_count} |\n` +
-            `| Revision | ${doc.revision_number} |\n`
+            `| Revision | ${doc.revision_number} |\n` +
+            warnings
         );
 
         // Non-blocking notification — don't await to avoid freezing the chat

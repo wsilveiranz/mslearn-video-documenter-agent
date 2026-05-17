@@ -64,7 +64,7 @@ class ExtractionAgent:
         settings = get_settings()
         video_id = metadata.video_id
 
-        work_dir = Path(settings.output_directory) / video_id
+        work_dir = (Path(settings.output_directory) / video_id).resolve()
         work_dir.mkdir(parents=True, exist_ok=True)
         frames_dir = work_dir / "frames"
         frames_dir.mkdir(exist_ok=True)
@@ -99,8 +99,17 @@ class ExtractionAgent:
                 raise
 
             # 3. Poll for indexing completion
+            # Scale timeout: at least configured minimum, or 3x video duration (whichever is larger)
+            video_duration_s = metadata.duration_seconds if metadata.duration_seconds else 0
+            dynamic_timeout = max(settings.vi_indexing_timeout_s, video_duration_s * 3)
             try:
-                await vi_service.wait_for_index(vi_video_id, on_progress=on_progress)
+                await vi_service.wait_for_index(
+                    vi_video_id,
+                    timeout_s=dynamic_timeout,
+                    poll_interval_s=settings.vi_poll_interval_s,
+                    progress_interval_s=settings.vi_progress_interval_s,
+                    on_progress=on_progress,
+                )
             except Exception as e:
                 logger.error("extraction.vi_indexing_failed", video_id=video_id, vi_video_id=vi_video_id, error=str(e))
                 raise
@@ -188,7 +197,7 @@ class ExtractionAgent:
         video_id = metadata.video_id
 
         # Set up per-video working directory
-        work_dir = Path(settings.output_directory) / video_id
+        work_dir = (Path(settings.output_directory) / video_id).resolve()
         work_dir.mkdir(parents=True, exist_ok=True)
         frames_dir = work_dir / "frames"
         frames_dir.mkdir(exist_ok=True)

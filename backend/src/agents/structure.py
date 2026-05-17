@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -208,6 +209,7 @@ class StructureAgent:
             )
             ms_service = data.get("ms_service", "")
             ms_topic = _MS_TOPIC_MAP.get(doc_type, doc_type.value)
+            customer_intent = data.get("customer_intent", "")
 
             frontmatter = Frontmatter(
                 title=title,
@@ -216,6 +218,7 @@ class StructureAgent:
                 ms_service=ms_service,
                 ms_date=datetime.now().strftime("%m/%d/%Y"),
                 ai_usage="ai-assisted",
+                customer_intent=customer_intent,
             )
 
             # Override with user-provided metadata when available
@@ -347,6 +350,7 @@ class StructureAgent:
         """Select and attach the best keyframe screenshot for each section."""
         all_screenshots: list[Screenshot] = []
         used_keyframe_ids: set[str] = set()
+        step_counter = 1
 
         for section in outline.sections:
             if not section.source_scenes:
@@ -356,15 +360,19 @@ class StructureAgent:
             if keyframe is None or keyframe.id in used_keyframe_ids:
                 continue
 
+            ext = Path(keyframe.image_path).suffix or ".png"
             alt_text = keyframe.ui_description or f"Screenshot for section: {section.heading}"
             screenshot = Screenshot(
                 keyframe_id=keyframe.id,
                 source_path=keyframe.image_path,
+                output_path=f"./media/step-{step_counter:02d}{ext}",
                 alt_text=alt_text,
+                step_number=step_counter,
             )
             section.screenshots.append(screenshot)
             all_screenshots.append(screenshot)
             used_keyframe_ids.add(keyframe.id)
+            step_counter += 1
 
             logger.debug(
                 "structure.screenshot_selected",

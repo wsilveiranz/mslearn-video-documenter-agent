@@ -97,6 +97,18 @@ Tests can run independently (using synthetic fixtures) or sequentially (chaining
 - Long videos (>10 minutes)
 - Multiple speakers / speaker diarization
 
+### Vision analysis evaluation (Phase 2+)
+
+When `foundry_client` is provided, GPT-4o analyzes keyframes and extracts UI element descriptions, OCR text, and action states. Current evals skip this due to LLM cost; future tests will validate:
+
+| Check | What it validates |
+|-------|-------------------|
+| Keyframe descriptions factual | Descriptions match visible UI, not generic ("screenshot of screen") |
+| UI-OCR alignment | Elements mentioned in descriptions match OCR text extracted from same frame |
+| Minimum keyframes per minute | At least N keyframes extracted per video minute (N = TBD based on typical video pace) |
+| No hallucinated elements | UI descriptions don't reference elements not visible in the image |
+| Action state clarity | Described states (before/after) are unambiguous and traceable to frame content |
+
 ---
 
 ## 3. Structure Agent
@@ -182,13 +194,26 @@ Tests can run independently (using synthetic fixtures) or sequentially (chaining
 - Truncation regression testing (editor truncation guard is tested indirectly, not explicitly)
 - Multiple edit passes (only one refinement pass is tested)
 
+### Feedback-driven editing evaluation (Phase 2+)
+
+When Editor receives user feedback (e.g., "Add more detail on authentication" or "Remove marketing language"), test coverage will include:
+
+| Test | What it validates |
+|------|-------------------|
+| Feedback incorporation | Diff between pre/post shows that requested change was applied (not just ignored) |
+| Scope isolation | Unrelated sections remain unchanged; only the targeted section is modified |
+| Feedback clarity validation | If feedback is ambiguous, Editor asks for clarification rather than making incorrect changes |
+| Loop termination | Refinement loop completes in ≤5 iterations (prevent infinite editing cycles) |
+| Rollback on failure | If feedback causes content degradation (grounding loss, truncation), revert to previous version |
+| Multi-turn refinement | Sequential feedback applications are cumulative and don't conflict
+
 ---
 
 ## 6. Evaluate Agent
 
 **File:** `test_eval_evaluate.py` · **Markers:** `eval`, `cloud` · **LLM calls:** 1–2 (GPT-4o)
 
-**What it tests:** Takes a `GeneratedDocument` + `ExtractionResult`, scores across four dimensions, returns an `EvaluationReport`.
+**What it tests:** Takes a `GeneratedDocument` + `ExtractionResult`, scores across five dimensions, returns an `EvaluationReport`.
 
 ### Scoring dimensions (0.0 – 1.0)
 
@@ -198,8 +223,16 @@ Tests can run independently (using synthetic fixtures) or sequentially (chaining
 | **Accuracy** | Does the text match what's shown/said in the video? |
 | **Style compliance** | Does it follow MS Learn voice, tone, and formatting? |
 | **Readability** | Is it scannable, concise, and well-structured? |
+| **Grounding** | Is each documented step traceable to evidence (transcript, OCR, keyframe descriptions)? |
 
 **Pass criteria:** Overall ≥ 0.7 AND no individual dimension < 0.5.
+
+**Grounding definition:** Every procedural step, code example, configuration setting, or UI interaction described in the document must be supported by direct evidence from the video:
+- Transcript segments (word-for-word or paraphrased from extracted speech)
+- OCR text (text visible on screen during the relevant steps)
+- Keyframe descriptions (UI elements, states, or actions captured in extracted images)
+
+Penalty applies for steps that appear fabricated, hallucinated, or unsupported by extracted data. Steps may be generalizations or summaries of multiple transcript segments, but each must be traceable to at least one evidence source.
 
 | Grader | Type | What it checks |
 |--------|------|----------------|
@@ -207,6 +240,7 @@ Tests can run independently (using synthetic fixtures) or sequentially (chaining
 | Overall > 0 | Assertion | Not a parsing-failure fallback (all 0.5) |
 | Has summary | Length | Summary text > 10 chars |
 | Scores not all identical | Diversity | Dimensions are scored independently |
+| Grounding score in range | Assertion | Grounding dimension scored 0–1 |
 
 ### What's not evaluated
 
@@ -286,6 +320,16 @@ Current evaluations use three types of graders:
 **Grounding tests:** `test_eval_grounding.py` — verifies document content is traceable to video transcript.
 **Grader unit tests:** `test_graders.py` — 23 tests validating grader correctness against known-good and known-bad content.
 
+### Implemented eval tests
+
+Additional test files covering specific evaluation scenarios:
+
+| Test file | Purpose | Coverage |
+|-----------|---------|----------|
+| `test_eval_reference.py` | Evaluate generated documents against reference/golden documents | Measures ROUGE-style overlap, structural similarity, metadata completeness |
+| `test_eval_intent.py` | Validate intent classification accuracy from video content | Ensures extracted intent matches actual task performed in video |
+| `test_eval_graders.py` | Unit tests for all rule-based grading functions | Validates grader logic against known-good and known-bad inputs (≥20 test cases per grader) |
+
 ### Missing grader types (not yet implemented)
 
 | Type | Description | Would address |
@@ -314,7 +358,30 @@ Current evaluations use three types of graders:
 └──────────────────┴──────────┴──────────┴───────────┴──────────┴─────────┘
 ```
 
----
+**Legend:** ✅ = Full test coverage · ⚠️ = Partial/planned coverage · ❌ = Not yet tested
+
+### Document type-specific test expectations
+
+**Tutorial** (✅ fully tested)
+- H1 format: `Tutorial: <verb> <noun>` (e.g., "Tutorial: Deploy a web app")
+- ms.topic: `tutorial`
+- Should include: prerequisites, learning objectives, checklist, multiple sections with ≤12 steps per section
+- Estimated completion time metadata present
+
+**Quickstart** (⚠️ planned — Phase 2)
+- H1 format: `Quickstart: <verb> <noun>` (e.g., "Quickstart: Create your first function")
+- ms.topic: `quickstart`
+- Should include: prerequisites, minimal steps (≤5–7), no "Next steps" section (next-steps button optional)
+- Fastest path to working outcome, not comprehensive learning
+- No lengthy explanations — focus on "just do this"
+
+**How-to** (⚠️ planned — Phase 2)
+- H1 format: `<verb> <noun>` — no prefix (e.g., "Configure Azure AD authentication")
+- ms.topic: `how-to`
+- May have multiple procedures / task sections, each ≤12 steps
+- Task-focused, not learning-focused (reader already knows the concept)
+- Prerequisites section optional (assume some knowledge)
+- "Next steps" section optional
 
 ## Artifacts reference
 
@@ -374,3 +441,4 @@ Requires Phase 2 data to calibrate. Focus on reliability and human alignment.
 - [ ] **Evaluator accuracy audit** — Test whether the Evaluate agent's scores agree with the LLM-as-judge (Phase 2) and human ratings (Phase 3)
 - [ ] **Regression detection** — Track evaluation scores over time; alert when a prompt or model change degrades output quality by >5%
 - [ ] **Suggestion actionability** — Measure how many Evaluate agent suggestions the Editor actually implements, and whether implemented suggestions improve scores
+

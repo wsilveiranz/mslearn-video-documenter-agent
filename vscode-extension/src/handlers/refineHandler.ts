@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { BackendClient, BackendError, DocumentResponse } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
+import { formatElapsed } from '../utils/progress';
+import { getProgressUpdateIntervalMs } from '../utils/config';
 
 /**
  * Produce a human-readable summary of what changed between two Markdown documents.
@@ -117,6 +119,9 @@ export async function handleRefine(
         let retries = 0;
         const maxRetries = 30; // 60 seconds max at 2s intervals
         let doc: DocumentResponse | null = null;
+        const refineStartTime = Date.now();
+        const refineProgressIntervalMs = getProgressUpdateIntervalMs();
+        let lastRefineEmitTime = 0;
 
         while (retries < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 2000));
@@ -129,6 +134,14 @@ export async function handleRefine(
             } catch {
                 // Document not ready yet — keep polling
             }
+
+            // Heartbeat with elapsed time
+            const now = Date.now();
+            if ((now - lastRefineEmitTime) >= refineProgressIntervalMs) {
+                lastRefineEmitTime = now;
+                stream.progress(`Refining document... (${formatElapsed(refineStartTime)})`);
+            }
+
             retries++;
         }
 

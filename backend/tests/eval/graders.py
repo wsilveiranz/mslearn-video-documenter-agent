@@ -497,8 +497,70 @@ def check_markdown_extensions(content: str) -> list[StyleFinding]:
 # Document structure checks
 # ---------------------------------------------------------------------------
 
+def check_step_count(content: str, max_steps: int = 12) -> list[StyleFinding]:
+    """Check that H2 sections don't exceed max_steps numbered items."""
+    findings: list[StyleFinding] = []
+    body = _get_body(content)
+    
+    # Split by H2 sections
+    numbered_blocks = re.split(r'\n## ', body)
+    for block in numbered_blocks:
+        steps = re.findall(r'^\d+\.\s', block, re.MULTILINE)
+        if len(steps) > max_steps:
+            section_name = block.split('\n')[0].strip()
+            findings.append(StyleFinding(
+                rule="structure-step-count",
+                category="structure",
+                severity="warning",
+                message=f"Section \"{section_name}\" has {len(steps)} steps (max {max_steps} recommended)",
+            ))
+    
+    return findings
+
+
+def check_doc_type_h1(content: str, doc_type: str) -> list[StyleFinding]:
+    """Validate that H1 heading matches the expected format for the document type."""
+    findings: list[StyleFinding] = []
+    headings = _extract_headings(content)
+    
+    if not headings:
+        return findings
+    
+    # Get H1 (level 1)
+    h1_heading = next((h for h in headings if h[1] == 1), None)
+    if not h1_heading:
+        return findings
+    
+    _, _, h1_text = h1_heading
+    
+    # Define expected H1 formats by doc type
+    h1_formats = {
+        "quickstart": (r"^Quickstart:\s+\S", "Quickstart: <verb> <noun>"),
+        "tutorial": (r"^Tutorial:\s+\S", "Tutorial: <verb> <noun>"),
+        "how-to": (r"^(?!Tutorial:|Quickstart:|What is\s)[^:]+$", "<verb> <noun> (no prefix)"),
+        "howto": (r"^(?!Tutorial:|Quickstart:|What is\s)[^:]+$", "<verb> <noun> (no prefix)"),
+        "concept": (r"^What is\s+\S", "What is <noun>?"),
+        "overview": (r"^What is\s+\S", "What is <noun>?"),
+    }
+    
+    if doc_type not in h1_formats:
+        return findings
+    
+    pattern, expected_format = h1_formats[doc_type]
+    if not re.match(pattern, h1_text):
+        findings.append(StyleFinding(
+            rule="heading-h1-doctype",
+            category="headings",
+            severity="error",
+            message=f"H1 \"{h1_text}\" doesn't match {doc_type} format ({expected_format})",
+            line=h1_heading[0],
+        ))
+    
+    return findings
+
+
 def check_structure(content: str, doc_type: str = "tutorial") -> list[StyleFinding]:
-    """Check document structure: prerequisites, next steps, clean up, checklist."""
+    """Check document structure: prerequisites, next steps, clean up, checklist, and doc-type-specific sections."""
     findings: list[StyleFinding] = []
     body = _get_body(content)
     headings = _extract_headings(content)
@@ -515,12 +577,12 @@ def check_structure(content: str, doc_type: str = "tutorial") -> list[StyleFindi
                 message="Missing 'Prerequisites' section (required for procedural docs)",
             ))
 
-    # Next steps
+    # Next steps (required for all doc types)
     if not any("next step" in h for h in heading_texts):
         findings.append(StyleFinding(
             rule="structure-next-steps",
             category="structure",
-            severity="info",
+            severity="warning",
             message="Missing 'Next steps' section",
         ))
 
@@ -545,17 +607,31 @@ def check_structure(content: str, doc_type: str = "tutorial") -> list[StyleFindi
                 message="Missing checklist (recommended for tutorials)",
             ))
 
-    # Step count per procedure (max 12)
-    numbered_blocks = re.split(r'\n## ', body)
-    for block in numbered_blocks:
-        steps = re.findall(r'^\d+\.\s', block, re.MULTILINE)
-        if len(steps) > 12:
-            section_name = block.split('\n')[0].strip()
+    # Doc-type-specific required sections
+    if doc_type == "overview":
+        required_sections = ["key features", "features", "requirements"]
+        if not any(any(req in h for h in heading_texts) for req in required_sections):
             findings.append(StyleFinding(
-                rule="structure-step-count",
+                rule="structure-overview-features",
                 category="structure",
                 severity="warning",
-                message=f"Section \"{section_name}\" has {len(steps)} steps (max 12 recommended)",
+                message="Overview missing 'Key features' or 'Features' section",
+            ))
+        if not any("requirement" in h for h in heading_texts):
+            findings.append(StyleFinding(
+                rule="structure-overview-requirements",
+                category="structure",
+                severity="warning",
+                message="Overview missing 'Requirements' section",
+            ))
+
+    if doc_type == "concept":
+        if not any("concept" in h or "key concept" in h for h in heading_texts):
+            findings.append(StyleFinding(
+                rule="structure-concept-sections",
+                category="structure",
+                severity="warning",
+                message="Concept article missing 'Key concepts' section",
             ))
 
     # Introduction — first paragraph should orient the reader
@@ -729,9 +805,11 @@ def run_all_style_checks(content: str, doc_type: str = "tutorial") -> StyleRepor
     report = StyleReport()
     report.findings.extend(check_frontmatter(content, doc_type))
     report.findings.extend(check_headings(content, doc_type))
+    report.findings.extend(check_doc_type_h1(content, doc_type))
     report.findings.extend(check_contractions(content))
     report.findings.extend(check_terminology(content))
     report.findings.extend(check_markdown_extensions(content))
     report.findings.extend(check_structure(content, doc_type))
+    report.findings.extend(check_step_count(content))
     report.findings.extend(check_serial_comma(content))
     return report

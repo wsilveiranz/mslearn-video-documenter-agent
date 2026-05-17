@@ -218,7 +218,7 @@ The user message may include a `## User-provided metadata` section with these fi
 - **author**: GitHub username for the article byline. If provided, include as `"author": "<value>"` in your output. If NOT provided, omit the field or set it to an empty string — do NOT invent a name.
 - **ms_author**: Microsoft alias. Same rules as author.
 - **ms_service**: Azure service slug (e.g., `azure-openai`). If provided, use it exactly. If NOT provided, infer from entities and context. This field also helps determine the document's audience and terminology.
-- **customer_intent**: A sentence in the format "As a <role>, I want <what> so that <why>". If provided, use this to guide the document's focus, audience targeting, and section prioritization. Include it in your output JSON.
+- **customer_intent**: A sentence in the format "As a <role>, I want <what> so that <why>". If provided by the user, use it exactly to guide the document's focus, audience targeting, and section prioritization. If NOT provided, infer a customer_intent from the video content — identify the viewer's role, what they want to accomplish, and why. **Always include customer_intent in your output JSON.**
 
 **Critical rule**: Never hallucinate author or ms_author values. If no value is provided and you cannot determine it from context, leave the field empty.
 

@@ -41,6 +41,25 @@ Return a structured JSON evaluation report:
       "severity": "minor"
     }
   ],
+  "rubric_appendix": [
+    {
+      "dimension": "completeness",
+      "score": 0.85,
+      "reasoning": "The document covers 17 of 20 distinct actions from the video...",
+      "evidence": [
+        "Step 3 maps to transcript segment at 1:23",
+        "OCR text 'Configure > Settings' matches step 5"
+      ],
+      "strengths": [
+        "All prerequisite steps are included",
+        "Code snippets match OCR exactly"
+      ],
+      "gaps": [
+        "Missing the environment variable configuration shown at 4:32",
+        "No mention of the validation step shown at 6:15"
+      ]
+    }
+  ],
   "summary": "The document covers the tutorial well with strong readability. Main gap is a missing environment variable in the deployment section. Two minor style issues remain."
 }
 ```
@@ -278,6 +297,27 @@ For each issue you find, provide:
 - Vague: "Improve the formatting" — which formatting, where?
 - Non-actionable: "The tone could be better" — what specifically should change?
 - Unreferenced: "Fix the heading" — which heading?
+
+---
+
+## Rubric appendix
+
+For each of the five scoring dimensions, provide a detailed rubric assessment in the `rubric_appendix` array. This helps identify bottlenecks and provides transparency into why each score was assigned.
+
+Each rubric assessment must include:
+
+1. **dimension**: the dimension name (must match the key in `scores` — use `completeness`, `technical_accuracy`, `style_compliance`, `readability`, `grounding`)
+2. **score**: the same score you assigned in the `scores` object
+3. **reasoning**: 2–4 sentences explaining *why* you assigned this score, referencing specific evidence
+4. **evidence**: a list of 2–5 specific observations from the document or extraction data that support your score (include transcript timestamps, OCR text, or section headings)
+5. **strengths**: what the document does well in this dimension (at least 1 item)
+6. **gaps**: what's missing or weak (empty list if score is 1.0, at least 1 item otherwise)
+
+**Rules:**
+- Include ALL five dimensions, even if they scored 1.0 (still provide reasoning and strengths)
+- The `score` in each rubric entry must exactly match the corresponding score in the `scores` object
+- Keep `reasoning` concise — focus on the most impactful factors
+- `evidence` must be traceable — cite specific sections, timestamps, or OCR text
 
 ---
 

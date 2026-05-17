@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import structlog
 from agent_framework import Agent
 
-from src.models.evaluation import EvaluationReport, EvaluationScores, EvaluationSuggestion
+from src.models.evaluation import EvaluationReport, EvaluationScores, EvaluationSuggestion, RubricAssessment
 from src.utils.paths import get_prompts_dir
 
 if TYPE_CHECKING:
@@ -198,12 +198,38 @@ class EvaluateAgent:
                 )
             )
 
+        # Parse rubric appendix (optional — graceful fallback to empty list)
+        rubric_appendix: list[RubricAssessment] = []
+        for entry in parsed.get("rubric_appendix", []):
+            try:
+                # The prompt uses "technical_accuracy" but the model field is "accuracy"
+                dim = entry.get("dimension", "")
+                if dim == "technical_accuracy":
+                    dim = "accuracy"
+                rubric_appendix.append(
+                    RubricAssessment(
+                        dimension=dim,
+                        score=float(entry.get("score", 0.0)),
+                        reasoning=entry.get("reasoning", ""),
+                        evidence=entry.get("evidence", []),
+                        strengths=entry.get("strengths", []),
+                        gaps=entry.get("gaps", []),
+                    )
+                )
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "evaluate.rubric_parse_error",
+                    dimension=entry.get("dimension", "unknown"),
+                    error=str(exc),
+                )
+
         return EvaluationReport(
             document_id=document_id,
             scores=scores,
             passed=scores.passed,
             suggestions=suggestions,
             summary=parsed.get("summary", ""),
+            rubric_appendix=rubric_appendix,
         )
 
     def _fallback_report(self, document_id: str) -> EvaluationReport:
