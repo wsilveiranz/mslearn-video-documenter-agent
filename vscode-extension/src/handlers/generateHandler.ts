@@ -7,6 +7,7 @@ import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/do
 import { BackendMetadata } from '../api/backendClient';
 import { getProgressUpdateIntervalMs } from '../utils/config';
 import { formatElapsed } from '../utils/progress';
+import { getCompanionTips } from '../utils/companions';
 
 export async function handleGenerate(
     request: vscode.ChatRequest,
@@ -260,6 +261,10 @@ export async function handleGenerate(
                 '- Use `/refine` to improve specific sections\n' +
                 '- Or just type your feedback directly — I\'ll treat it as a refinement request\n'
             );
+            const companionTips = getCompanionTips();
+            if (companionTips) {
+                stream.markdown(companionTips);
+            }
         } catch (saveError) {
             // Document generated but save/preview failed — show content in chat as fallback
             stream.markdown(
@@ -271,6 +276,10 @@ export async function handleGenerate(
                 '\n\n---\n\n' +
                 '💡 Use `/save` to save the document manually.\n'
             );
+            const companionTips = getCompanionTips();
+            if (companionTips) {
+                stream.markdown(companionTips);
+            }
         }
 
     } catch (error) {

@@ -5,6 +5,7 @@ import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
 import { extractTargetPath, resolveTargetPathPure } from '../utils/intentClassification';
+import { getCompanionTips } from '../utils/companions';
 
 /**
  * Resolve the target path using the pure resolver + runtime checks.
@@ -112,6 +113,10 @@ export async function handleSave(
             `| Revision | ${doc.revision_number} |\n` +
             warnings
         );
+        const companionTips = getCompanionTips();
+        if (companionTips) {
+            stream.markdown(companionTips);
+        }
 
         // Non-blocking notification — don't await to avoid freezing the chat
         void vscode.window.showInformationMessage(

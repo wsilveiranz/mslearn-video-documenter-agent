@@ -17,6 +17,13 @@
   "categories": [
     "Chat"
   ],
+  "extensionDependencies": [
+    "docsmsft.docs-authoring-pack"
+  ],
+  "extensionPack": [
+    "msft-content.content-mentor",
+    "docsmsft.learn-authoring-assistant"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
