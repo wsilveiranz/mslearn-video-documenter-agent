@@ -7,7 +7,7 @@ import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/do
 import { BackendMetadata } from '../api/backendClient';
 import { getProgressUpdateIntervalMs } from '../utils/config';
 import { formatElapsed } from '../utils/progress';
-import { getCompanionTips } from '../utils/companions';
+import { detectCompanions } from '../utils/companions';
 
 export async function handleGenerate(
     request: vscode.ChatRequest,
@@ -258,12 +258,19 @@ export async function handleGenerate(
                 `| Revision | ${doc.revision_number} |\n` +
                 `| Saved to | \`${savedUri.fsPath}\` |\n\n` +
                 '💡 **Next steps:**\n' +
-                '- Use `/edit` to improve specific sections\n' +
+                '- Use `/polish all` to run quality checks (style, branding, metadata, formatting)\n' +
+                '- Use `/edit` to make specific content changes\n' +
                 '- Or just type your feedback directly — I\'ll treat it as an edit request\n'
             );
-            const companionTips = getCompanionTips();
-            if (companionTips) {
-                stream.markdown(companionTips);
+            // Check if any companions are available for polish
+            const companions = detectCompanions();
+            const availableCompanions = companions.filter(c => c.available);
+            if (availableCompanions.length > 0) {
+                const companionNames = availableCompanions.map(c => c.name).join(', ');
+                stream.markdown(
+                    `\n🔌 **Companion extensions detected:** ${companionNames}\n` +
+                    '`/polish` will use these for enhanced quality checks.\n'
+                );
             }
         } catch (saveError) {
             // Document generated but save/preview failed — show content in chat as fallback
@@ -276,9 +283,15 @@ export async function handleGenerate(
                 '\n\n---\n\n' +
                 '💡 Use `/save` to save the document manually.\n'
             );
-            const companionTips = getCompanionTips();
-            if (companionTips) {
-                stream.markdown(companionTips);
+            // Check if any companions are available for polish
+            const fallbackCompanions = detectCompanions();
+            const fallbackAvailable = fallbackCompanions.filter(c => c.available);
+            if (fallbackAvailable.length > 0) {
+                const companionNames = fallbackAvailable.map(c => c.name).join(', ');
+                stream.markdown(
+                    `\n🔌 **Companion extensions detected:** ${companionNames}\n` +
+                    '`/polish` will use these for enhanced quality checks.\n'
+                );
             }
         }
 

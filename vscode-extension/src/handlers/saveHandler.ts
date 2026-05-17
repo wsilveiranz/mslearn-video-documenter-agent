@@ -5,7 +5,7 @@ import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
 import { extractTargetPath, resolveTargetPathPure } from '../utils/intentClassification';
-import { getCompanionTips } from '../utils/companions';
+import { detectCompanions } from '../utils/companions';
 
 /**
  * Resolve the target path using the pure resolver + runtime checks.
@@ -113,9 +113,18 @@ export async function handleSave(
             `| Revision | ${doc.revision_number} |\n` +
             warnings
         );
-        const companionTips = getCompanionTips();
-        if (companionTips) {
-            stream.markdown(companionTips);
+        stream.markdown(
+            '💡 Use `/polish all` to run final quality checks before publishing.\n'
+        );
+        // Check if any companions are available for polish
+        const companions = detectCompanions();
+        const availableCompanions = companions.filter(c => c.available);
+        if (availableCompanions.length > 0) {
+            const companionNames = availableCompanions.map(c => c.name).join(', ');
+            stream.markdown(
+                `\n🔌 **Companion extensions detected:** ${companionNames}\n` +
+                '`/polish` will use these for enhanced quality checks.\n'
+            );
         }
 
         // Non-blocking notification — don't await to avoid freezing the chat
