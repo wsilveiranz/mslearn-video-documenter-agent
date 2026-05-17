@@ -15,6 +15,8 @@ from src.config import get_settings
 from src.models.document import DocType, DocumentMetadata
 from src.models.video import ExtractionResult, ProcessingMode
 from src.services.copilot_client import create_copilot_client
+from src.services.learn_mcp_tools import LEARN_MCP_SERVER, LearnMCPTools
+from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
 
 from .editor import EditorAgent
 from .evaluate import EvaluateAgent
@@ -154,101 +156,119 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
     # Create shared LLM client — pass resolved mode so cloud requests always use Foundry
     client = create_llm_client(mode)
 
-    # Stage 1: Ingestion
-    logger.info("pipeline.stage", stage="ingestion")
-    ingestion_agent = IngestionAgent()
-    ingestion_result = await ingestion_agent.process(request.video_source, mode)
-
-    # Stage 2: Extraction
-    logger.info("pipeline.stage", stage="extraction")
-    extraction_agent = ExtractionAgent(foundry_client=client)
-    extraction_result = await extraction_agent.process(ingestion_result.metadata, mode)
-
-    # Validate extraction produced meaningful data
-    if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
-        msg = (
-            "Extraction produced no transcript, scenes, or keyframes. "
-            "The pipeline cannot generate grounded documentation from empty data. "
-            "Check that the video file is valid and processing mode is correct."
-        )
-        logger.error("pipeline.empty_extraction", video_source=request.video_source, mode=mode)
-        raise RuntimeError(msg)
-
-    # Convert supplementary documents to Markdown
-    if request.supplementary_documents:
-        from src.services.document_converter import DocumentConversionError, DocumentConverter
-
-        converter = DocumentConverter()
-        converted_parts = []
-        for doc_path in request.supplementary_documents:
-            try:
-                converted = converter.convert(doc_path)
-                converted_parts.append(f"## Supplementary: {Path(doc_path).name}\n\n{converted.markdown}")
-                logger.info("pipeline.supplementary_converted", path=doc_path, words=converted.word_count)
-            except (ValueError, DocumentConversionError, FileNotFoundError) as e:
-                logger.warning("pipeline.supplementary_conversion_failed", path=doc_path, error=str(e))
-
-        if converted_parts:
-            extra_context = "\n\n---\n\n".join(converted_parts)
-            if request.supplementary_context:
-                request.supplementary_context += "\n\n---\n\n" + extra_context
-            else:
-                request.supplementary_context = extra_context
-
-    # Merge Work IQ context into supplementary context
-    if request.workiq_context:
-        logger.info("pipeline.workiq_context", length=len(request.workiq_context))
-        workiq_section = f"## M365 Context (via Work IQ)\n\n{request.workiq_context}"
-        if request.supplementary_context:
-            request.supplementary_context += "\n\n---\n\n" + workiq_section
-        else:
-            request.supplementary_context = workiq_section
-
-    # Stage 3: Structure
-    logger.info("pipeline.stage", stage="structure")
-    structure_agent = StructureAgent(client)
-    outline = await structure_agent.process(
-        extraction_result, request.doc_type, request.supplementary_context, request.metadata
+    # Create MCP client for documentation grounding
+    learn_server = MCPServerConfig(
+        name=LEARN_MCP_SERVER,
+        transport_type=MCPTransportType.STREAMABLE_HTTP,
+        endpoint=settings.mcp_learn_endpoint,
+        enabled=bool(settings.mcp_learn_endpoint),
     )
+    mcp_manager = MCPClientManager(
+        servers={LEARN_MCP_SERVER: learn_server},
+        cache_ttl=settings.mcp_cache_ttl_seconds,
+        request_timeout=settings.mcp_request_timeout_seconds,
+        graceful_degradation=settings.mcp_graceful_degradation,
+    )
+    learn_tools = LearnMCPTools(mcp_manager)
 
-    # Stage 4: Writer
-    logger.info("pipeline.stage", stage="writer")
-    writer_agent = WriterAgent(client)
-    document = await writer_agent.process(outline, extraction_result)
+    try:
+        # Stage 1: Ingestion
+        logger.info("pipeline.stage", stage="ingestion")
+        ingestion_agent = IngestionAgent()
+        ingestion_result = await ingestion_agent.process(request.video_source, mode)
 
-    # Stage 5: Editor
-    logger.info("pipeline.stage", stage="editor")
-    editor_agent = EditorAgent(client)
-    document = await editor_agent.process(document)
+        # Stage 2: Extraction
+        logger.info("pipeline.stage", stage="extraction")
+        extraction_agent = ExtractionAgent(foundry_client=client)
+        extraction_result = await extraction_agent.process(ingestion_result.metadata, mode)
 
-    # Stage 6: Evaluate
-    logger.info("pipeline.stage", stage="evaluate")
-    evaluate_agent = EvaluateAgent(client)
-    evaluation = await evaluate_agent.process(document, extraction_result)
+        # Validate extraction produced meaningful data
+        if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
+            msg = (
+                "Extraction produced no transcript, scenes, or keyframes. "
+                "The pipeline cannot generate grounded documentation from empty data. "
+                "Check that the video file is valid and processing mode is correct."
+            )
+            logger.error("pipeline.empty_extraction", video_source=request.video_source, mode=mode)
+            raise RuntimeError(msg)
 
-    # Optional: Re-edit if evaluation fails (up to MAX_REVISION_ITERATIONS)
-    iteration = 1
-    while not evaluation.passed and iteration < MAX_REVISION_ITERATIONS:
-        iteration += 1
-        logger.info("pipeline.revision", iteration=iteration, score=evaluation.scores.overall)
+        # Convert supplementary documents to Markdown
+        if request.supplementary_documents:
+            from src.services.document_converter import DocumentConversionError, DocumentConverter
 
-        # Feed evaluation suggestions back to editor
-        feedback = "\n".join(
-            f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions
+            converter = DocumentConverter()
+            converted_parts = []
+            for doc_path in request.supplementary_documents:
+                try:
+                    converted = converter.convert(doc_path)
+                    converted_parts.append(f"## Supplementary: {Path(doc_path).name}\n\n{converted.markdown}")
+                    logger.info("pipeline.supplementary_converted", path=doc_path, words=converted.word_count)
+                except (ValueError, DocumentConversionError, FileNotFoundError) as e:
+                    logger.warning("pipeline.supplementary_conversion_failed", path=doc_path, error=str(e))
+
+            if converted_parts:
+                extra_context = "\n\n---\n\n".join(converted_parts)
+                if request.supplementary_context:
+                    request.supplementary_context += "\n\n---\n\n" + extra_context
+                else:
+                    request.supplementary_context = extra_context
+
+        # Merge Work IQ context into supplementary context
+        if request.workiq_context:
+            logger.info("pipeline.workiq_context", length=len(request.workiq_context))
+            workiq_section = f"## M365 Context (via Work IQ)\n\n{request.workiq_context}"
+            if request.supplementary_context:
+                request.supplementary_context += "\n\n---\n\n" + workiq_section
+            else:
+                request.supplementary_context = workiq_section
+
+        # Stage 3: Structure
+        logger.info("pipeline.stage", stage="structure")
+        structure_agent = StructureAgent(client, learn_tools=learn_tools)
+        outline = await structure_agent.process(
+            extraction_result, request.doc_type, request.supplementary_context, request.metadata
         )
-        document = await editor_agent.process(document, feedback=feedback)
+
+        # Stage 4: Writer
+        logger.info("pipeline.stage", stage="writer")
+        writer_agent = WriterAgent(client, learn_tools=learn_tools)
+        document = await writer_agent.process(outline, extraction_result)
+
+        # Stage 5: Editor
+        logger.info("pipeline.stage", stage="editor")
+        editor_agent = EditorAgent(client, learn_tools=learn_tools)
+        document = await editor_agent.process(document)
+
+        # Stage 6: Evaluate
+        logger.info("pipeline.stage", stage="evaluate")
+        evaluate_agent = EvaluateAgent(client)
         evaluation = await evaluate_agent.process(document, extraction_result)
 
-    logger.info(
-        "pipeline.complete",
-        doc_id=document.document_id,
-        passed=evaluation.passed,
-        score=evaluation.scores.overall,
-        iterations=iteration,
-    )
+        # Optional: Re-edit if evaluation fails (up to MAX_REVISION_ITERATIONS)
+        iteration = 1
+        while not evaluation.passed and iteration < MAX_REVISION_ITERATIONS:
+            iteration += 1
+            logger.info("pipeline.revision", iteration=iteration, score=evaluation.scores.overall)
 
-    return PipelineResult(
-        document=document,
-        evaluation=evaluation,
-        extraction=extraction_result,
-    )
+            # Feed evaluation suggestions back to editor
+            feedback = "\n".join(
+                f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions
+            )
+            document = await editor_agent.process(document, feedback=feedback)
+            evaluation = await evaluate_agent.process(document, extraction_result)
+
+        logger.info(
+            "pipeline.complete",
+            doc_id=document.document_id,
+            passed=evaluation.passed,
+            score=evaluation.scores.overall,
+            iterations=iteration,
+        )
+
+        return PipelineResult(
+            document=document,
+            evaluation=evaluation,
+            extraction=extraction_result,
+        )
+    finally:
+        await mcp_manager.close()

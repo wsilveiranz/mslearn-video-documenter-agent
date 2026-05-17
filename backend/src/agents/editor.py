@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
 
     from src.models.document import GeneratedDocument
+    from src.services.learn_mcp_tools import LearnMCPTools
 
 logger = structlog.get_logger()
 
@@ -21,8 +22,9 @@ logger = structlog.get_logger()
 class EditorAgent:
     """Reviews and refines documents for MS Learn voice, tone, and formatting compliance."""
 
-    def __init__(self, client: FoundryChatClient) -> None:
+    def __init__(self, client: FoundryChatClient, learn_tools: LearnMCPTools | None = None) -> None:
         self._client = client
+        self._learn_tools = learn_tools
         self._load_system_prompt()
 
     def _load_system_prompt(self) -> None:
@@ -64,6 +66,43 @@ class EditorAgent:
         content = re.sub(r'^---\n.*?\n---\n', '', text, flags=re.DOTALL)
         return len(content.split())
 
+    async def _fetch_style_reference(self, document: GeneratedDocument) -> str:
+        """Fetch a published MS Learn article in the same topic for style comparison."""
+        if not self._learn_tools or not self._learn_tools.available:
+            return ""
+
+        topic = document.outline.frontmatter.title or document.outline.frontmatter.ms_service
+        if not topic:
+            return ""
+
+        try:
+            results = await self._learn_tools.search_docs(topic, top_k=1)
+            if not results or not results[0].url:
+                return ""
+
+            doc = await self._learn_tools.fetch_doc(results[0].url)
+            if not doc.content:
+                return ""
+
+            logger.info(
+                "editor.mcp_style_reference_fetched",
+                doc_id=document.document_id,
+                reference_url=results[0].url,
+            )
+            return (
+                f"## Published MS Learn reference (use for style consistency)\n\n"
+                f"Title: {doc.title or results[0].title}\n"
+                f"URL: {results[0].url}\n\n"
+                f"{doc.content}\n"
+            )
+        except Exception as exc:
+            logger.warning(
+                "editor.mcp_style_reference_failed",
+                doc_id=document.document_id,
+                error=str(exc),
+            )
+            return ""
+
     async def process(
         self, document: GeneratedDocument, feedback: str | None = None
     ) -> GeneratedDocument:
@@ -79,6 +118,9 @@ class EditorAgent:
         """
         logger.info("editor.start", doc_id=document.document_id, has_feedback=feedback is not None)
 
+        # Fetch a published reference article for style comparison
+        style_reference = await self._fetch_style_reference(document)
+
         user_message_parts = [
             document.markdown_content,
             "",
@@ -86,6 +128,8 @@ class EditorAgent:
         ]
         if feedback:
             user_message_parts.insert(1, f"Evaluation feedback to address:\n{feedback}\n")
+        if style_reference:
+            user_message_parts.insert(1, style_reference)
         user_message = "\n".join(user_message_parts)
 
         response_text: str | None = None

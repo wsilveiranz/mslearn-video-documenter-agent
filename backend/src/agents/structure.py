@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
 
     from src.models.video import ExtractionResult, Keyframe
+    from src.services.learn_mcp_tools import LearnMCPTools
 
 logger = structlog.get_logger()
 
@@ -33,8 +34,9 @@ _MS_TOPIC_MAP: dict[DocType, str] = {
 class StructureAgent:
     """Analyzes extraction results and creates a document outline matching an MS Learn template."""
 
-    def __init__(self, client: FoundryChatClient) -> None:
+    def __init__(self, client: FoundryChatClient, learn_tools: LearnMCPTools | None = None) -> None:
         self._client = client
+        self._learn_tools = learn_tools
         self._load_system_prompt()
 
     def _load_system_prompt(self) -> None:
@@ -66,7 +68,10 @@ class StructureAgent:
         """
         logger.info("structure.start", doc_type=doc_type, scenes=len(extraction.scenes))
 
-        user_message = self._build_user_message(extraction, doc_type, supplementary_context, metadata)
+        # Fetch related published articles for grounding context
+        mcp_context = await self._fetch_mcp_context(extraction)
+
+        user_message = self._build_user_message(extraction, doc_type, supplementary_context, metadata, mcp_context)
 
         agent = Agent(
             client=self._client,
@@ -91,12 +96,58 @@ class StructureAgent:
     # Private helpers
     # ------------------------------------------------------------------
 
+    async def _fetch_mcp_context(self, extraction: ExtractionResult) -> str:
+        """Search MS Learn for related articles and return them as context text."""
+        if not self._learn_tools or not self._learn_tools.available:
+            return ""
+
+        # Derive a search query from entities and transcript keywords
+        topic = self._extract_topic(extraction)
+        if not topic:
+            return ""
+
+        try:
+            results = await self._learn_tools.search_docs(topic, top_k=3)
+        except Exception as exc:
+            logger.warning("structure.mcp_search_failed", topic=topic, error=str(exc))
+            return ""
+
+        if not results:
+            return ""
+
+        logger.info("structure.mcp_articles_found", topic=topic, count=len(results))
+        lines = []
+        for r in results:
+            line = f"- [{r.title}]({r.url})"
+            if r.description:
+                line += f": {r.description}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _extract_topic(self, extraction: ExtractionResult) -> str:
+        """Derive a concise search topic from the extraction data."""
+        # Prefer named service/product entities
+        service_types = {"product", "service", "technology", "brand"}
+        for entity in extraction.entities:
+            if entity.entity_type.lower() in service_types and entity.name:
+                return entity.name
+
+        # Fall back to first entity name
+        if extraction.entities:
+            return extraction.entities[0].name
+
+        # Fall back to first 10 words of transcript
+        transcript_text = " ".join(seg.text for seg in extraction.transcript)
+        words = transcript_text.split()[:10]
+        return " ".join(words)
+
     def _build_user_message(
         self,
         extraction: ExtractionResult,
         doc_type: DocType,
         supplementary_context: str,
         metadata: DocumentMetadata | None = None,
+        mcp_context: str = "",
     ) -> str:
         """Build the user message summarising the extraction data for the LLM."""
         transcript_text = " ".join(seg.text for seg in extraction.transcript)
@@ -134,6 +185,9 @@ class StructureAgent:
 
         if supplementary_context:
             parts.append(f"## Supplementary context\n{supplementary_context}")
+
+        if mcp_context:
+            parts.append(f"## Related Microsoft Learn articles (for structural reference)\n{mcp_context}")
 
         if metadata:
             meta_parts = []
