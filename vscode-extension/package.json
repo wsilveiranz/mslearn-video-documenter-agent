@@ -60,6 +60,10 @@
           {
             "name": "status",
             "description": "Check processing status"
+          },
+          {
+            "name": "polish",
+            "description": "Run quality checks: style, branding, metadata, SEO, formatting, security"
           }
         ]
       }

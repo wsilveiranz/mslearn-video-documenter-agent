@@ -9,6 +9,7 @@ import { handleEdit } from './handlers/editHandler';
 import { handleSave } from './handlers/saveHandler';
 import { handleStatus } from './handlers/statusHandler';
 import { handleConversation } from './handlers/conversationHandler';
+import { handlePolish } from './handlers/polishHandler';
 
 export function createChatHandler(
     extensionContext: vscode.ExtensionContext
@@ -37,6 +38,8 @@ export function createChatHandler(
             return handleSave(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'status') {
             return handleStatus(stream, client, stateManager);
+        } else if (command === 'polish') {
+            return handlePolish(request, stream, token, client, stateManager, outputManager);
         }
 
         return handleConversation(request, stream, token, client, stateManager, outputManager);
