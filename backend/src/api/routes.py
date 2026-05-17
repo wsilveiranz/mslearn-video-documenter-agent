@@ -331,8 +331,14 @@ async def _run_extraction(video_id: str) -> None:
                 detail="Extraction produced no transcript, scenes, or keyframes",
             )
             job.status = ProcessingStatus.FAILED
-            job.error_message = "Extraction produced no transcript, scenes, or keyframes. The video may be unreadable or unsupported."
-            manager.send_progress(video_id, "failed", 2, 6, "Extraction failed: no content could be extracted from the video.")
+            job.error_message = (
+                "Extraction produced no transcript, scenes, or keyframes. "
+                "The video may be unreadable or unsupported."
+            )
+            manager.send_progress(
+                video_id, "failed", 2, 6,
+                "Extraction failed: no content could be extracted from the video.",
+            )
             manager.clear_progress(video_id)
             return
         else:
