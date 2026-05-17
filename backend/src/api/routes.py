@@ -843,3 +843,63 @@ async def convert_document_path(request: ConvertPathRequest):
     except Exception as e:
         logger.error("api.convert_path_failed", path=request.path, error=str(e))
         raise HTTPException(status_code=500, detail="Document conversion failed") from e
+
+
+# --- M365 Context Search ---
+
+class M365SearchRequest(BaseModel):
+    query: str
+    video_id: str | None = None
+
+
+@router.post("/context/search-m365")
+async def search_m365_context(request: M365SearchRequest):
+    """Search M365 for supplementary context via Work IQ.
+
+    This endpoint is user-triggered — it should only be called when the
+    user explicitly requests M365 context enrichment.
+    """
+    from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+    from src.services.workiq_mcp_tools import WORKIQ_MCP_SERVER, WorkIQTools
+
+    settings = get_settings()
+
+    if not settings.mcp_workiq_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Work IQ integration is not enabled. Set MCP_WORKIQ_ENABLED=true.",
+        )
+
+    workiq_server = MCPServerConfig(
+        name=WORKIQ_MCP_SERVER,
+        transport_type=MCPTransportType.STDIO,
+        command=settings.mcp_workiq_npx_path,
+        args=["-y", "@microsoft/workiq", "mcp"],
+        enabled=True,
+    )
+    mcp_manager = MCPClientManager(
+        servers={WORKIQ_MCP_SERVER: workiq_server},
+        cache_ttl=settings.mcp_cache_ttl_seconds,
+        request_timeout=settings.mcp_request_timeout_seconds,
+        graceful_degradation=settings.mcp_graceful_degradation,
+    )
+
+    try:
+        tools = WorkIQTools(mcp_manager)
+        result = await tools.search_context(request.query)
+
+        if not result.available:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Work IQ MCP server is not available. "
+                    "Ensure @microsoft/workiq is installed and M365 Copilot is configured."
+                ),
+            )
+
+        if request.video_id:
+            logger.info("api.m365_search", video_id=request.video_id, query=request.query)
+
+        return result
+    finally:
+        await mcp_manager.close()

@@ -66,6 +66,20 @@ export interface HealthResponse {
     service: string;
 }
 
+export interface M365Document {
+    title: string;
+    content_preview: string;
+    url: string;
+    source_type: string;
+}
+
+export interface M365SearchResult {
+    documents: M365Document[];
+    summary: string;
+    query: string;
+    available: boolean;
+}
+
 export interface ProgressMessage {
     type: string; // "progress"
     video_id: string;
@@ -200,6 +214,18 @@ export class BackendClient {
             body.model = model;
         }
         return this.post<GenerateResponse>(`/documents/${documentId}/refine`, body);
+    }
+
+    /**
+     * Search M365 for supplementary context via Work IQ.
+     * Only call when the user explicitly requests context enrichment.
+     */
+    async searchM365Context(query: string, videoId?: string): Promise<M365SearchResult> {
+        const body: Record<string, unknown> = { query };
+        if (videoId) {
+            body.video_id = videoId;
+        }
+        return this.post<M365SearchResult>('/context/search-m365', body);
     }
 
     connectProgress(videoId: string, onProgress: (msg: ProgressMessage) => void): Disposable {

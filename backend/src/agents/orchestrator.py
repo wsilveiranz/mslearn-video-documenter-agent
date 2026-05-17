@@ -43,6 +43,9 @@ class PipelineInput(BaseModel):
     supplementary_context: str = Field(
         default="", description="Additional context (README, API specs, etc.)"
     )
+    workiq_context: str = Field(
+        default="", description="Pre-fetched M365 context from Work IQ"
+    )
     supplementary_documents: list[str] = Field(
         default_factory=list,
         description="Paths to supplementary document files (.docx, .pdf, .pptx) to convert and include",
@@ -191,6 +194,15 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
                 request.supplementary_context += "\n\n---\n\n" + extra_context
             else:
                 request.supplementary_context = extra_context
+
+    # Merge Work IQ context into supplementary context
+    if request.workiq_context:
+        logger.info("pipeline.workiq_context", length=len(request.workiq_context))
+        workiq_section = f"## M365 Context (via Work IQ)\n\n{request.workiq_context}"
+        if request.supplementary_context:
+            request.supplementary_context += "\n\n---\n\n" + workiq_section
+        else:
+            request.supplementary_context = workiq_section
 
     # Stage 3: Structure
     logger.info("pipeline.stage", stage="structure")
