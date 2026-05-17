@@ -258,8 +258,8 @@ export async function handleGenerate(
                 `| Revision | ${doc.revision_number} |\n` +
                 `| Saved to | \`${savedUri.fsPath}\` |\n\n` +
                 '💡 **Next steps:**\n' +
-                '- Use `/refine` to improve specific sections\n' +
-                '- Or just type your feedback directly — I\'ll treat it as a refinement request\n'
+                '- Use `/edit` to improve specific sections\n' +
+                '- Or just type your feedback directly — I\'ll treat it as an edit request\n'
             );
             const companionTips = getCompanionTips();
             if (companionTips) {

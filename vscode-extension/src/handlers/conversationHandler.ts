@@ -3,7 +3,7 @@ import { BackendClient } from '../api/backendClient';
 import { ConversationStateManager, ConversationState } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
 import { classifyIntentFast, parseLlmClassification, ConversationIntent } from '../utils/intentClassification';
-import { handleRefine } from './refineHandler';
+import { handleEdit } from './editHandler';
 import { handleSave } from './saveHandler';
 
 /**
@@ -106,8 +106,8 @@ export async function handleConversation(
             case 'save':
                 return handleSave(request, stream, token, client, stateManager, outputManager);
             case 'refine':
-                stream.markdown('*Treating your message as refinement feedback...*\n\n');
-                return handleRefine(request, stream, token, client, stateManager, outputManager);
+                stream.markdown('*Treating your message as edit feedback...*\n\n');
+                return handleEdit(request, stream, token, client, stateManager, outputManager);
             case 'general':
                 // Fall through to general conversation below
                 break;
@@ -122,7 +122,7 @@ export async function handleConversation(
         'Microsoft Learn-style documentation from screen recording videos. ' +
         'You can analyze videos, generate documentation in various MS Learn formats ' +
         '(Quickstart, Tutorial, How-to, Concept, Overview), and refine generated content. ' +
-        'Available commands: /plan, /analyze, /generate, /refine, /save, /status. ' +
+        'Available commands: /plan, /analyze, /generate, /edit, /save, /status. ' +
         'Keep responses concise and helpful.\n\n' +
         '## Current Session State\n' +
         stateContext + '\n\n' +

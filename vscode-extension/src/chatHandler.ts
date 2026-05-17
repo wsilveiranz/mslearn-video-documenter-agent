@@ -5,7 +5,7 @@ import { createOutputManager } from './utils/outputManager';
 import { handleAnalyze } from './handlers/analyzeHandler';
 import { handleGenerate } from './handlers/generateHandler';
 import { handlePlan } from './handlers/planHandler';
-import { handleRefine } from './handlers/refineHandler';
+import { handleEdit } from './handlers/editHandler';
 import { handleSave } from './handlers/saveHandler';
 import { handleStatus } from './handlers/statusHandler';
 import { handleConversation } from './handlers/conversationHandler';
@@ -31,8 +31,8 @@ export function createChatHandler(
             return handleAnalyze(request, stream, token, client, stateManager);
         } else if (command === 'generate') {
             return handleGenerate(request, stream, token, client, stateManager, outputManager);
-        } else if (command === 'refine') {
-            return handleRefine(request, stream, token, client, stateManager, outputManager);
+        } else if (command === 'edit' || command === 'refine') {
+            return handleEdit(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'save') {
             return handleSave(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'status') {

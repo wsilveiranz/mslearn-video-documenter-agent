@@ -50,8 +50,8 @@
             "description": "Generate documentation from analyzed video"
           },
           {
-            "name": "refine",
-            "description": "Refine a section of generated documentation"
+            "name": "edit",
+            "description": "Edit a section of generated documentation"
           },
           {
             "name": "save",
