@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -41,6 +42,10 @@ class PipelineInput(BaseModel):
     )
     supplementary_context: str = Field(
         default="", description="Additional context (README, API specs, etc.)"
+    )
+    supplementary_documents: list[str] = Field(
+        default_factory=list,
+        description="Paths to supplementary document files (.docx, .pdf, .pptx) to convert and include",
     )
     metadata: DocumentMetadata | None = Field(
         default=None, description="User-provided frontmatter metadata"
@@ -165,6 +170,27 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
         )
         logger.error("pipeline.empty_extraction", video_source=request.video_source, mode=mode)
         raise RuntimeError(msg)
+
+    # Convert supplementary documents to Markdown
+    if request.supplementary_documents:
+        from src.services.document_converter import DocumentConversionError, DocumentConverter
+
+        converter = DocumentConverter()
+        converted_parts = []
+        for doc_path in request.supplementary_documents:
+            try:
+                converted = converter.convert(doc_path)
+                converted_parts.append(f"## Supplementary: {Path(doc_path).name}\n\n{converted.markdown}")
+                logger.info("pipeline.supplementary_converted", path=doc_path, words=converted.word_count)
+            except (ValueError, DocumentConversionError, FileNotFoundError) as e:
+                logger.warning("pipeline.supplementary_conversion_failed", path=doc_path, error=str(e))
+
+        if converted_parts:
+            extra_context = "\n\n---\n\n".join(converted_parts)
+            if request.supplementary_context:
+                request.supplementary_context += "\n\n---\n\n" + extra_context
+            else:
+                request.supplementary_context = extra_context
 
     # Stage 3: Structure
     logger.info("pipeline.stage", stage="structure")

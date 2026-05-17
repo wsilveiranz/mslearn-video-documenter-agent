@@ -802,3 +802,44 @@ async def refine_document(
         status="queued",
         message="Refinement queued.",
     )
+
+
+# --- Document Conversion Endpoints ---
+
+class ConvertPathRequest(BaseModel):
+    path: str
+
+
+@router.post("/context/convert-document")
+async def convert_document_upload(file: UploadFile):
+    """Convert an uploaded document file to Markdown."""
+    from src.services.document_converter import DocumentConversionError, DocumentConverter
+
+    converter = DocumentConverter()
+    try:
+        content = await file.read()
+        result = converter.convert_bytes(content, file.filename or "unknown")
+        return result
+    except (ValueError, DocumentConversionError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("api.convert_document_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Document conversion failed") from e
+
+
+@router.post("/context/convert-path")
+async def convert_document_path(request: ConvertPathRequest):
+    """Convert a local document file to Markdown by path."""
+    from src.services.document_converter import DocumentConversionError, DocumentConverter
+
+    converter = DocumentConverter()
+    try:
+        result = converter.convert(request.path)
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except (ValueError, DocumentConversionError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("api.convert_path_failed", path=request.path, error=str(e))
+        raise HTTPException(status_code=500, detail="Document conversion failed") from e

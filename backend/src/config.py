@@ -102,6 +102,32 @@ class Settings(BaseSettings):
         description="Shared secret for authenticating requests to the Copilot LM Proxy",
     )
 
+    # --- MCP Integration ---
+    mcp_learn_endpoint: str = Field(
+        default="https://learn.microsoft.com/api/mcp",
+        description="Microsoft Learn MCP Server endpoint (Streamable HTTP)",
+    )
+    mcp_cache_ttl_seconds: int = Field(
+        default=3600,
+        description="TTL in seconds for MCP response cache (default: 1 hour)",
+    )
+    mcp_request_timeout_seconds: int = Field(
+        default=30,
+        description="Timeout in seconds for individual MCP tool calls",
+    )
+    mcp_workiq_enabled: bool = Field(
+        default=False,
+        description="Enable Work IQ MCP integration for M365 context enrichment",
+    )
+    mcp_workiq_npx_path: str = Field(
+        default="npx",
+        description="Path to npx binary for launching Work IQ MCP server",
+    )
+    mcp_graceful_degradation: bool = Field(
+        default=True,
+        description="If True, agents continue without grounding when MCP servers are unavailable",
+    )
+
     # --- Output ---
     output_directory: str = Field(default="./output", description="Directory for generated documents")
 
