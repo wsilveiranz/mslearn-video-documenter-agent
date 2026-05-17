@@ -45,3 +45,7 @@ export const chat = {
 export const extensions = {
     getExtension: (_id: string) => undefined as unknown,
 };
+
+export const lm = {
+    selectChatModels: () => Promise.resolve([]),
+};
