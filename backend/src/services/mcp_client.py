@@ -231,10 +231,23 @@ class MCPClientManager:
 
     @staticmethod
     def _parse_tool_result(result: Any) -> dict[str, Any]:
-        """Parse an MCP CallToolResult into a plain dict."""
+        """Parse an MCP CallToolResult into a plain dict.
+
+        Preserves all available structured fields (title, url, language, code, etc.)
+        from content items, not just type and text.
+        """
         contents: list[dict[str, Any]] = []
         for content in result.content:
-            contents.append({"type": content.type, "text": getattr(content, "text", "")})
+            item: dict[str, Any] = {"type": content.type, "text": getattr(content, "text", "")}
+            # Preserve any additional structured fields from the content item
+            for attr in ("title", "url", "language", "code", "description", "name"):
+                val = getattr(content, attr, None)
+                if val is not None:
+                    item[attr] = val
+            # Also capture annotations/metadata if present
+            if hasattr(content, "annotations") and content.annotations:
+                item["annotations"] = content.annotations
+            contents.append(item)
         return {"content": contents, "isError": getattr(result, "isError", False)}
 
     def _get_cache_key(self, server: str, tool: str, params: dict[str, Any]) -> str:

@@ -357,6 +357,36 @@ async def _run_extraction(video_id: str) -> None:
         manager.clear_progress(video_id)
 
 
+async def _create_learn_tools():
+    """Create MCP client + LearnMCPTools for the API pipeline.
+
+    Returns (mcp_manager, learn_tools) where learn_tools may be None if
+    MCP is not configured.  Caller must ``await mcp_manager.close()``
+    when done.
+    """
+    from src.services.learn_mcp_tools import LEARN_MCP_SERVER, LearnMCPTools
+    from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+
+    settings = get_settings()
+    if not settings.mcp_learn_endpoint:
+        return None, None
+
+    learn_server = MCPServerConfig(
+        name=LEARN_MCP_SERVER,
+        transport_type=MCPTransportType.STREAMABLE_HTTP,
+        endpoint=settings.mcp_learn_endpoint,
+        enabled=True,
+    )
+    mcp_manager = MCPClientManager(
+        servers={LEARN_MCP_SERVER: learn_server},
+        cache_ttl=settings.mcp_cache_ttl_seconds,
+        request_timeout=settings.mcp_request_timeout_seconds,
+        graceful_degradation=settings.mcp_graceful_degradation,
+    )
+    learn_tools = LearnMCPTools(mcp_manager)
+    return mcp_manager, learn_tools
+
+
 async def _run_pipeline(
     video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None,
 ) -> None:
@@ -365,11 +395,15 @@ async def _run_pipeline(
     if job is None:
         return
 
+    mcp_manager = None
     try:
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
         client = create_llm_client(mode, model_override=job.llm_model)
         job.status = ProcessingStatus.PROCESSING
+
+        # Create MCP tools for documentation grounding
+        mcp_manager, learn_tools = await _create_learn_tools()
 
         # Check if extraction was already done (e.g., by /extract endpoint)
         if job.extraction_result is not None:
@@ -419,7 +453,7 @@ async def _run_pipeline(
         job.step = 3
         manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Creating document outline...")
 
-        structure_agent = StructureAgent(client)
+        structure_agent = StructureAgent(client, learn_tools=learn_tools)
         outline = await structure_agent.process(extraction_result, doc_type, supplementary_context, metadata)
 
         manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Outline ready ✓")
@@ -429,7 +463,7 @@ async def _run_pipeline(
         job.step = 4
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Writing document...")
 
-        writer_agent = WriterAgent(client)
+        writer_agent = WriterAgent(client, learn_tools=learn_tools)
         document = await writer_agent.process(outline, extraction_result, quality_report=job.quality_report)
 
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Draft complete ✓")
@@ -439,7 +473,7 @@ async def _run_pipeline(
         job.step = 5
         manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing for MS Learn style...")
 
-        editor_agent = EditorAgent(client)
+        editor_agent = EditorAgent(client, learn_tools=learn_tools)
         document = await editor_agent.process(document)
 
         manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing complete ✓")
@@ -489,9 +523,9 @@ async def _run_pipeline(
         logger.error("api.pipeline_failed", video_id=video_id, error=repr(exc), exc_info=True)
         manager.send_progress(video_id, "failed", job.step, 6, str(exc))
         manager.clear_progress(video_id)
-
-
-# ---- Video Endpoints ----
+    finally:
+        if mcp_manager is not None:
+            await mcp_manager.close()
 
 @router.post("/videos/ingest", response_model=IngestResponse)
 async def ingest_video(
@@ -835,12 +869,35 @@ async def convert_document_upload(file: UploadFile):
 
 @router.post("/context/convert-path")
 async def convert_document_path(request: ConvertPathRequest):
-    """Convert a local document file to Markdown by path."""
+    """Convert a local document file to Markdown by path.
+
+    Only converts files with supported document extensions (.docx, .pdf, .pptx, etc.).
+    Rejects paths with traversal patterns or unsupported file types to prevent
+    arbitrary file reads.
+    """
     from src.services.document_converter import DocumentConversionError, DocumentConverter
 
+    # Path traversal guard: resolve to absolute and check for traversal indicators
+    resolved = Path(request.path).resolve()
+    if ".." in Path(request.path).parts:
+        raise HTTPException(
+            status_code=400,
+            detail="Path traversal is not allowed.",
+        )
+
+    # Only allow supported document extensions (prevents reading arbitrary files)
     converter = DocumentConverter()
+    if resolved.suffix.lower() not in converter.supported_extensions():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported file type '{resolved.suffix}'. "
+                f"Supported: {', '.join(sorted(converter.supported_extensions()))}"
+            ),
+        )
+
     try:
-        result = converter.convert(request.path)
+        result = converter.convert(str(resolved))
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
