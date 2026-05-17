@@ -34,8 +34,8 @@ export function createDefaultStages(): PipelineStage[] {
  *
  * Examples: `"30s elapsed"`, `"1m 30s elapsed"`, `"5m 00s elapsed"`.
  */
-export function formatElapsed(startTime: number): string {
-    const elapsedMs = Date.now() - startTime;
+export function formatElapsed(startTime: number, now?: number): string {
+    const elapsedMs = (now ?? Date.now()) - startTime;
     const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;

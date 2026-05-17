@@ -202,7 +202,7 @@ When Editor receives user feedback (e.g., "Add more detail on authentication" or
 |------|-------------------|
 | Feedback incorporation | Diff between pre/post shows that requested change was applied (not just ignored) |
 | Scope isolation | Unrelated sections remain unchanged; only the targeted section is modified |
-| Feedback clarit validation | If feedback is ambiguous, Editor asks for clarification rather than making incorrect changes |
+| Feedback clarity validation | If feedback is ambiguous, Editor asks for clarification rather than making incorrect changes |
 | Loop termination | Refinement loop completes in ≤5 iterations (prevent infinite editing cycles) |
 | Rollback on failure | If feedback causes content degradation (grounding loss, truncation), revert to previous version |
 | Multi-turn refinement | Sequential feedback applications are cumulative and don't conflict

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from src.agents.editor import EditorAgent
@@ -92,7 +93,6 @@ class StatusResponse(BaseModel):
 
 class MediaFileResponse(BaseModel):
     filename: str
-    source_path: str
     output_path: str
     alt_text: str
 
@@ -405,6 +405,9 @@ async def _run_pipeline(
             job.extraction_result = extraction_result
             manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extraction complete ✓")
 
+        # Reset stale extraction progress detail before moving to subsequent stages
+        job.progress_detail = ""
+
         # Step 3/6: Structure
         job.current_stage = "structuring"
         job.step = 3
@@ -699,7 +702,6 @@ async def get_document(document_id: str) -> DocumentResponse:
     media_files = [
         MediaFileResponse(
             filename=Path(s.output_path).name if s.output_path else Path(s.source_path).name,
-            source_path=s.source_path,
             output_path=s.output_path or f"./media/{Path(s.source_path).name}",
             alt_text=s.alt_text,
         )
@@ -714,6 +716,28 @@ async def get_document(document_id: str) -> DocumentResponse:
         revision_number=doc.revision_number,
         media_files=media_files,
     )
+
+
+@router.get("/documents/{document_id}/media/{filename}")
+async def download_media(document_id: str, filename: str) -> FileResponse:
+    """Download a media file associated with a document by filename."""
+    doc = _documents.get(document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")
+
+    for screenshot in doc.media_files:
+        mf_name = (
+            Path(screenshot.output_path).name
+            if screenshot.output_path
+            else Path(screenshot.source_path).name
+        )
+        if mf_name == filename:
+            source = Path(screenshot.source_path)
+            if not source.is_file():
+                raise HTTPException(status_code=404, detail="Media file not found on disk")
+            return FileResponse(path=str(source), filename=filename)
+
+    raise HTTPException(status_code=404, detail=f"Media file '{filename}' not found in document")
 
 
 @router.post("/documents/{document_id}/refine", response_model=GenerateResponse)

@@ -230,10 +230,15 @@ export async function handleGenerate(
         stateManager.setStage('generated');
 
         // 10. Save to workspace and open (with extracted screenshots)
-        const mediaFiles = (doc.media_files ?? []).map(mf => ({
-            filename: mf.filename,
-            sourcePath: mf.source_path,
-        }));
+        const mediaFiles: Array<{filename: string, data: Uint8Array}> = [];
+        for (const mf of doc.media_files ?? []) {
+            try {
+                const data = await client.downloadMedia(documentId, mf.filename);
+                mediaFiles.push({ filename: mf.filename, data });
+            } catch {
+                // Non-fatal: skip media that can't be downloaded
+            }
+        }
         try {
             const savedUri = await outputManager.saveAndOpen(
                 documentId,

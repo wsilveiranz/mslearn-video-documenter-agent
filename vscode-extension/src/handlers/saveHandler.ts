@@ -72,33 +72,28 @@ export async function handleSave(
         stream.progress('Fetching document...');
         const doc = await client.getDocument(state.currentDocumentId);
 
-        // Prepare media files for copying
-        const mediaFiles = (doc.media_files ?? []).map(mf => ({
-            filename: mf.filename,
-            sourcePath: mf.source_path,
-        }));
-
         // Ensure parent directory exists and write the file
         const parentDirUri = vscode.Uri.file(path.dirname(targetUri.fsPath));
         await vscode.workspace.fs.createDirectory(parentDirUri);
         await vscode.workspace.fs.writeFile(targetUri, Buffer.from(doc.markdown_content, 'utf-8'));
 
-        // Copy media files to a media subdirectory
+        // Download and save media files to a media subdirectory
+        const docMediaFiles = doc.media_files ?? [];
         let mediaCopyFailures: string[] = [];
-        if (mediaFiles.length > 0) {
+        if (docMediaFiles.length > 0) {
             const mediaDirUri = vscode.Uri.joinPath(
                 vscode.Uri.file(path.dirname(targetUri.fsPath)),
                 'media'
             );
             await vscode.workspace.fs.createDirectory(mediaDirUri);
 
-            for (const media of mediaFiles) {
-                const destUri = vscode.Uri.joinPath(mediaDirUri, media.filename);
+            for (const mf of docMediaFiles) {
+                const destUri = vscode.Uri.joinPath(mediaDirUri, mf.filename);
                 try {
-                    const sourceUri = vscode.Uri.file(media.sourcePath);
-                    await vscode.workspace.fs.copy(sourceUri, destUri, { overwrite: true });
+                    const data = await client.downloadMedia(state.currentDocumentId, mf.filename);
+                    await vscode.workspace.fs.writeFile(destUri, data);
                 } catch {
-                    mediaCopyFailures.push(media.filename);
+                    mediaCopyFailures.push(mf.filename);
                 }
             }
         }

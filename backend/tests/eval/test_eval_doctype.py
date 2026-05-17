@@ -64,7 +64,7 @@ def _h1_starts_with_gerund(h1: str, prefix: str = "") -> bool:
     words = verb_text.split()
     if not words:
         return False
-    non_gerund_ing = {"string", "ring", "king", "thing", "bring", "spring", "using"}
+    non_gerund_ing = {"string", "ring", "king", "thing", "bring", "spring"}
     first = words[0].rstrip(".,;:")
     return first.endswith("ing") and first.lower() not in non_gerund_ing
 

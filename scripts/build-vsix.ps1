@@ -61,7 +61,7 @@ function Restore-PackageVersion {
 
 trap {
     Restore-PackageVersion
-    break
+    exit 1
 }
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {

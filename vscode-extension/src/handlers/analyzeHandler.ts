@@ -245,19 +245,18 @@ export async function handleAnalyze(
             }
 
             // Run quality assessment with periodic progress
+            let qualityInterval: ReturnType<typeof setInterval> | undefined;
             try {
                 stream.progress('Assessing extraction quality...');
-                let qualityDone = false;
                 const qualityStartTime = Date.now();
-                const qualityInterval = setInterval(() => {
+                let qualityDone = false;
+                qualityInterval = setInterval(() => {
                     if (!qualityDone) {
                         stream.progress(`Assessing extraction quality... (${formatElapsed(qualityStartTime)})`);
                     }
                 }, 10000);
 
                 const quality = await client.assessQuality(videoId, selectedModel);
-                qualityDone = true;
-                clearInterval(qualityInterval);
 
                 const confidence = Math.round(quality.grounding_confidence * 100);
                 extractionRows += `| Data quality | **${quality.quality_level}** (${confidence}% grounding confidence) |\n`;
@@ -278,6 +277,8 @@ export async function handleAnalyze(
                 }
             } catch {
                 // Quality assessment failed — non-fatal, continue without it
+            } finally {
+                clearInterval(qualityInterval);
             }
         } catch {
             // Non-fatal

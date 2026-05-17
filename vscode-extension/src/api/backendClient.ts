@@ -45,7 +45,6 @@ export interface DocumentResponse {
     revision_number: number;
     media_files: Array<{
         filename: string;
-        source_path: string;
         output_path: string;
         alt_text: string;
     }>;
@@ -179,6 +178,20 @@ export class BackendClient {
 
     async getDocument(documentId: string): Promise<DocumentResponse> {
         return this.get<DocumentResponse>(`/documents/${documentId}`);
+    }
+
+    async downloadMedia(documentId: string, filename: string): Promise<Buffer> {
+        const url = `${this.baseUrl}/api/v1/documents/${documentId}/media/${encodeURIComponent(filename)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            throw new BackendError(
+                response.status,
+                `Failed to download media '${filename}'${text ? `: ${text}` : ''}`,
+            );
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
     }
 
     async refineDocument(documentId: string, feedback: string, model?: string): Promise<GenerateResponse> {

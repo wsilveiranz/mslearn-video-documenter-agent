@@ -55,26 +55,27 @@ describe('progress utilities', () => {
 
     describe('formatElapsed', () => {
         it('should format seconds only when under 1 minute', () => {
-            const start = Date.now() - 30_000; // 30 seconds ago
-            const result = formatElapsed(start);
+            const start = 1000;
+            const result = formatElapsed(start, start + 30_000);
             assert.strictEqual(result, '30s elapsed');
         });
 
         it('should format minutes and seconds', () => {
-            const start = Date.now() - 90_000; // 1m 30s ago
-            const result = formatElapsed(start);
+            const start = 1000;
+            const result = formatElapsed(start, start + 90_000);
             assert.strictEqual(result, '1m 30s elapsed');
         });
 
         it('should pad seconds with zero', () => {
-            const start = Date.now() - 300_000; // 5m 0s ago
-            const result = formatElapsed(start);
+            const start = 1000;
+            const result = formatElapsed(start, start + 300_000);
             assert.strictEqual(result, '5m 00s elapsed');
         });
 
         it('should return 0s for future timestamps', () => {
-            const start = Date.now() + 10_000; // future
-            const result = formatElapsed(start);
+            const now = 1000;
+            const start = now + 10_000; // future
+            const result = formatElapsed(start, now);
             assert.strictEqual(result, '0s elapsed');
         });
     });
