@@ -9,13 +9,10 @@ refinement feedback.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Literal
+from typing import Any, Literal
 
 import structlog
 from pydantic import BaseModel, Field
-
-if TYPE_CHECKING:
-    from agent_framework.foundry import FoundryChatClient
 
 logger = structlog.get_logger()
 
@@ -114,13 +111,13 @@ def parse_llm_response(raw: str) -> IntentLabel:
 
 async def classify_intent(
     prompt: str,
-    client: FoundryChatClient,
+    client: Any,
 ) -> ClassificationResult:
     """Classify a user message intent, using regex fast path then LLM fallback.
 
     Args:
         prompt: The user's free-form message.
-        client: FoundryChatClient for LLM classification.
+        client: LLM client — either a FoundryChatClient or a CopilotProxyClient.
 
     Returns:
         ClassificationResult with the determined intent.
@@ -141,10 +138,7 @@ async def classify_intent(
     formatted = CLASSIFICATION_PROMPT.format(message=prompt.strip())
 
     try:
-        response = await client.complete(
-            messages=[{"role": "user", "content": formatted}]
-        )
-        raw = response.choices[0].message.content.strip()
+        raw = await _llm_classify(client, formatted)
         intent = parse_llm_response(raw)
 
         logger.info(
@@ -166,3 +160,23 @@ async def classify_intent(
             fallback="refine",
         )
         return ClassificationResult(intent="refine", confidence="llm", raw_response=None)
+
+
+async def _llm_classify(client: Any, formatted_prompt: str) -> str:
+    """Route LLM call to the correct client API.
+
+    CopilotProxyClient exposes .complete() (OpenAI-compatible).
+    FoundryChatClient exposes .get_response() (MAF-style).
+    """
+    if hasattr(client, "complete"):
+        response = await client.complete(
+            messages=[{"role": "user", "content": formatted_prompt}]
+        )
+        return response.choices[0].message.content.strip()
+
+    # FoundryChatClient — use get_response with Message objects
+    from agent_framework import Message
+
+    messages = [Message(role="user", contents=[formatted_prompt])]
+    response = await client.get_response(messages)
+    return response.text.strip()
