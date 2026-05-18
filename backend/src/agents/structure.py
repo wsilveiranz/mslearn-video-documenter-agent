@@ -398,10 +398,23 @@ class StructureAgent:
         )
         return keyframe_map.get(best_id)
 
+    @staticmethod
+    def _slugify(text: str, max_length: int = 50) -> str:
+        """Convert text to a URL/filesystem-safe slug."""
+        slug = text.lower().strip()
+        slug = re.sub(r'[^a-z0-9\s-]', '', slug)
+        slug = re.sub(r'[\s_]+', '-', slug)
+        slug = re.sub(r'-+', '-', slug)
+        slug = slug.strip('-')
+        return slug[:max_length].rstrip('-')
+
     def _attach_screenshots(
         self, outline: DocumentOutline, extraction: ExtractionResult
     ) -> DocumentOutline:
         """Select and attach the best keyframe screenshot for each section."""
+        article_title = outline.frontmatter.title
+        article_slug = self._slugify(article_title) or "article"
+
         all_screenshots: list[Screenshot] = []
         used_keyframe_ids: set[str] = set()
         step_counter = 1
@@ -416,10 +429,17 @@ class StructureAgent:
 
             ext = Path(keyframe.image_path).suffix or ".png"
             alt_text = keyframe.ui_description or f"Screenshot for section: {section.heading}"
+
+            desc_source = section.heading or keyframe.ui_description or f"step-{step_counter:02d}"
+            desc_slug = self._slugify(desc_source, max_length=40)
+            if not desc_slug:
+                desc_slug = f"step-{step_counter:02d}"
+            image_name = f"{desc_slug}-{step_counter:02d}{ext}"
+
             screenshot = Screenshot(
                 keyframe_id=keyframe.id,
                 source_path=keyframe.image_path,
-                output_path=f"./media/step-{step_counter:02d}{ext}",
+                output_path=f"./media/{article_slug}/{image_name}",
                 alt_text=alt_text,
                 step_number=step_counter,
             )
