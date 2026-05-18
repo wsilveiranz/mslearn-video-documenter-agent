@@ -275,6 +275,7 @@ Pop-Location
 
 # 6. Clean up
 Write-Host "[6/6] Cleaning up..." -ForegroundColor Yellow
+Restore-PackageVersion
 if (Test-Path $bundledBackend) {
     cmd /c "rmdir /s /q `"$bundledBackend`"" 2>$null
 }

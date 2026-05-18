@@ -29,6 +29,33 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        working-directory: vscode-extension
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v'
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            Write-Error "Invalid semver in tag: ${{ github.ref_name }}"
+            exit 1
+          }
+          # Verify this version is greater than the latest release
+          $latest = gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>$null
+          if ($latest) {
+            $latestVer = $latest -replace '^v'
+            $new = [version]$version
+            $old = [version]$latestVer
+            if ($new -le $old) {
+              Write-Error "Tag version $version is not greater than latest release $latestVer"
+              exit 1
+            }
+            Write-Host "Version check passed: $version > $latestVer"
+          } else {
+            Write-Host "No previous releases found — skipping version check"
+          }
+          Write-Host "Release version: $version"
+          npm pkg set version="$version"
+
       - name: Install npm dependencies
         working-directory: vscode-extension
         run: npm ci
