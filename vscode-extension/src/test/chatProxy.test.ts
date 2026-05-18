@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { runPolishChecks, PolishResult } from '../utils/chatProxy';
+import { runPolishChecks } from '../utils/chatProxy';
 
 // Helper: build a mock ChatResponseStream
 function createMockStream(): vscode.ChatResponseStream & { calls: { method: string; args: unknown[] }[] } {

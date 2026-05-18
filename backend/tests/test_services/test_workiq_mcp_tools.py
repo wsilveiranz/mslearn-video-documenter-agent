@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from src.services.mcp_client import MCPServerConfig, MCPToolResult, MCPTransportType
 from src.services.workiq_mcp_tools import (
     WORKIQ_MCP_SERVER,
-    M365Document,
-    M365SearchResult,
     WorkIQTools,
 )
 
@@ -36,7 +32,9 @@ class TestWorkIQTools:
     async def test_search_context_returns_result(self):
         result = MCPToolResult(
             available=True,
-            data={"content": [{"text": "The project deadline was discussed in yesterday's meeting. Key decisions: ..."}]},
+            data={"content": [
+                {"text": "The project deadline was discussed in yesterday's meeting. Key decisions: ..."},
+            ]},
             server=WORKIQ_MCP_SERVER,
             tool="ask",
         )

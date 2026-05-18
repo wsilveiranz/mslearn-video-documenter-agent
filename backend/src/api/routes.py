@@ -25,7 +25,7 @@ from src.agents.writer import WriterAgent
 from src.api.websocket import manager
 from src.config import get_settings
 from src.models.document import DocType, DocumentMetadata
-from src.models.evaluation import EvaluationReport, EvaluationScores
+from src.models.evaluation import EvaluationReport
 from src.models.services import AZURE_SERVICES
 from src.models.video import DataQualityReport, ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
 
@@ -839,7 +839,7 @@ async def download_media(document_id: str, filename: str) -> FileResponse:
     raise HTTPException(status_code=404, detail=f"Media file '{filename}' not found in document")
 
 
-async def _fetch_m365_context_for_doc(doc: "GeneratedDocument", user_feedback: str) -> str:
+async def _fetch_m365_context_for_doc(doc: GeneratedDocument, user_feedback: str) -> str:
     """Build a smart query from the document context and fetch M365 content via Work IQ.
 
     Returns the M365 summary text, or empty string if unavailable/disabled.
@@ -962,8 +962,8 @@ async def refine_document(
             client = create_llm_client(model_override=llm_model)
 
             # Set up MS Learn MCP tools for style reference during editing
-            from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
             from src.services.learn_mcp_tools import LEARN_MCP_SERVER, LearnMCPTools
+            from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
 
             settings = get_settings()
             learn_server = MCPServerConfig(

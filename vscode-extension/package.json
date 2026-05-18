@@ -54,6 +54,10 @@
             "description": "Edit a section of generated documentation"
           },
           {
+            "name": "refine",
+            "description": "Refine generated documentation (alias for /edit)"
+          },
+          {
             "name": "save",
             "description": "Save generated document to a specific location"
           },

@@ -202,9 +202,13 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
                 try:
                     converted = converter.convert(doc_path)
                     converted_parts.append(f"## Supplementary: {Path(doc_path).name}\n\n{converted.markdown}")
-                    logger.info("pipeline.supplementary_converted", path=doc_path, words=converted.word_count)
+                    logger.info(
+                        "pipeline.supplementary_converted",
+                        path=Path(doc_path).name,
+                        words=converted.word_count,
+                    )
                 except (ValueError, DocumentConversionError, FileNotFoundError) as e:
-                    logger.warning("pipeline.supplementary_conversion_failed", path=doc_path, error=str(e))
+                    logger.warning("pipeline.supplementary_conversion_failed", path=Path(doc_path).name, error=str(e))
 
             if converted_parts:
                 extra_context = "\n\n---\n\n".join(converted_parts)

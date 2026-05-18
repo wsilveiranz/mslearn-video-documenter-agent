@@ -130,6 +130,16 @@ class MCPClientManager:
         # Call the MCP server
         try:
             data = await self._execute_tool_call(server_config, tool_name, params)
+            if data.get("isError", False):
+                logger.warning("mcp_tool_reported_error", server=server_name, tool=tool_name)
+                if self._graceful_degradation:
+                    return MCPToolResult(
+                        available=False,
+                        server=server_name,
+                        tool=tool_name,
+                        error="Tool reported an error",
+                    )
+                raise RuntimeError(f"MCP tool '{tool_name}' on server '{server_name}' reported an error")
             self._store_cache(cache_key, data)
             logger.info("mcp_tool_called", server=server_name, tool=tool_name)
             return MCPToolResult(
@@ -178,30 +188,31 @@ class MCPClientManager:
         if config.transport_type == MCPTransportType.STREAMABLE_HTTP:
             from mcp.client.streamable_http import streamablehttp_client
 
-            async with (
-                streamablehttp_client(url=config.endpoint) as (read_stream, write_stream, _),
-                ClientSession(read_stream, write_stream) as session,
-            ):
-                await session.initialize()
-                result = await asyncio.wait_for(
-                    session.call_tool(tool_name, arguments=params),
-                    timeout=self._request_timeout,
-                )
-                return self._parse_tool_result(result)
+            async def _do_http_call() -> dict[str, Any]:
+                async with (
+                    streamablehttp_client(url=config.endpoint) as (read_stream, write_stream, _),
+                    ClientSession(read_stream, write_stream) as session,
+                ):
+                    await session.initialize()
+                    result = await session.call_tool(tool_name, arguments=params)
+                    return self._parse_tool_result(result)
+
+            return await asyncio.wait_for(_do_http_call(), timeout=self._request_timeout)
         else:
             from mcp.client.stdio import StdioServerParameters, stdio_client
 
             server_params = StdioServerParameters(command=config.command, args=config.args)
-            async with (
-                stdio_client(server_params) as (read_stream, write_stream),
-                ClientSession(read_stream, write_stream) as session,
-            ):
-                await session.initialize()
-                result = await asyncio.wait_for(
-                    session.call_tool(tool_name, arguments=params),
-                    timeout=self._request_timeout,
-                )
-                return self._parse_tool_result(result)
+
+            async def _do_stdio_call() -> dict[str, Any]:
+                async with (
+                    stdio_client(server_params) as (read_stream, write_stream),
+                    ClientSession(read_stream, write_stream) as session,
+                ):
+                    await session.initialize()
+                    result = await session.call_tool(tool_name, arguments=params)
+                    return self._parse_tool_result(result)
+
+            return await asyncio.wait_for(_do_stdio_call(), timeout=self._request_timeout)
 
     async def _execute_list_tools(self, config: MCPServerConfig) -> list[dict[str, Any]]:
         """List tools from the appropriate transport."""

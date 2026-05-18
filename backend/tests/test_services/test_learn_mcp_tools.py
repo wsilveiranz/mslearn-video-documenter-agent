@@ -4,14 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from src.services.learn_mcp_tools import (
-    CodeSample,
-    DocContent,
-    DocSearchResult,
-    LearnMCPTools,
     LEARN_MCP_SERVER,
+    LearnMCPTools,
 )
 from src.services.mcp_client import MCPServerConfig, MCPToolResult, MCPTransportType
 
@@ -38,8 +33,16 @@ class TestLearnMCPTools:
         result = MCPToolResult(
             available=True,
             data={"content": [
-                {"title": "Azure Functions overview", "url": "https://learn.microsoft.com/azure/functions", "text": "Overview of serverless"},
-                {"title": "Quickstart: Functions", "url": "https://learn.microsoft.com/azure/functions/quickstart", "text": "Get started fast"},
+                {
+                    "title": "Azure Functions overview",
+                    "url": "https://learn.microsoft.com/azure/functions",
+                    "text": "Overview of serverless",
+                },
+                {
+                    "title": "Quickstart: Functions",
+                    "url": "https://learn.microsoft.com/azure/functions/quickstart",
+                    "text": "Get started fast",
+                },
             ]},
             server=LEARN_MCP_SERVER,
             tool="microsoft_docs_search",

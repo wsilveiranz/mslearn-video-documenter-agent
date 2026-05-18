@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.services.document_converter import (
-    SUPPORTED_EXTENSIONS,
     ConvertedDocument,
     DocumentConversionError,
     DocumentConverter,

@@ -83,7 +83,7 @@ class DocumentConverter:
 
             logger.info(
                 "document.converted",
-                source=file_path,
+                source=Path(file_path).name,
                 source_type=ext,
                 word_count=word_count,
                 size_mb=round(size_mb, 2),
@@ -98,7 +98,7 @@ class DocumentConverter:
         except DocumentConversionError:
             raise
         except Exception as e:
-            logger.error("document.conversion_failed", source=file_path, error=str(e))
+            logger.error("document.conversion_failed", source=Path(file_path).name, error=str(e))
             raise DocumentConversionError(f"Failed to convert {file_path}: {e}") from e
 
     def convert_bytes(self, content: bytes, filename: str) -> ConvertedDocument:

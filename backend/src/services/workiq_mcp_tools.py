@@ -57,7 +57,7 @@ class WorkIQTools:
         This performs a broad search across all M365 data types.
         Must only be called when explicitly requested by the user.
         """
-        logger.info("workiq.search_context", query=query)
+        logger.info("workiq.search_context", query_length=len(query))
 
         # Work IQ uses the "ask" tool — the primary interface
         result = await self._mcp.call_tool(
@@ -65,7 +65,7 @@ class WorkIQTools:
         )
 
         if not result.available or result.data is None:
-            logger.warning("workiq.search_unavailable", query=query)
+            logger.warning("workiq.search_unavailable", query_length=len(query))
             return M365SearchResult(query=query, available=False)
 
         return self._parse_search_result(result.data, query)
