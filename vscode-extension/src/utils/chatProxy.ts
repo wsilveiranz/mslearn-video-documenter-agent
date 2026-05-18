@@ -1,85 +1,43 @@
 /**
- * Chat participant proxy for invoking companion extensions.
+ * Lightweight polish checks using the VS Code Language Model API.
  *
- * Since VS Code does not expose a public API for one chat participant to
- * programmatically invoke another, this module provides:
- * 1. Detection of installed companion chat participants
- * 2. Button-based invocation (user clicks to open companion in chat)
- * 3. Built-in fallback checks using the VS Code Language Model API
+ * Runs three MS Learn quality checks (style, metadata, formatting) via
+ * Copilot's language model.  No companion extension routing — companion
+ * tools like Content Mentor should be invoked directly by the user.
  */
 import * as vscode from 'vscode';
-import { detectCompanions, CompanionExtension } from './companions';
 
 export interface PolishResult {
     /** Which check was performed */
-    check: PolishCheck;
-    /** Whether the check was performed by a companion or fallback */
-    source: 'companion' | 'fallback' | 'skipped';
-    /** Human-readable summary of findings */
+    check: string;
+    /** Whether the check ran or was skipped */
+    source: 'fallback' | 'skipped';
+    /** Human-readable summary */
     summary: string;
-    /** Detailed suggestions (Markdown formatted) */
+    /** Detailed suggestions (Markdown) */
     suggestions: string;
-    /** Number of issues found */
+    /** Estimated issue count */
     issueCount: number;
 }
 
-export type PolishCheck = 'style' | 'brand' | 'meta' | 'seo' | 'fix' | 'sfi';
-
-export const POLISH_CHECKS: Record<PolishCheck, {
-    label: string;
-    description: string;
-    companion: { id: string; name: string; command: string; participantHandle?: string } | null;
-    fallbackAvailable: boolean;
-}> = {
-    style: {
-        label: 'Writing Style',
-        description: 'MS Writing Style Guide compliance (35 rules)',
-        companion: { id: 'docsmsft.learn-authoring-assistant', name: 'Learn Authoring Assistant', command: 'suggestEdits', participantHandle: 'learn-authoring-assistant' },
-        fallbackAvailable: true,
-    },
-    brand: {
-        label: 'Branding',
-        description: 'Product/technology name correctness',
-        companion: { id: 'docsmsft.learn-authoring-assistant', name: 'Learn Authoring Assistant', command: 'correctBranding', participantHandle: 'learn-authoring-assistant' },
-        fallbackAvailable: false,
-    },
-    meta: {
-        label: 'Metadata',
-        description: 'Title, description, ms.date optimization',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'metadata', participantHandle: 'content-mentor' },
-        fallbackAvailable: true,
-    },
-    seo: {
-        label: 'SEO',
-        description: 'Search engine optimization',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'seo', participantHandle: 'content-mentor' },
-        fallbackAvailable: false,
-    },
-    fix: {
-        label: 'Auto-fix Markdown',
-        description: 'Fix common Markdown formatting issues',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'autoFixMarkdown', participantHandle: 'content-mentor' },
-        fallbackAvailable: true,
-    },
-    sfi: {
-        label: 'Security (SFI)',
-        description: 'Sensitive information scan',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'sfi', participantHandle: 'content-mentor' },
-        fallbackAvailable: false,
-    },
-};
-
-/** Maximum document length sent to fallback LM prompts (characters) */
+/** Maximum document length sent to LM prompts (characters) */
 const MAX_DOCUMENT_LENGTH = 8000;
 
-const FALLBACK_PROMPTS: Partial<Record<PolishCheck, string>> = {
-    style: `Review this Microsoft Learn Markdown document for compliance with the Microsoft Writing Style Guide.
+const CHECKS: { id: string; label: string; prompt: string }[] = [
+    {
+        id: 'style',
+        label: 'Writing Style',
+        prompt: `Review this Microsoft Learn Markdown document for compliance with the Microsoft Writing Style Guide.
 Check for: active voice, present tense, second person (you/your), contractions, sentence case headings,
 Oxford commas, "select" instead of "click", bold UI elements, numbers (spell out 0-9).
 List each issue with: line reference, current text, suggested fix, rule name.
 Document:
 `,
-    meta: `Review the YAML frontmatter of this MS Learn document. Check:
+    },
+    {
+        id: 'meta',
+        label: 'Metadata',
+        prompt: `Review the YAML frontmatter of this MS Learn document. Check:
 - title: 43-59 characters
 - description: 75-300 characters
 - ms.date: valid MM/DD/YYYY format
@@ -88,7 +46,11 @@ Document:
 List each issue found.
 Document:
 `,
-    fix: `Review this Markdown document for common formatting issues:
+    },
+    {
+        id: 'fix',
+        label: 'Markdown Formatting',
+        prompt: `Review this Markdown document for common formatting issues:
 - Inconsistent heading levels (skipping H2→H4)
 - Missing blank lines before/after code blocks
 - Broken :::image::: syntax
@@ -97,249 +59,97 @@ Document:
 List each fix needed with line reference.
 Document:
 `,
-};
+    },
+];
 
-export class ChatParticipantProxy {
-    private _companions: CompanionExtension[] | null = null;
+/**
+ * Run all polish checks sequentially and stream results inline.
+ */
+export async function runPolishChecks(
+    documentContent: string,
+    stream: vscode.ChatResponseStream,
+    token: vscode.CancellationToken,
+): Promise<PolishResult[]> {
+    const truncatedContent = documentContent.length > MAX_DOCUMENT_LENGTH
+        ? documentContent.slice(0, MAX_DOCUMENT_LENGTH) + '\n\n[... truncated for length ...]'
+        : documentContent;
 
-    /** Get cached companion detection results */
-    getCompanions(): CompanionExtension[] {
-        if (!this._companions) {
-            this._companions = detectCompanions();
+    const results: PolishResult[] = [];
+
+    for (const check of CHECKS) {
+        if (token.isCancellationRequested) {
+            break;
         }
-        return this._companions;
+        stream.progress(`Checking ${check.label}…`);
+        const result = await runSingleCheck(check, truncatedContent, stream, token);
+        results.push(result);
     }
 
-    /** Check if a specific companion is available (installed AND active) for a check */
-    isCompanionAvailable(check: PolishCheck): boolean {
-        const config = POLISH_CHECKS[check];
-        if (!config.companion) {
-            return false;
-        }
-        const companions = this.getCompanions();
-        return companions.some(c => c.id === config.companion!.id && c.available);
-    }
+    return results;
+}
 
-    /** Check if companion is installed but not active (needs workspace) */
-    isCompanionInstalledButInactive(check: PolishCheck): boolean {
-        const config = POLISH_CHECKS[check];
-        if (!config.companion) {
-            return false;
-        }
-        const companions = this.getCompanions();
-        return companions.some(c => c.id === config.companion!.id && c.installed && !c.available);
-    }
+async function runSingleCheck(
+    check: { id: string; label: string; prompt: string },
+    truncatedContent: string,
+    stream: vscode.ChatResponseStream,
+    token: vscode.CancellationToken,
+): Promise<PolishResult> {
+    const prompt = check.prompt + truncatedContent;
 
-    /**
-     * Run a polish check.
-     * Always runs built-in fallback when available for immediate results.
-     * Additionally offers companion button when a companion is active.
-     * If no fallback and no companion → skipped.
-     */
-    async runCheck(
-        check: PolishCheck,
-        documentContent: string,
-        stream: vscode.ChatResponseStream,
-        token: vscode.CancellationToken
-    ): Promise<PolishResult> {
-        const config = POLISH_CHECKS[check];
-        const companionAvailable = this.isCompanionAvailable(check);
-        const companionInactive = this.isCompanionInstalledButInactive(check);
+    try {
+        const models = await vscode.lm.selectChatModels({ family: 'gpt-4o' });
+        const model = models[0] ?? (await vscode.lm.selectChatModels())[0];
 
-        // Run fallback for immediate results when available
-        if (config.fallbackAvailable) {
-            stream.markdown(`\n### 🔍 ${config.label}\n\n`);
-            stream.progress(`Running ${config.label} check...`);
-            const result = await this._runFallbackCheck(check, documentContent, token);
-
-            // Offer companion button as a supplementary option
-            if (companionAvailable) {
-                stream.markdown(`\n\n💡 For a more thorough check, use **${config.companion!.name}** directly:\n\n`);
-                this._createCompanionButton(check, stream);
-            } else if (companionInactive) {
-                stream.markdown(`\n\n⚠️ **${config.companion!.name}** is installed but not active — open a workspace folder to activate it.\n`);
-            }
-
-            return result;
-        }
-
-        // No fallback — rely on companion button only
-        if (companionAvailable) {
-            stream.markdown(`\n### ✅ ${config.label}\n\n`);
-            stream.markdown(`**${config.companion!.name}** is active — use it for the ${config.label.toLowerCase()} check.\n\n`);
-            this._createCompanionButton(check, stream);
-
+        if (!model) {
             return {
-                check,
-                source: 'companion',
-                summary: `${config.companion!.name} is available for ${config.label} check`,
-                suggestions: `Use the button above to run the ${config.label} check with ${config.companion!.name}.`,
-                issueCount: 0,
-            };
-        }
-
-        // Companion installed but not active, no fallback
-        if (companionInactive) {
-            return {
-                check,
+                check: check.id,
                 source: 'skipped',
-                summary: `${config.label} check skipped — ${config.companion!.name} is installed but not active (open a workspace folder to activate)`,
-                suggestions: `Open a workspace folder to activate **${config.companion!.name}**, then re-run this check.`,
+                summary: 'No language model available',
+                suggestions: '',
                 issueCount: 0,
             };
         }
 
-        // Neither fallback nor companion
+        const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+        const response = await model.sendRequest(messages, {}, token);
+
+        let text = '';
+        for await (const chunk of response.text) {
+            text += chunk;
+        }
+
+        const issueCount = countIssues(text);
+
+        stream.markdown(`\n### 🔍 ${check.label}\n\n${text}\n`);
+
         return {
-            check,
+            check: check.id,
+            source: 'fallback',
+            summary: issueCount > 0
+                ? `Found ${issueCount} potential issue${issueCount === 1 ? '' : 's'}`
+                : 'No issues found',
+            suggestions: text,
+            issueCount,
+        };
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+            check: check.id,
             source: 'skipped',
-            summary: `${config.label} check skipped — requires ${config.companion?.name ?? 'companion extension'}`,
-            suggestions: config.companion
-                ? `Install **${config.companion.name}** (\`${config.companion.id}\`) for ${config.label} checking.`
-                : '',
+            summary: `Check failed: ${message}`,
+            suggestions: '',
             issueCount: 0,
         };
-    }
-
-    /**
-     * Run all polish checks in sequence.
-     */
-    async runAllChecks(
-        documentContent: string,
-        stream: vscode.ChatResponseStream,
-        token: vscode.CancellationToken
-    ): Promise<PolishResult[]> {
-        const results: PolishResult[] = [];
-        const checks = Object.keys(POLISH_CHECKS) as PolishCheck[];
-
-        for (const check of checks) {
-            if (token.isCancellationRequested) {
-                break;
-            }
-            const result = await this.runCheck(check, documentContent, stream, token);
-            results.push(result);
-        }
-
-        return results;
-    }
-
-    /**
-     * Run a fallback check using the VS Code Language Model API.
-     */
-    private async _runFallbackCheck(
-        check: PolishCheck,
-        documentContent: string,
-        token: vscode.CancellationToken
-    ): Promise<PolishResult> {
-        const promptTemplate = FALLBACK_PROMPTS[check];
-        if (!promptTemplate) {
-            return {
-                check,
-                source: 'skipped',
-                summary: `No fallback prompt available for ${check}`,
-                suggestions: '',
-                issueCount: 0,
-            };
-        }
-
-        const truncatedContent = documentContent.length > MAX_DOCUMENT_LENGTH
-            ? documentContent.slice(0, MAX_DOCUMENT_LENGTH) + '\n\n[... truncated for length ...]'
-            : documentContent;
-
-        const prompt = promptTemplate + truncatedContent;
-
-        try {
-            const models = await vscode.lm.selectChatModels({ family: 'gpt-4o' });
-            const model = models[0] ?? (await vscode.lm.selectChatModels())[0];
-
-            if (!model) {
-                return {
-                    check,
-                    source: 'skipped',
-                    summary: 'No language model available for fallback check',
-                    suggestions: 'Ensure GitHub Copilot is active and a language model is available.',
-                    issueCount: 0,
-                };
-            }
-
-            const messages = [vscode.LanguageModelChatMessage.User(prompt)];
-            const response = await model.sendRequest(messages, {}, token);
-
-            let text = '';
-            for await (const chunk of response.text) {
-                text += chunk;
-            }
-
-            const issueCount = countIssues(text);
-
-            return {
-                check,
-                source: 'fallback',
-                summary: issueCount > 0
-                    ? `Found ${issueCount} potential issue${issueCount === 1 ? '' : 's'}`
-                    : 'No issues found',
-                suggestions: text,
-                issueCount,
-            };
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : String(error);
-            return {
-                check,
-                source: 'skipped',
-                summary: `Fallback check failed: ${message}`,
-                suggestions: '',
-                issueCount: 0,
-            };
-        }
-    }
-
-    /**
-     * Create a chat button that opens the companion's chat participant.
-     * Uses vscode.ChatResponseStream.button() to render a clickable action.
-     * Only creates a button if the participant handle is known.
-     */
-    private _createCompanionButton(
-        check: PolishCheck,
-        stream: vscode.ChatResponseStream
-    ): void {
-        const config = POLISH_CHECKS[check];
-        if (!config.companion) {
-            return;
-        }
-
-        // Use explicit participant handle if known, otherwise skip button
-        const handle = config.companion.participantHandle;
-        if (!handle) {
-            stream.markdown(
-                `> Open **${config.companion.name}** from the Copilot Chat participant list ` +
-                `and run \`/${config.companion.command}\`\n`
-            );
-            return;
-        }
-
-        const chatCommand: vscode.Command = {
-            command: 'workbench.action.chat.open',
-            title: `Run ${config.label} check`,
-            arguments: [{
-                query: `@${handle} /${config.companion.command}`,
-            }],
-        };
-
-        stream.button(chatCommand);
     }
 }
 
 /**
- * Count the number of issues in LM response text by looking for
- * numbered list items, bullet points starting with issue-like patterns,
- * or lines containing "issue" / "error" / "warning".
+ * Count issues by looking for numbered/bulleted list items in the LM response.
  */
 function countIssues(text: string): number {
-    const lines = text.split('\n');
     let count = 0;
-    for (const line of lines) {
+    for (const line of text.split('\n')) {
         const trimmed = line.trim();
-        // Count numbered list items (1. , 2. , etc.) and bullet items (- , * )
         if (/^\d+\.\s/.test(trimmed) || /^[-*]\s/.test(trimmed)) {
             count++;
         }

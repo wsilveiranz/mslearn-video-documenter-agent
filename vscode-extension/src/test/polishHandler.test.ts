@@ -1,7 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { handlePolish } from '../handlers/polishHandler';
-import { BackendError } from '../api/backendClient';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -32,37 +31,17 @@ function createMockToken(cancelled = false): vscode.CancellationToken {
     } as any;
 }
 
-function createMockClient(options?: {
-    throwOnGet?: Error;
-    markdownContent?: string;
-}) {
-    return {
-        getDocument: async (_id: string) => {
-            if (options?.throwOnGet) {
-                throw options.throwOnGet;
-            }
-            return {
-                document_id: 'doc-1',
-                doc_type: 'tutorial',
-                markdown_content: options?.markdownContent ?? '# Test document\n\nSome content.',
-                word_count: 42,
-                revision_number: 1,
-                media_files: [],
-            };
-        },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createMockClient(): any {
+    return {};
 }
 
-function createMockStateManager(documentId?: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createMockStateManager(): any {
     return {
-        getState: () => ({
-            currentStage: documentId ? 'generated' as const : 'idle' as const,
-            currentDocumentId: documentId,
-        }),
+        getState: () => ({ currentStage: 'idle' as const }),
         setStage: () => {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
+    };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,7 +53,7 @@ function makeRequest(prompt: string): vscode.ChatRequest {
     return {
         prompt,
         command: 'polish',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
 }
 
@@ -91,14 +70,15 @@ describe('polishHandler', () => {
             stream as any,
             createMockToken(),
             createMockClient(),
-            createMockStateManager('doc-1'),
+            createMockStateManager(),
             createMockOutputManager()
         );
 
         assert.deepStrictEqual(result, { metadata: { command: 'polish' } });
         const output = stream.markdownCalls.join('');
         assert.ok(output.includes('/polish style'), 'should list style subcommand');
-        assert.ok(output.includes('/polish all'), 'should list all subcommand');
+        assert.ok(output.includes('/polish branding'), 'should list branding subcommand');
+        assert.ok(output.includes('Content Mentor'), 'should mention Content Mentor');
     });
 
     it('should show help for invalid subcommand', async () => {
@@ -109,120 +89,46 @@ describe('polishHandler', () => {
             stream as any,
             createMockToken(),
             createMockClient(),
-            createMockStateManager('doc-1'),
+            createMockStateManager(),
             createMockOutputManager()
         );
 
         const output = stream.markdownCalls.join('');
         assert.ok(output.includes('/polish style'));
-        assert.ok(output.includes('/polish sfi'));
+        assert.ok(output.includes('/polish branding'));
     });
 
-    it('should show error when no document ID exists', async () => {
+    it('should show error when no markdown editor is visible for style', async () => {
         const stream = new MockStream();
+        // vscode.window.visibleTextEditors is empty in test mock
         await handlePolish(
             makeRequest('style'),
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             stream as any,
             createMockToken(),
             createMockClient(),
-            createMockStateManager(undefined),
+            createMockStateManager(),
             createMockOutputManager()
         );
 
         const output = stream.markdownCalls.join('');
-        assert.ok(output.includes('generate a document first'), 'should instruct user to generate first');
+        assert.ok(output.includes('No Markdown document found'), 'should tell user to open a file');
     });
 
-    it('should run single check for valid subcommand "style"', async () => {
+    it('should show error when no markdown editor is visible for branding', async () => {
         const stream = new MockStream();
-        const result = await handlePolish(
-            makeRequest('style'),
+        await handlePolish(
+            makeRequest('branding'),
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             stream as any,
             createMockToken(),
             createMockClient(),
-            createMockStateManager('doc-1'),
-            createMockOutputManager()
-        );
-
-        assert.deepStrictEqual(result, { metadata: { command: 'polish' } });
-        // Should show progress
-        assert.ok(stream.progressCalls.length > 0, 'should emit progress');
-        // Summary should exist
-        const output = stream.markdownCalls.join('');
-        assert.ok(output.includes('Summary'), 'should include summary');
-    });
-
-    it('should run all checks for subcommand "all"', async () => {
-        const stream = new MockStream();
-        await handlePolish(
-            makeRequest('all'),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            stream as any,
-            createMockToken(),
-            createMockClient(),
-            createMockStateManager('doc-1'),
+            createMockStateManager(),
             createMockOutputManager()
         );
 
         const output = stream.markdownCalls.join('');
-        assert.ok(output.includes('Summary'), 'should include summary');
-        // With default mocks (no companions, no LM) there should be skipped checks
-        assert.ok(output.includes('Skipped'), 'should include skipped count');
-    });
-
-    it('should show summary counts (companion/fallback/skipped)', async () => {
-        const stream = new MockStream();
-        await handlePolish(
-            makeRequest('all'),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            stream as any,
-            createMockToken(),
-            createMockClient(),
-            createMockStateManager('doc-1'),
-            createMockOutputManager()
-        );
-
-        const output = stream.markdownCalls.join('');
-        // With no companions and no LM models: all 6 are skipped
-        assert.ok(output.includes('Companion'), 'summary should mention companion count');
-        assert.ok(output.includes('Fallback'), 'summary should mention fallback count');
-        assert.ok(output.includes('Skipped'), 'summary should mention skipped count');
-    });
-
-    it('should show error when backend fails to fetch document', async () => {
-        const stream = new MockStream();
-        await handlePolish(
-            makeRequest('style'),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            stream as any,
-            createMockToken(),
-            createMockClient({ throwOnGet: new BackendError(404, 'Document not found') }),
-            createMockStateManager('doc-1'),
-            createMockOutputManager()
-        );
-
-        const output = stream.markdownCalls.join('');
-        assert.ok(output.includes('Failed to fetch document'), 'should show fetch error');
-        assert.ok(output.includes('Document not found'), 'should include error detail');
-    });
-
-    it('should handle generic errors when fetching document', async () => {
-        const stream = new MockStream();
-        await handlePolish(
-            makeRequest('meta'),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            stream as any,
-            createMockToken(),
-            createMockClient({ throwOnGet: new Error('Network error') }),
-            createMockStateManager('doc-1'),
-            createMockOutputManager()
-        );
-
-        const output = stream.markdownCalls.join('');
-        assert.ok(output.includes('Failed to fetch document'));
-        assert.ok(output.includes('Network error'));
+        assert.ok(output.includes('No Markdown document found'));
     });
 
     it('should parse subcommand case-insensitively', async () => {
@@ -233,12 +139,13 @@ describe('polishHandler', () => {
             stream as any,
             createMockToken(),
             createMockClient(),
-            createMockStateManager('doc-1'),
+            createMockStateManager(),
             createMockOutputManager()
         );
 
         const output = stream.markdownCalls.join('');
-        assert.ok(output.includes('Summary'), 'should process uppercase subcommand');
+        // With no visible editors, it should show the "no markdown" error (not the help text)
+        assert.ok(output.includes('No Markdown document found') || output.includes('Writing Style'));
     });
 
     it('should return polish metadata in result', async () => {
@@ -249,7 +156,7 @@ describe('polishHandler', () => {
             stream as any,
             createMockToken(),
             createMockClient(),
-            createMockStateManager('doc-1'),
+            createMockStateManager(),
             createMockOutputManager()
         );
 

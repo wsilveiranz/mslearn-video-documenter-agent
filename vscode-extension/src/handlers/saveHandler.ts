@@ -5,7 +5,6 @@ import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
 import { extractTargetPath, resolveTargetPathPure } from '../utils/intentClassification';
-import { detectCompanions } from '../utils/companions';
 
 /**
  * Resolve the target path using the pure resolver + runtime checks.
@@ -123,18 +122,9 @@ export async function handleSave(
             warnings
         );
         stream.markdown(
-            '💡 Use `/polish all` to run final quality checks before publishing.\n'
+            '💡 Use `/polish` to run MS Learn style checks before publishing.\n' +
+            'For deeper Markdown, metadata, and SEO checks, use **Content Mentor** (`@content-mentor`) directly.\n'
         );
-        // Check if any companions are available for polish
-        const companions = detectCompanions();
-        const availableCompanions = companions.filter(c => c.available);
-        if (availableCompanions.length > 0) {
-            const companionNames = availableCompanions.map(c => c.name).join(', ');
-            stream.markdown(
-                `\n🔌 **Companion extensions detected:** ${companionNames}\n` +
-                '`/polish` will use these for enhanced quality checks.\n'
-            );
-        }
 
         // Non-blocking notification — don't await to avoid freezing the chat
         void vscode.window.showInformationMessage(

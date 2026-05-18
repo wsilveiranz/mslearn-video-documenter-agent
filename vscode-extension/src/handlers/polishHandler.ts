@@ -1,117 +1,94 @@
 import * as vscode from 'vscode';
-import { BackendClient, BackendError } from '../api/backendClient';
+import { BackendClient } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
-import { ChatParticipantProxy, PolishCheck, PolishResult, POLISH_CHECKS } from '../utils/chatProxy';
 
-const ALL_CHECKS: PolishCheck[] = ['style', 'brand', 'meta', 'fix', 'seo', 'sfi'];
+type PolishSubcommand = 'style' | 'branding';
+
+const SUBCOMMANDS: Record<PolishSubcommand, {
+    label: string;
+    description: string;
+    participantQuery: string;
+}> = {
+    style: {
+        label: 'Writing Style',
+        description: 'MS Writing Style Guide compliance',
+        participantQuery: '@learn-authoring-assistant /suggestEdits',
+    },
+    branding: {
+        label: 'Branding',
+        description: 'Product and technology name correctness',
+        participantQuery: '@learn-authoring-assistant /correctBranding',
+    },
+};
 
 const HELP_TEXT =
     '📋 **Polish subcommands:**\n\n' +
     '| Command | Description |\n' +
     '|---------|-------------|\n' +
     '| `/polish style` | Writing Style Guide compliance |\n' +
-    '| `/polish brand` | Product/technology name correctness |\n' +
-    '| `/polish meta` | Metadata optimization |\n' +
-    '| `/polish seo` | Search engine optimization |\n' +
-    '| `/polish fix` | Auto-fix Markdown formatting |\n' +
-    '| `/polish sfi` | Security scan |\n' +
-    '| `/polish all` | Run all checks |\n';
+    '| `/polish branding` | Product/technology name correctness |\n' +
+    '\n' +
+    'These open **Learn Authoring Assistant** directly for the check.\n\n' +
+    '💡 For Markdown formatting, metadata, and SEO checks, use **Content Mentor** (`@content-mentor`) directly.\n';
 
-function isValidSubcommand(word: string): word is PolishCheck | 'all' {
-    return ALL_CHECKS.includes(word as PolishCheck) || word === 'all';
-}
-
-function buildSummary(results: PolishResult[]): string {
-    const companion = results.filter(r => r.source === 'companion').length;
-    const fallback = results.filter(r => r.source === 'fallback').length;
-    const skipped = results.filter(r => r.source === 'skipped');
-
-    const lines: string[] = [
-        '\n---\n',
-        '## Summary\n',
-        `| Source | Count |\n|--------|-------|\n` +
-        `| Companion | ${companion} |\n` +
-        `| Fallback | ${fallback} |\n` +
-        `| Skipped | ${skipped.length} |\n`,
-    ];
-
-    if (skipped.length > 0) {
-        lines.push('\n**Skipped checks:**\n');
-        for (const r of skipped) {
-            lines.push(`- **${POLISH_CHECKS[r.check].label}**: ${r.summary}\n`);
-        }
-        lines.push(
-            '\n💡 Install companion extensions for full coverage:\n' +
-            '- [Learn Authoring Assistant](https://marketplace.visualstudio.com/items?itemName=docsmsft.learn-authoring-assistant)\n' +
-            '- [Content Mentor](https://marketplace.visualstudio.com/items?itemName=msft-content.content-mentor)\n'
-        );
+/**
+ * Find the visible Markdown editor, even when chat has focus in the editor area.
+ * Falls back from activeTextEditor → visibleTextEditors with markdown languageId.
+ */
+function findMarkdownEditor(): vscode.TextEditor | undefined {
+    // Prefer the active editor if it's already a Markdown file
+    const active = vscode.window.activeTextEditor;
+    if (active && active.document.languageId === 'markdown') {
+        return active;
     }
-
-    return lines.join('');
+    // When chat is in the editor area, activeTextEditor is undefined or the chat panel.
+    // Search visible editors for the most recent Markdown file.
+    const visible = vscode.window.visibleTextEditors ?? [];
+    return visible.find(e => e.document.languageId === 'markdown');
 }
 
 export async function handlePolish(
     request: vscode.ChatRequest,
     stream: vscode.ChatResponseStream,
-    token: vscode.CancellationToken,
-    client: BackendClient,
-    stateManager: ConversationStateManager,
+    _token: vscode.CancellationToken,
+    _client: BackendClient,
+    _stateManager: ConversationStateManager,
     _outputManager: OutputManager
 ): Promise<vscode.ChatResult> {
-    const words = request.prompt.trim().toLowerCase().split(/\s+/);
-    const subcommand = words[0] || '';
+    const subcommand = request.prompt.trim().toLowerCase().split(/\s+/)[0] || '';
 
-    if (!subcommand || !isValidSubcommand(subcommand)) {
+    if (!(subcommand in SUBCOMMANDS)) {
         stream.markdown(HELP_TEXT);
         return { metadata: { command: 'polish' } };
     }
 
-    // Resolve document content: prefer backend state, fall back to active editor
-    let content: string | undefined;
-    const documentId = stateManager.getState().currentDocumentId;
+    const config = SUBCOMMANDS[subcommand as PolishSubcommand];
 
-    if (documentId) {
-        try {
-            const doc = await client.getDocument(documentId);
-            content = doc.markdown_content;
-        } catch (error) {
-            const message = error instanceof BackendError
-                ? `Backend error: ${error.detail}`
-                : `Error: ${error instanceof Error ? error.message : String(error)}`;
-            stream.markdown(`⚠️ Could not fetch generated document: ${message}\n\nFalling back to active editor…\n\n`);
-        }
-    }
-
-    if (!content) {
-        const editor = vscode.window.activeTextEditor;
-        if (editor && editor.document.languageId === 'markdown') {
-            content = editor.document.getText();
-        }
-    }
-
-    if (!content) {
+    // Ensure a Markdown editor is visible and focused before delegating
+    const mdEditor = findMarkdownEditor();
+    if (!mdEditor) {
         stream.markdown(
-            '❌ No document to polish. Either:\n\n' +
-            '1. Open a Markdown file in the editor, or\n' +
-            '2. Generate a document first with `/generate`\n'
+            '❌ No Markdown document found. Open a `.md` file in the editor first, ' +
+            'then run this command again.\n'
         );
         return { metadata: { command: 'polish' } };
     }
 
-    const proxy = new ChatParticipantProxy();
-    let results: PolishResult[];
+    // Focus the Markdown editor so Learn Authoring Assistant can find it
+    await vscode.window.showTextDocument(mdEditor.document, mdEditor.viewColumn, false);
 
-    if (subcommand === 'all') {
-        stream.progress('Running all polish checks...');
-        results = await proxy.runAllChecks(content, stream, token);
-    } else {
-        stream.progress(`Running ${POLISH_CHECKS[subcommand].label} check...`);
-        const result = await proxy.runCheck(subcommand, content, stream, token);
-        results = [result];
-    }
+    stream.markdown(
+        `🔍 Opening **Learn Authoring Assistant** for ${config.label} check…\n\n` +
+        'The check will run against the Markdown document now focused in the editor.\n'
+    );
 
-    stream.markdown(buildSummary(results));
+    const chatCommand: vscode.Command = {
+        command: 'workbench.action.chat.open',
+        title: `Run ${config.label} check`,
+        arguments: [{ query: config.participantQuery }],
+    };
+    stream.button(chatCommand);
 
     return { metadata: { command: 'polish' } };
 }
