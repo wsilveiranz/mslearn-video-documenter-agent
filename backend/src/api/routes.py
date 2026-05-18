@@ -491,7 +491,7 @@ async def _run_pipeline(
         manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing for MS Learn style...")
 
         editor_agent = EditorAgent(client, learn_tools=learn_tools)
-        document = await editor_agent.process(document)
+        document = await editor_agent.process(document, extraction=extraction_result)
 
         manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing complete ✓")
 
@@ -513,7 +513,7 @@ async def _run_pipeline(
             feedback = "\n".join(
                 f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions
             )
-            document = await editor_agent.process(document, feedback=feedback)
+            document = await editor_agent.process(document, feedback=feedback, extraction=extraction_result)
             evaluation = await evaluate_agent.process(document, extraction_result, quality_report=job.quality_report)
 
         # Done
@@ -846,7 +846,7 @@ async def refine_document(
 
             client = create_llm_client(model_override=llm_model)
             editor = EditorAgent(client)
-            refined = await editor.process(doc, feedback=request.feedback)
+            refined = await editor.process(doc, feedback=request.feedback, extraction=extraction)
 
             if extraction is not None:
                 evaluator = EvaluateAgent(client)
