@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import secrets
 import tempfile
 import uuid
@@ -44,6 +45,7 @@ _evaluations: dict[str, EvaluationReport] = {}
 # ---- Session auth ----
 _session_secret: str = secrets.token_hex(32)
 _secret_retrieved: bool = False
+_bootstrap_token: str | None = os.environ.get("VD_BOOTSTRAP_TOKEN")
 
 
 def _require_session_auth(request: Request) -> None:
@@ -235,11 +237,17 @@ async def health_deep() -> dict[str, object]:
 # ---- Session Auth ----
 
 @router.get("/auth/session-secret")
-async def get_session_secret():
-    """Return the session secret. Only callable once to prevent replay."""
+async def get_session_secret(request: Request):
+    """Return the session secret. Requires bootstrap token and is only callable once."""
     global _secret_retrieved
     if _secret_retrieved:
         raise HTTPException(status_code=403, detail="Session secret already retrieved.")
+
+    # Require the bootstrap token that was passed via env var at process start
+    provided_token = request.headers.get("X-Bootstrap-Token")
+    if not _bootstrap_token or provided_token != _bootstrap_token:
+        raise HTTPException(status_code=403, detail="Invalid or missing bootstrap token.")
+
     _secret_retrieved = True
     return {"secret": _session_secret}
 
@@ -913,9 +921,14 @@ async def _fetch_m365_context_for_doc(doc: GeneratedDocument, user_feedback: str
 
 @router.post("/documents/{document_id}/refine", response_model=GenerateResponse)
 async def refine_document(
-    document_id: str, request: RefineRequest, background_tasks: BackgroundTasks
+    document_id: str, request: RefineRequest, background_tasks: BackgroundTasks,
+    http_request: Request,
 ) -> GenerateResponse:
     """Iteratively refine a generated document with feedback."""
+    # Require session auth when M365 enrichment is requested
+    if request.enrich_m365:
+        _require_session_auth(http_request)
+
     doc = _documents.get(document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")

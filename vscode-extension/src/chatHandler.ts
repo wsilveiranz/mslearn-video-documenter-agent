@@ -11,14 +11,19 @@ import { handleStatus } from './handlers/statusHandler';
 import { handleConversation } from './handlers/conversationHandler';
 import { handlePolish } from './handlers/polishHandler';
 
+export interface ChatHandlerResult {
+    handler: vscode.ChatRequestHandler;
+    client: BackendClient;
+}
+
 export function createChatHandler(
     extensionContext: vscode.ExtensionContext
-): vscode.ChatRequestHandler {
+): ChatHandlerResult {
     const client = new BackendClient();
     const stateManager = createStateManager(extensionContext);
     const outputManager = createOutputManager();
 
-    return async (
+    const handler: vscode.ChatRequestHandler = async (
         request: vscode.ChatRequest,
         _context: vscode.ChatContext,
         stream: vscode.ChatResponseStream,
@@ -44,4 +49,6 @@ export function createChatHandler(
 
         return handleConversation(request, stream, token, client, stateManager, outputManager);
     };
+
+    return { handler, client };
 }

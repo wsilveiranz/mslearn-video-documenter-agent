@@ -93,6 +93,13 @@ export class OutputManager {
                     relativePath = `media/${media.filename}`;
                 }
 
+                // Security: reject path traversal and absolute paths
+                if (relativePath.startsWith('/') || relativePath.startsWith('\\')
+                    || relativePath.includes('..')
+                    || /^[a-zA-Z]:/.test(relativePath)) {
+                    relativePath = `media/${media.filename}`;
+                }
+
                 const destUri = vscode.Uri.joinPath(baseDirUri, relativePath);
                 // Ensure parent directory exists (handles article-specific subfolders)
                 const lastSlash = relativePath.lastIndexOf('/');

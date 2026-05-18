@@ -236,12 +236,15 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
         # Stage 4: Writer
         logger.info("pipeline.stage", stage="writer")
         writer_agent = WriterAgent(client, learn_tools=learn_tools)
-        document = await writer_agent.process(outline, extraction_result)
+        document = await writer_agent.process(
+            outline, extraction_result,
+            supplementary_context=request.supplementary_context,
+        )
 
         # Stage 5: Editor
         logger.info("pipeline.stage", stage="editor")
         editor_agent = EditorAgent(client, learn_tools=learn_tools)
-        document = await editor_agent.process(document)
+        document = await editor_agent.process(document, extraction=extraction_result)
 
         # Stage 6: Evaluate
         logger.info("pipeline.stage", stage="evaluate")
@@ -258,7 +261,9 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
             feedback = "\n".join(
                 f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions
             )
-            document = await editor_agent.process(document, feedback=feedback)
+            document = await editor_agent.process(
+                document, feedback=feedback, extraction=extraction_result,
+            )
             evaluation = await evaluate_agent.process(document, extraction_result)
 
         logger.info(

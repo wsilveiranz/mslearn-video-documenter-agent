@@ -119,16 +119,22 @@ export class BackendClient {
     private readonly baseUrl: string;
     private sessionSecret: string | null = null;
     private secretFetchPromise: Promise<void> | null = null;
+    private bootstrapToken: string | undefined;
 
     constructor(config?: BackendConfig) {
         this.baseUrl = (config?.baseUrl ?? getBackendUrl()).replace(/\/$/, '');
+    }
+
+    /** Set the bootstrap token used to authenticate session-secret retrieval. */
+    setBootstrapToken(token: string): void {
+        this.bootstrapToken = token;
     }
 
     /**
      * Fetch the one-time session secret from the backend.
      * Called automatically before requests; safe to call multiple times.
      */
-    async fetchSessionSecret(): Promise<void> {
+    async fetchSessionSecret(bootstrapToken?: string): Promise<void> {
         if (this.sessionSecret) {
             return;
         }
@@ -138,13 +144,21 @@ export class BackendClient {
         this.secretFetchPromise = (async () => {
             try {
                 const url = `${this.baseUrl}/api/v1/auth/session-secret`;
-                const response = await fetch(url);
+                const headers: Record<string, string> = {};
+                if (bootstrapToken) {
+                    headers['X-Bootstrap-Token'] = bootstrapToken;
+                }
+                const response = await fetch(url, { headers });
                 if (response.ok) {
                     const data = await response.json() as { secret: string };
                     this.sessionSecret = data.secret;
+                } else {
+                    // Clear promise so next call retries
+                    this.secretFetchPromise = null;
                 }
             } catch {
-                // Non-fatal: backend may not be ready yet
+                // Non-fatal: backend may not be ready yet — allow retry
+                this.secretFetchPromise = null;
             }
         })();
         return this.secretFetchPromise;
@@ -153,7 +167,7 @@ export class BackendClient {
     async checkHealth(): Promise<HealthResponse> {
         const result = await this.get<HealthResponse>('/health');
         // Fetch session secret after first successful health check
-        await this.fetchSessionSecret();
+        await this.fetchSessionSecret(this.bootstrapToken);
         return result;
     }
 

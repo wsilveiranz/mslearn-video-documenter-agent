@@ -1,4 +1,5 @@
 import { execSync, spawn, exec, type ChildProcess } from 'child_process';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -81,6 +82,7 @@ export class BackendProcessManager implements vscode.Disposable {
     private _stopping = false;
     private _outputChannel: vscode.OutputChannel;
     private _exitHandler: (() => void) | undefined;
+    private _bootstrapToken: string | undefined;
 
     constructor() {
         this._outputChannel = vscode.window.createOutputChannel('Video Documenter Backend');
@@ -88,6 +90,11 @@ export class BackendProcessManager implements vscode.Disposable {
         // Safety net: synchronously kill child process on extension host exit
         this._exitHandler = () => this._killSync();
         process.on('exit', this._exitHandler);
+    }
+
+    /** The bootstrap token generated for authenticating session-secret retrieval. */
+    get bootstrapToken(): string | undefined {
+        return this._bootstrapToken;
     }
 
     /**
@@ -98,6 +105,7 @@ export class BackendProcessManager implements vscode.Disposable {
         const resolvedHost = host ?? '127.0.0.1';
 
         this._stopping = false;
+        this._bootstrapToken = crypto.randomBytes(32).toString('hex');
 
         if (this._process || this._externalProcess) {
             this._outputChannel.appendLine('[BackendProcessManager] Backend is already running.');
@@ -155,6 +163,8 @@ export class BackendProcessManager implements vscode.Disposable {
             PORT: String(port),
             PROCESSING_MODE: getProcessingMode(),
             PYTHONIOENCODING: 'utf-8',
+            // Bootstrap token for authenticating session-secret retrieval
+            VD_BOOTSTRAP_TOKEN: this._bootstrapToken ?? '',
             // Bundled .exe must not use uvicorn reload (it can't re-import frozen modules)
             ...(isBundled ? { ENVIRONMENT: 'production' } : {}),
         };
