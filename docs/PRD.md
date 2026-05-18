@@ -3,8 +3,8 @@
 ## MS Learn Video Documenter Agent
 
 **Version:** 1.0  
-**Status:** Draft  
-**Last Updated:** 2026-05-09
+**Status:** MVP Delivered  
+**Last Updated:** 2026-05-18
 
 ---
 
@@ -12,7 +12,7 @@
 
 The **MS Learn Video Documenter Agent** is an AI-powered tool that transforms screen recording videos (product demos, walkthroughs, tutorials) into structured Microsoft Learn-style documentation. The agent processes video content — extracting visual frames, audio transcripts, and on-screen text — and generates publication-ready Markdown documents that conform to Microsoft Learn's voice, tone, style guide, and document structure.
 
-The agent runs as a **VS Code Chat Participant** (primary interface) with a backend designed for easy extension to a web UI. It uses **Azure AI Foundry** models and **Azure-native video/audio processing services**, with open-source fallbacks for cost optimization and local development.
+The agent runs as a **VS Code Chat Participant** (primary interface) with a backend designed for easy extension to a web UI. It uses **Azure AI Foundry** models and **Azure-native video/audio processing services**, with open-source fallbacks for cost optimization and local development. The agent grounds its output against published Microsoft Learn content via MCP integration and can optionally leverage M365 organizational context for richer documentation.
 
 ---
 
@@ -43,6 +43,8 @@ Commercial tools (Scribe, Tango, Loom) address parts of this problem but target 
 | G6 | Accept video from multiple sources (local files, Azure Blob, YouTube/Stream) | All three source types supported |
 | G7 | Auto-capture and annotate screenshots from video keyframes | Screenshots included in output with step numbers and captions |
 | G8 | Assess extraction data quality and warn users when source material is insufficient for grounded documentation | Quality assessment runs after every extraction; thin/minimal data triggers visible warnings before document generation |
+| G9 | Ground generated content against published Microsoft Learn articles for accuracy and style consistency | Writer output references real MS Learn patterns; grounding dimension score ≥ 0.6 |
+| G10 | Provide automated quality polish checks without requiring manual review | /polish identifies ≥80% of common style/metadata issues |
 
 ### Non-Goals (v1)
 
@@ -134,6 +136,28 @@ US-14: As a documentation author, I want the system to use TODO placeholders ins
        fabricated content when extraction data is insufficient.
 ```
 
+### MCP & Grounding
+
+```
+US-15: As an engineer, I want the agent to ground generated content against published
+       Microsoft Learn articles so the output matches established patterns and terminology.
+
+US-16: As an engineer, I want to optionally pull M365 context (documents, emails, meetings)
+       into the editing workflow so the agent can incorporate organizational knowledge
+       when refining documentation.
+```
+
+### Quality Assurance
+
+```
+US-17: As an engineer, I want a /polish command that runs automated quality checks
+       (style compliance, branding, metadata completeness, SEO, formatting, security)
+       and provides actionable feedback.
+
+US-18: As a documentation author, I want the editor agent to be able to reassign
+       screenshots from the keyframe catalog to better match the generated content.
+```
+
 ---
 
 ## 6. Functional Requirements
@@ -203,6 +227,24 @@ US-14: As a documentation author, I want the system to use TODO placeholders ins
 | FR-34 | Display LLM-generated quality warnings in the VS Code extension after extraction completes | P0 |
 | FR-35 | When data quality is thin or minimal, the Writer agent shall apply guardrails — inserting explicit quality notes and TODO placeholders — rather than blocking generation entirely | P1 |
 | FR-36 | Score a "grounding" dimension in the Evaluate Agent to verify every document step is traceable to transcript, OCR, or keyframe evidence | P0 |
+
+### 6.7 MCP & Grounding Integration
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-37 | Connect to Microsoft Learn MCP Server for `microsoft_docs_search`, `microsoft_docs_fetch`, and `microsoft_code_sample_search` tools | P1 |
+| FR-38 | Structure and Writer agents shall search published MS Learn articles for style reference during generation | P1 |
+| FR-39 | Editor agent shall fetch published docs for style consistency during refinement | P1 |
+| FR-40 | Work IQ M365 context queries must be permission-gated — never called automatically, only when user explicitly triggers via /edit | P0 |
+| FR-41 | Accept reference documents (PDF, DOCX, PPTX) via file picker; convert to Markdown with MarkItDown before including in writer/editor prompts | P1 |
+
+### 6.8 Quality Polish
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| FR-42 | Expose a `/polish` command that runs style, branding, metadata, SEO, formatting, and security checks | P1 |
+| FR-43 | /polish delegates to Learn Authoring Assistant companion extension when installed; falls back to built-in analysis | P1 |
+| FR-44 | Editor agent can reassign screenshots from the keyframe catalog to better match revised content | P2 |
 
 ---
 

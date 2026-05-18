@@ -4,7 +4,7 @@
 
 **Version:** 1.0  
 **Status:** Draft  
-**Last Updated:** 2026-05-09
+**Last Updated:** 2026-05-18
 
 ---
 
@@ -61,6 +61,12 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 │   │ • microsoft_docs_fetch                           │              │
 │   │ • microsoft_code_sample_search                   │              │
 │   └──────────────────────────────────────────────────┘              │
+│   ┌──────────────────────────────────────────────────┐              │
+│   │ Work IQ MCP Server                               │              │
+│   │ M365 context enrichment (permission-gated)       │              │
+│   │ • workiq_search_documents (files, emails,        │              │
+│   │   meetings, Teams messages)                      │              │
+│   └──────────────────────────────────────────────────┘              │
 │                                                                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │                    AZURE AI SERVICES                                │
@@ -113,6 +119,7 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 | **Azure Blob Storage** | Video file staging, keyframe image storage | Local filesystem |
 | **Azure Container Apps** | Backend hosting (production) | Local Docker / dev server |
 | **Microsoft Learn MCP Server** | Documentation search, fetch, and code sample retrieval for agent grounding | Local fallback: embedded style rules only (no live grounding) |
+| **Work IQ MCP Server** | M365 document/email/meeting context for grounding (permission-gated) | Proceeds without M365 context |
 
 ### 2.3 Local / Open-Source Components
 
@@ -125,6 +132,7 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 | **yt-dlp** | YouTube/Stream video download | Unlicense | ✅ |
 | **Pillow** | Image annotation (step numbers, highlights) | MIT-like | ✅ |
 | **Copilot LM Proxy** | Local-mode LLM access via VS Code Language Model API | — | N/A (requires VS Code) |
+| **MarkItDown** | Reference document conversion (PDF, DOCX, PPTX → Markdown) | MIT | ✅ |
 
 ### 2.4 Copilot LM Proxy (local mode)
 
@@ -183,6 +191,36 @@ The MS Learn Video Documenter Agent uses a **multi-agent pipeline architecture**
 - **Extension dependency:** The VS Code extension must be running for the proxy to be available; the backend cannot use Copilot models headlessly.
 - **Local mode only:** The proxy is not used in cloud/production mode — Azure AI Foundry is used instead.
 
+### 2.5 MCP Integration
+
+**Purpose:** Ground generated documentation in real Microsoft Learn content and leverage M365 organizational context for richer, more accurate output.
+
+#### Microsoft Learn MCP Server
+
+Provides three tools for documentation grounding:
+
+| Tool | Purpose | Used By |
+|------|---------|---------|
+| `microsoft_docs_search` | Search published MS Learn articles by topic | Structure Agent, Writer Agent |
+| `microsoft_docs_fetch` | Fetch full article content for style reference | Writer Agent, Editor Agent |
+| `microsoft_code_sample_search` | Find published code examples | Writer Agent |
+
+**Endpoint:** `https://learn.microsoft.com/api/mcp` (Streamable HTTP transport)
+
+#### Work IQ MCP Server
+
+Provides M365 organizational context enrichment:
+
+| Tool | Purpose | Used By |
+|------|---------|---------|
+| `workiq_search_documents` | Search user's M365 files, emails, meetings, Teams messages | Editor Agent (via /edit) |
+
+**Important:** Work IQ queries are **permission-gated** — they're only triggered when the user explicitly requests M365 context (e.g., during `/edit` with context enrichment). Never called automatically by the pipeline.
+
+#### MarkItDown Document Converter
+
+The Editor and Writer agents can accept reference documents (PDF, DOCX, PPTX, HTML) provided by the user. These are converted to Markdown via Microsoft's `markitdown` library before being included in prompts.
+
 ---
 
 ## 3. Agent Pipeline Detail
@@ -204,6 +242,10 @@ flowchart LR
     qa -.->|quality_report| writer
     qa -.->|quality_report| evaluate
     editor -->|Refinement Loop| writer
+    mcp[(MCP Servers)] -.->|docs search\nstyle reference| structure
+    mcp -.->|docs search\nstyle reference| writer
+    mcp -.->|style reference| editor
+    workiq[(Work IQ)] -.->|M365 context\npermission-gated| editor
 ```
 
 #### Orchestration Model
@@ -421,6 +463,9 @@ The Editor Agent:
 - Ensures screenshot alt-text is descriptive
 - Validates YAML frontmatter completeness
 - Handles user feedback for iterative refinement
+- Screenshot reassignment via keyframe catalog (can swap screenshots to better match content)
+- Microsoft Learn MCP tools for live style reference during refinement
+- Work IQ M365 context when user-triggered (permission-gated, via `/edit` with context enrichment)
 
 #### Agent 6: Evaluate Agent
 

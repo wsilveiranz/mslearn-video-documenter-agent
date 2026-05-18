@@ -12,6 +12,8 @@ The Video Documenter Agent processes screen recordings through a 6-agent pipelin
 - **MS Learn compliance**: Generated content follows Microsoft's voice principles, grammar rules, and Markdown extensions
 - **Iterative refinement**: Automatic revision loop — the Editor re-edits until the Evaluate agent passes
 - **Dual processing modes**: Azure-native services (cloud) or open-source tools (local)
+- **MCP-grounded content**: Leverages Microsoft Learn docs and Work IQ M365 context for accurate, well-referenced documentation
+- **Quality polish**: Built-in quality checks for style, branding, metadata, SEO, and security compliance
 - **Multiple interfaces**: CLI, REST API, or VS Code Chat Participant (`@video-documenter`)
 
 ### Architecture
@@ -29,6 +31,7 @@ Built with:
 - **GitHub Copilot models** — LLM access via VS Code Language Model API (local mode)
 - **Azure Video Indexer** — scene detection, OCR, keyframes, transcription (cloud mode)
 - **FFmpeg + PySceneDetect + Whisper** — video processing (local mode)
+- **MCP (Model Context Protocol)** — Microsoft Learn docs search + Work IQ M365 context grounding
 - **FastAPI** — backend API with WebSocket progress streaming
 - **VS Code Chat Participant API** — primary user interface
 
@@ -274,7 +277,9 @@ Select a document type (Tutorial, Quickstart, How-to, Concept, or Overview). The
 | `/plan` | Plan documentation: select video, collect metadata (title, author, ms.service), choose template, and trigger the full generation pipeline |
 | `/analyze <path>` | Analyze a screen recording video |
 | `/generate [type]` | Generate MS Learn documentation |
-| `/refine <feedback>` | Refine the generated document |
+| `/edit <feedback>` | Edit a section of generated documentation |
+| `/refine <feedback>` | Refine the generated document (alias for /edit) |
+| `/polish` | Run quality checks: style, branding, metadata, SEO, formatting, security |
 | `/save [path]` | Save the generated document to a file |
 | `/status` | Check processing status |
 
@@ -296,7 +301,12 @@ You can also right-click any video file (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`
 | `video-documenter.foundryModel` | `gpt-4o` | Default LLM model (cloud mode only) |
 | `video-documenter.blobAccountUrl` | `""` | Azure Blob Storage account URL (cloud mode only) |
 | `video-documenter.speechServiceEndpoint` | `""` | Azure AI Speech service endpoint (cloud mode only) |
+| `video-documenter.foundryModelMini` | `gpt-4o-mini` | Smaller model for simpler tasks (cloud mode only) |
+| `video-documenter.blobContainerName` | `video-documenter` | Azure Blob container name (cloud mode only) |
+| `video-documenter.speechServiceRegion` | `eastus` | Azure AI Speech region (cloud mode only) |
 | `video-documenter.videoIndexerAccountId` | `""` | Azure Video Indexer account ID (cloud mode only) |
+| `video-documenter.videoIndexerResourceId` | `""` | Full ARM resource ID for Video Indexer (cloud mode only) |
+| `video-documenter.videoIndexerLocation` | `trial` | Azure Video Indexer location (cloud mode only) |
 | `video-documenter.author` | `""` | Default GitHub username for document metadata |
 | `video-documenter.msAuthor` | `""` | Default MS alias for document metadata |
 
@@ -488,17 +498,24 @@ backend/
 │   │   ├── writer.py        # Generate full Markdown article
 │   │   ├── editor.py        # Refine for style compliance
 │   │   ├── evaluate.py      # Quality-gate scoring
+│   │   ├── quality.py       # Quality polish checks (style, branding, SEO)
 │   │   └── orchestrator.py  # Pipeline coordinator
 │   ├── services/        # Azure + local service clients
 │   │   ├── ffmpeg_service.py            # Local video frame extraction
 │   │   ├── scene_detection_service.py   # Scene detection via PySceneDetect
 │   │   ├── transcription_service.py     # Local Whisper transcription
+│   │   ├── whisper_service.py           # Local Whisper transcription service
 │   │   ├── vision_service.py            # GPT-4o vision analysis of keyframes
 │   │   ├── blob_storage_service.py      # Azure Blob Storage with SAS tokens
 │   │   ├── speech_service.py            # Azure AI Speech fast transcription
 │   │   ├── video_indexer_service.py     # Azure Video Indexer integration
 │   │   ├── copilot_client.py            # Copilot LM Proxy client for local mode
-│   │   └── intent_classifier.py         # User message intent classification
+│   │   ├── intent_classifier.py         # User message intent classification
+│   │   ├── learn_mcp_tools.py           # Microsoft Learn MCP tools for documentation grounding
+│   │   ├── workiq_mcp_tools.py          # Work IQ M365 context enrichment
+│   │   ├── document_converter.py        # MarkItDown document conversion for reference docs
+│   │   ├── llm_judge.py                 # LLM-based quality judging
+│   │   └── mcp_client.py               # Generic MCP client infrastructure
 │   ├── utils/           # Markdown helpers, text processing utilities
 │   ├── models/          # Pydantic data models
 │   ├── prompts/         # Agent system prompts (Markdown)

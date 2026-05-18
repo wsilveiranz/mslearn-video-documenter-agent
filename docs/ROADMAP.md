@@ -4,7 +4,7 @@
 
 **Version:** 2.0  
 **Status:** Post-MVP  
-**Last Updated:** 2026-05-09
+**Last Updated:** 2026-05-18
 
 ---
 
@@ -19,9 +19,9 @@ flowchart LR
     P0["Phase 0\nFoundation ✅"]
     P1["Phase 1\nCore Pipeline ✅"]
     P2["Phase 2\nAzure Integration ✅"]
-    P4["Phase 4\nVS Code Extension ⏳ 85%"]
+    P4["Phase 4\nVS Code Extension ⏳ 95%"]
     PA["Phase A\nQuality & Cost 🔲"]
-    PB["Phase B\nMCP & Grounding 🔲"]
+    PB["Phase B\nMCP & Grounding ⏳ 70%"]
     PC["Phase C\nDistribution 🔲"]
     PD["Phase D\nProduction Scale 🔲"]
     PE["Phase E\nFeature Expansion 🔲"]
@@ -81,7 +81,7 @@ flowchart LR
 
 ---
 
-## Phase 4: VS Code Extension ⏳ 85% COMPLETE
+## Phase 4: VS Code Extension ⏳ 95% COMPLETE
 
 **Goal:** Full VS Code Chat Participant connecting users to the pipeline through conversational interaction.
 
@@ -97,20 +97,22 @@ flowchart LR
 - ✅ **Copilot LM Proxy** — extension hosts OpenAI-compatible HTTP proxy translating `vscode.lm` API calls; `CopilotProxyChatClient` in backend; handshake via `POST /api/v1/config/lm-proxy`; zero-Azure local development with only a Copilot subscription
 - ✅ **VSIX packaging** — PyInstaller-bundled backend; dual-layout detection (monorepo dev vs. installed VSIX); paths always resolved relative to `context.extensionPath`
 - ✅ **Intent classification** — natural language requests classified to commands without explicit slash syntax
+- ✅ **`/polish` command** — runs quality checks (style, branding, metadata, SEO, formatting, security); delegates to Learn Authoring Assistant when installed, falls back to built-in analysis
+- ✅ **`/edit` command** — section editing with Work IQ M365 context enrichment (permission-gated)
+- ✅ **Reference doc support** — accepts PDF, DOCX, PPTX via file picker; converts with MarkItDown; passes to writer/editor prompts
+- ✅ **Screenshot reassignment** — Editor agent can reassign screenshots via keyframe catalog during refinement
+- ✅ **Quality score surfacing** — eval quality scores displayed in /generate and /edit output
 
-### What remains (~15%)
+### What remains (~5%)
 
-- ❌ Companion extension detection (Content Mentor, Authoring Assistant, Authoring Pack)
 - ❌ VS Code Marketplace publishing
 - ❌ Telemetry integration
 
 ---
 
-## Phase 3: Tool & Extension Integration ❌ NOT STARTED
+## Phase 3: Tool & Extension Integration ⏳ PARTIALLY DELIVERED
 
-**Goal:** MCP client integration and tool grounding. Deferred post-MVP.
-
-See **Phase B** below for the current plan.
+**Goal:** MCP client integration and tool grounding. Partially delivered via Phase B below.
 
 ---
 
@@ -147,6 +149,8 @@ See **Phase D** below for the current plan.
 5. Apply iterative quality refinement with 5-dimension evaluation scoring
 6. Deliver results through VS Code Copilot Chat with live progress streaming
 7. Work in full-Azure mode (Video Indexer + Speech + Foundry) and zero-Azure local mode (FFmpeg + Whisper + Copilot LM Proxy)
+8. Ground content against published Microsoft Learn articles via MCP integration
+9. Accept reference documents (PDF, DOCX, PPTX) for additional context
 
 ---
 
@@ -180,37 +184,42 @@ See **Phase D** below for the current plan.
 
 ---
 
-### Phase B: MCP & Tool Grounding
+### Phase B: MCP & Tool Grounding ⏳ 70% COMPLETE
 
 **Goal:** Connect agents to live Microsoft Learn content for real-time documentation grounding.
 
-#### B.1 MCP client infrastructure
-- Create `backend/src/services/mcp_client.py` with Streamable HTTP and stdio transport
-- Generic `call_tool(server, tool_name, params) → result` abstraction
-- TTL-based response caching, rate limiting, structured logging
-- Graceful degradation when MCP server is unavailable (agents continue without grounding)
+#### B.1 MCP client infrastructure ✅ COMPLETE
+- ✅ Created `backend/src/services/mcp_client.py` with Streamable HTTP and stdio transport
+- ✅ Generic `call_tool(server, tool_name, params) → result` abstraction
+- ✅ TTL-based response caching, rate limiting, structured logging
+- ✅ Graceful degradation when MCP server is unavailable (agents continue without grounding)
 
-#### B.2 Microsoft Learn MCP Server integration
-- Connect to `https://learn.microsoft.com/api/mcp`
-- Register three MAF tools: `microsoft_docs_search`, `microsoft_docs_fetch`, `microsoft_code_sample_search`
-- Structure Agent: search for related published articles during outline creation
-- Writer Agent: fetch published examples for voice/tone grounding
-- Editor Agent: reference published docs for style consistency
+#### B.2 Microsoft Learn MCP Server integration ✅ COMPLETE
+- ✅ Connected to `https://learn.microsoft.com/api/mcp`
+- ✅ Registered three tools: `microsoft_docs_search`, `microsoft_docs_fetch`, `microsoft_code_sample_search`
+- ✅ Structure Agent: searches for related published articles during outline creation
+- ✅ Writer Agent: fetches published examples for voice/tone grounding
+- ✅ Editor Agent: references published docs for style consistency
 
-#### B.3 Code sample validation
+#### B.3 Code sample validation ❌ NOT STARTED
 - Execute extracted code blocks in a sandboxed environment
 - Flag blocks that fail to run as a quality issue in the Evaluate Agent
 - Surface validation failures in the chat with suggested fixes
 
-#### B.4 Companion extension detection
-- Create `vscode-extension/src/utils/companions.ts`
-- Detect: `docsmsft.docs-authoring-pack`, `docsmsft.learn-authoring-assistant`, `msft-content.content-mentor`
-- Show post-generation workflow tips based on installed companions
-- Content Mentor and Authoring Assistant are Microsoft-internal only — detect conditionally, don't recommend to external users
+#### B.4 Companion extension detection ✅ COMPLETE
+- ✅ Detect: `docsmsft.docs-authoring-pack`, `docsmsft.learn-authoring-assistant`, `msft-content.content-mentor`
+- ✅ Distinguish installed vs. active companions
+- ✅ Show post-generation workflow tips based on installed companions
+- ✅ /polish delegates to Learn Authoring Assistant when active
 
-#### B.5 Tool registration with Foundry Agent Service
+#### B.5 Tool registration with Foundry Agent Service ❌ NOT STARTED
 - Register MCP tools with Azure AI Foundry Agent Service for hosted deployment
 - Implement tool manifest generation from MAF tool definitions
+
+#### B.6 Work IQ M365 Context Integration ✅ COMPLETE (added post-roadmap)
+- ✅ Created `backend/src/services/workiq_mcp_tools.py` with `workiq_search_documents` tool
+- ✅ Permission-gated: only triggered on explicit user request via /edit
+- ✅ Integrated into Editor agent for M365 context enrichment during refinement
 
 ---
 
@@ -308,11 +317,11 @@ See **Phase D** below for the current plan.
 | **Phase 0: Foundation** | ✅ Complete | Project skeleton, Azure provisioning, MAF scaffold |
 | **Phase 1: Core Pipeline** | ✅ Complete | Video → MS Learn Markdown (local mode) |
 | **Phase 2: Azure Integration** | ✅ Complete | Video Indexer, Speech, Blob, dual processing modes |
-| **Phase 4: VS Code Extension** | ⏳ 85% | Chat Participant, VSIX packaging, Copilot LM Proxy |
-| **Phase 3: MCP Integration** | ❌ Not started | See Phase B |
+| **Phase 4: VS Code Extension** | ⏳ 95% | Chat Participant, VSIX packaging, Copilot LM Proxy |
+| **Phase 3: MCP Integration** | ⏳ Partial | Delivered via Phase B |
 | **Phase 5: Production** | ⏳ 15% | Bicep + azd provisioning; see Phase D |
 | **Phase A** | 🔲 Next | Quality & cost optimization |
-| **Phase B** | 🔲 Planned | MCP & tool grounding |
+| **Phase B** | ⏳ 70% | MCP & tool grounding |
 | **Phase C** | 🔲 Planned | Distribution & publishing |
 | **Phase D** | 🔲 Planned | Production scale |
 | **Phase E** | 🔲 Future | Feature expansion |
