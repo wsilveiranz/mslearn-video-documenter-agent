@@ -464,7 +464,11 @@ async def _run_pipeline(
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Writing document...")
 
         writer_agent = WriterAgent(client, learn_tools=learn_tools)
-        document = await writer_agent.process(outline, extraction_result, quality_report=job.quality_report)
+        document = await writer_agent.process(
+            outline, extraction_result,
+            quality_report=job.quality_report,
+            supplementary_context=supplementary_context,
+        )
 
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Draft complete ✓")
 

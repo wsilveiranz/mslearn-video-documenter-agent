@@ -59,6 +59,7 @@ class WriterAgent:
     async def process(
         self, outline: DocumentOutline, extraction: ExtractionResult,
         quality_report: DataQualityReport | None = None,
+        supplementary_context: str = "",
     ) -> GeneratedDocument:
         """Generate a full Markdown document from the outline.
 
@@ -66,6 +67,7 @@ class WriterAgent:
             outline: Document structure with sections and screenshots.
             extraction: Original extraction data for reference.
             quality_report: Optional quality assessment; injects guardrails when thin/minimal.
+            supplementary_context: Reference docs and additional context from user.
 
         Returns:
             GeneratedDocument with full Markdown content.
@@ -124,6 +126,21 @@ class WriterAgent:
                 manifest_lines.append(f"- `{s.output_path}` — {s.alt_text}")
             screenshot_manifest = "\n".join(manifest_lines) + "\n\n"
 
+        supplementary_section = ""
+        if supplementary_context:
+            # Truncate to avoid token overflow (keep most relevant content at the top)
+            max_context = 12000
+            ctx = supplementary_context[:max_context]
+            if len(supplementary_context) > max_context:
+                ctx += "\n\n[… truncated for length]"
+            supplementary_section = (
+                "## Reference documents (supplementary context)\n\n"
+                "Use this material to enrich and ground the article content. "
+                "Incorporate relevant details, terminology, and context from these documents "
+                "where they complement the video content:\n\n"
+                f"{ctx}\n\n"
+            )
+
         user_message = (
             quality_guardrail +
             "## Document Outline\n\n"
@@ -133,11 +150,13 @@ class WriterAgent:
             "## Extraction Data\n\n"
             f"{extraction_context}\n\n"
             f"{screenshot_manifest}"
+            f"{supplementary_section}"
             f"{mcp_grounding}"
             "## Instructions\n\n"
             "Generate a complete MS Learn article following the outline and template. "
             "Include YAML frontmatter, all sections, numbered steps, and :::image::: references for screenshots. "
             "Use the extraction data to ground your content — do not invent steps not shown in the video. "
+            "Where reference documents are provided, incorporate relevant details to enrich the article. "
             "Return the complete Markdown document only, without any explanation or wrapper text."
         )
 

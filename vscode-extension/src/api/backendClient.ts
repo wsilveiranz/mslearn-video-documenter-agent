@@ -228,6 +228,18 @@ export class BackendClient {
         return this.post<M365SearchResult>('/context/search-m365', body);
     }
 
+    /**
+     * Convert a document file (docx, pdf, pptx, etc.) to Markdown via MarkItDown.
+     * Returns the converted Markdown text, or null if conversion fails.
+     */
+    async convertDocument(filePath: string): Promise<{ markdown: string; word_count: number } | null> {
+        try {
+            return await this.post<{ markdown: string; word_count: number }>('/context/convert-path', { path: filePath });
+        } catch {
+            return null;
+        }
+    }
+
     connectProgress(videoId: string, onProgress: (msg: ProgressMessage) => void): Disposable {
         // WebSocket global is available in Node.js 18+ (VS Code 1.82+)
         if (typeof WebSocket === 'undefined') {

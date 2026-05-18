@@ -120,6 +120,8 @@ export async function handleGenerate(
         // Load supplementary context from stored references on-demand
         const MAX_REF_FILE_BYTES = 100 * 1024;  // 100 KB per file
         const MAX_TOTAL_REF_BYTES = 500 * 1024; // 500 KB total
+        // Extensions that need backend conversion (binary formats)
+        const CONVERT_EXTENSIONS = new Set(['.docx', '.pdf', '.pptx', '.xlsx', '.html', '.csv', '.xml']);
         let refContext = '';
         const docRefs = stateManager.getSupplementaryDocRefs();
         if (docRefs.length > 0) {
@@ -128,11 +130,27 @@ export async function handleGenerate(
             let totalCapReached = false;
             for (const refPath of docRefs) {
                 try {
-                    const uri = vscode.Uri.file(refPath);
-                    const bytes = await vscode.workspace.fs.readFile(uri);
                     const basename = path.basename(refPath);
-                    let text = Buffer.from(bytes).toString('utf-8');
-                    if (bytes.length > MAX_REF_FILE_BYTES) {
+                    const ext = path.extname(refPath).toLowerCase();
+                    let text: string;
+
+                    if (CONVERT_EXTENSIONS.has(ext)) {
+                        // Binary format — convert via backend MarkItDown service
+                        stream.progress(`Converting reference doc: ${basename}...`);
+                        const result = await client.convertDocument(refPath);
+                        if (!result || !result.markdown) {
+                            stream.progress(`⚠️ Could not convert ${basename} — skipping`);
+                            continue;
+                        }
+                        text = result.markdown;
+                    } else {
+                        // Plain text format — read directly
+                        const uri = vscode.Uri.file(refPath);
+                        const bytes = await vscode.workspace.fs.readFile(uri);
+                        text = Buffer.from(bytes).toString('utf-8');
+                    }
+
+                    if (text.length > MAX_REF_FILE_BYTES) {
                         text = text.slice(0, MAX_REF_FILE_BYTES) + '\n[… truncated — file exceeds 100 KB limit]';
                         stream.progress(`Ref doc truncated (exceeds 100 KB): ${basename}`);
                     }
