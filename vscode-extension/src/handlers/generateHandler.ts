@@ -266,6 +266,18 @@ export async function handleGenerate(
                 desiredFilename,
             );
             stateManager.setSavedFilename(desiredFilename ? sanitizeFilename(desiredFilename) : `${documentId}.md`);
+
+            // Build eval score row if available
+            let evalRow = '';
+            if (doc.eval_scores) {
+                const s = doc.eval_scores;
+                const pct = (v: number) => `${Math.round(v * 100)}%`;
+                const icon = s.passed ? '✅' : '⚠️';
+                evalRow =
+                    `| Quality score | ${icon} **${pct(s.overall)}** overall |\n` +
+                    `| | Completeness ${pct(s.completeness)} · Accuracy ${pct(s.accuracy)} · Style ${pct(s.style_compliance)} · Readability ${pct(s.readability)} · Grounding ${pct(s.grounding)} |\n`;
+            }
+
             stream.markdown(
                 `✅ **${docType.charAt(0).toUpperCase() + docType.slice(1)} document generated!**\n\n` +
                 `| Field | Value |\n` +
@@ -274,7 +286,8 @@ export async function handleGenerate(
                 `| Type | ${docType} |\n` +
                 `| Word count | ${doc.word_count} |\n` +
                 `| Revision | ${doc.revision_number} |\n` +
-                `| Saved to | \`${savedUri.fsPath}\` |\n\n` +
+                `| Saved to | \`${savedUri.fsPath}\` |\n` +
+                evalRow + '\n' +
                 '💡 **Next steps:**\n' +
                 '- Use `/polish all` to run quality checks (style, branding, metadata, formatting)\n' +
                 '- Use `/edit` to make specific content changes\n' +

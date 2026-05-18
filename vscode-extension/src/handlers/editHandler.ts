@@ -165,6 +165,17 @@ export async function handleEdit(
                 ? summarizeChanges(originalContent, doc.markdown_content)
                 : 'Document updated';
 
+            // Build eval score row if available
+            let evalRow = '';
+            if (doc.eval_scores) {
+                const s = doc.eval_scores;
+                const pct = (v: number) => `${Math.round(v * 100)}%`;
+                const icon = s.passed ? '✅' : '⚠️';
+                evalRow =
+                    `| Quality score | ${icon} **${pct(s.overall)}** overall |\n` +
+                    `| | Completeness ${pct(s.completeness)} · Accuracy ${pct(s.accuracy)} · Style ${pct(s.style_compliance)} · Readability ${pct(s.readability)} · Grounding ${pct(s.grounding)} |\n`;
+            }
+
             const summary =
                 `✅ **Document edited** (revision ${doc.revision_number})\n\n` +
                 `${changeSummary}\n\n` +
@@ -173,6 +184,7 @@ export async function handleEdit(
                 `| Word count | ${doc.word_count} |\n` +
                 `| Revision | ${doc.revision_number} |\n` +
                 (savedPath ? `| Saved to | \`${savedPath}\` |\n` : '') +
+                evalRow +
                 '\n💡 Check the updated document in the editor. Use `/edit` again for further changes.\n';
 
             stream.markdown(summary);

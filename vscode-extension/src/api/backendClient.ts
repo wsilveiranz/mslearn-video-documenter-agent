@@ -37,6 +37,16 @@ export interface ExtractionResponse {
     message: string;
 }
 
+export interface EvalScores {
+    completeness: number;
+    accuracy: number;
+    style_compliance: number;
+    readability: number;
+    grounding: number;
+    overall: number;
+    passed: boolean;
+}
+
 export interface DocumentResponse {
     document_id: string;
     doc_type: string;
@@ -48,6 +58,7 @@ export interface DocumentResponse {
         output_path: string;
         alt_text: string;
     }>;
+    eval_scores?: EvalScores;
 }
 
 export interface DataQualityResponse {

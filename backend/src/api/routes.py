@@ -24,6 +24,7 @@ from src.agents.writer import WriterAgent
 from src.api.websocket import manager
 from src.config import get_settings
 from src.models.document import DocType, DocumentMetadata
+from src.models.evaluation import EvaluationReport, EvaluationScores
 from src.models.services import AZURE_SERVICES
 from src.models.video import DataQualityReport, ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
 
@@ -37,6 +38,7 @@ router = APIRouter(tags=["Video Documenter"])
 _video_jobs: dict[str, VideoJob] = {}
 _documents: dict[str, GeneratedDocument] = {}
 _extractions: dict[str, ExtractionResult] = {}
+_evaluations: dict[str, EvaluationReport] = {}
 
 
 # ---- Request/Response Models ----
@@ -97,6 +99,16 @@ class MediaFileResponse(BaseModel):
     alt_text: str
 
 
+class EvalScoreResponse(BaseModel):
+    completeness: float
+    accuracy: float
+    style_compliance: float
+    readability: float
+    grounding: float
+    overall: float
+    passed: bool
+
+
 class DocumentResponse(BaseModel):
     document_id: str
     doc_type: DocType
@@ -104,6 +116,7 @@ class DocumentResponse(BaseModel):
     word_count: int
     revision_number: int
     media_files: list[MediaFileResponse] = []
+    eval_scores: EvalScoreResponse | None = None
 
 
 
@@ -507,6 +520,7 @@ async def _run_pipeline(
         result_doc_id = document.document_id
         _documents[result_doc_id] = document
         _extractions[result_doc_id] = extraction_result
+        _evaluations[result_doc_id] = evaluation
 
         job.document_id = result_doc_id
         job.status = ProcessingStatus.COMPLETED
@@ -752,6 +766,21 @@ async def get_document(document_id: str) -> DocumentResponse:
         for s in doc.media_files
     ]
 
+    # Include eval scores if available
+    eval_scores = None
+    evaluation = _evaluations.get(document_id)
+    if evaluation:
+        s = evaluation.scores
+        eval_scores = EvalScoreResponse(
+            completeness=s.completeness,
+            accuracy=s.accuracy,
+            style_compliance=s.style_compliance,
+            readability=s.readability,
+            grounding=s.grounding,
+            overall=s.overall,
+            passed=s.passed,
+        )
+
     return DocumentResponse(
         document_id=doc.document_id,
         doc_type=doc.doc_type,
@@ -759,6 +788,7 @@ async def get_document(document_id: str) -> DocumentResponse:
         word_count=doc.word_count,
         revision_number=doc.revision_number,
         media_files=media_files,
+        eval_scores=eval_scores,
     )
 
 
@@ -821,6 +851,7 @@ async def refine_document(
             if extraction is not None:
                 evaluator = EvaluateAgent(client)
                 evaluation = await evaluator.process(refined, extraction)
+                _evaluations[document_id] = evaluation
                 logger.info(
                     "api.refine_evaluated",
                     doc_id=document_id,
