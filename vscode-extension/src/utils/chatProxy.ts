@@ -28,7 +28,7 @@ export type PolishCheck = 'style' | 'brand' | 'meta' | 'seo' | 'fix' | 'sfi';
 export const POLISH_CHECKS: Record<PolishCheck, {
     label: string;
     description: string;
-    companion: { id: string; name: string; command: string } | null;
+    companion: { id: string; name: string; command: string; participantHandle?: string } | null;
     fallbackAvailable: boolean;
 }> = {
     style: {
@@ -122,10 +122,9 @@ export class ChatParticipantProxy {
 
     /**
      * Run a polish check.
-     * If companion is installed → return a result with source='companion' that includes
-     * a Markdown instruction telling the user to invoke the companion with a button.
-     * If companion is not installed and fallback is available → run fallback via LM API.
-     * If neither → return source='skipped' result.
+     * Always runs built-in fallback when available for immediate results.
+     * Additionally offers companion button when a companion is installed.
+     * If no fallback and no companion → skipped.
      */
     async runCheck(
         check: PolishCheck,
@@ -134,10 +133,27 @@ export class ChatParticipantProxy {
         token: vscode.CancellationToken
     ): Promise<PolishResult> {
         const config = POLISH_CHECKS[check];
+        const companionAvailable = this.isCompanionAvailable(check);
 
-        if (this.isCompanionAvailable(check)) {
+        // Run fallback for immediate results when available
+        if (config.fallbackAvailable) {
+            stream.markdown(`\n### 🔍 ${config.label}\n\n`);
+            stream.progress(`Running ${config.label} check...`);
+            const result = await this._runFallbackCheck(check, documentContent, token);
+
+            // Offer companion button as a supplementary option
+            if (companionAvailable) {
+                stream.markdown(`\n\n💡 For a more thorough check, use **${config.companion!.name}** directly:\n\n`);
+                this._createCompanionButton(check, stream);
+            }
+
+            return result;
+        }
+
+        // No fallback — rely on companion button only
+        if (companionAvailable) {
             stream.markdown(`\n### ✅ ${config.label}\n\n`);
-            stream.markdown(`**${config.companion!.name}** is installed — use it for the best ${config.label.toLowerCase()} check.\n\n`);
+            stream.markdown(`**${config.companion!.name}** is installed — use it for the ${config.label.toLowerCase()} check.\n\n`);
             this._createCompanionButton(check, stream);
 
             return {
@@ -149,12 +165,7 @@ export class ChatParticipantProxy {
             };
         }
 
-        if (config.fallbackAvailable) {
-            stream.markdown(`\n### 🔍 ${config.label}\n\n`);
-            stream.progress(`Running ${config.label} check (built-in fallback)...`);
-            return this._runFallbackCheck(check, documentContent, token);
-        }
-
+        // Neither fallback nor companion
         return {
             check,
             source: 'skipped',
@@ -261,6 +272,7 @@ export class ChatParticipantProxy {
     /**
      * Create a chat button that opens the companion's chat participant.
      * Uses vscode.ChatResponseStream.button() to render a clickable action.
+     * Only creates a button if the participant handle is known.
      */
     private _createCompanionButton(
         check: PolishCheck,
@@ -271,11 +283,21 @@ export class ChatParticipantProxy {
             return;
         }
 
+        // Use explicit participant handle if known, otherwise skip button
+        const handle = config.companion.participantHandle;
+        if (!handle) {
+            stream.markdown(
+                `> Open **${config.companion.name}** from the Copilot Chat participant list ` +
+                `and run \`/${config.companion.command}\`\n`
+            );
+            return;
+        }
+
         const chatCommand: vscode.Command = {
             command: 'workbench.action.chat.open',
             title: `Run ${config.label} check`,
             arguments: [{
-                query: `@${config.companion.name.toLowerCase().replace(/ /g, '-')} /${config.companion.command}`,
+                query: `@${handle} /${config.companion.command}`,
             }],
         };
 
