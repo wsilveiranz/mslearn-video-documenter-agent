@@ -366,9 +366,16 @@ class StructureAgent:
         )
 
     def _find_best_keyframe(
-        self, scene_ids: list[str], extraction: ExtractionResult
+        self, scene_ids: list[str], extraction: ExtractionResult,
+        section_heading: str = "", section_content_hint: str = "",
     ) -> Keyframe | None:
-        """Find the keyframe closest to the midpoint of the referenced scenes."""
+        """Find the best keyframe for a section, preferring content relevance over timestamp.
+
+        Selection priority:
+        1. Keyframes with ui_description matching the section heading/content (content relevance)
+        2. Among relevant candidates, pick the one closest to the scene midpoint (temporal proximity)
+        3. If no content match, fall back to pure temporal proximity
+        """
         if not scene_ids:
             return None
 
@@ -389,11 +396,39 @@ class StructureAgent:
         if not candidate_kf_ids:
             return None
 
+        # Score candidates: content relevance (higher = better) + temporal proximity (lower = better)
+        search_terms = (section_heading + " " + section_content_hint).lower().split()
+        # Filter out common stop words
+        stop_words = {"the", "a", "an", "and", "or", "to", "in", "for", "of", "is", "it", "on", "at", "by", "with"}
+        search_terms = [t for t in search_terms if t not in stop_words and len(t) > 2]
+
+        def _relevance_score(kf_id: str) -> int:
+            """Count how many search terms appear in the keyframe description."""
+            kf = keyframe_map.get(kf_id)
+            if not kf or not kf.ui_description:
+                return 0
+            desc_lower = kf.ui_description.lower()
+            return sum(1 for term in search_terms if term in desc_lower)
+
+        def _is_generic(kf_id: str) -> bool:
+            """Check if keyframe shows a generic/login screen rather than meaningful content."""
+            kf = keyframe_map.get(kf_id)
+            if not kf or not kf.ui_description:
+                return False
+            desc_lower = kf.ui_description.lower()
+            generic_patterns = ["sign in", "login", "loading", "blank", "splash", "welcome screen"]
+            return any(p in desc_lower for p in generic_patterns)
+
+        # Sort: highest relevance first, then non-generic, then closest to midpoint
         best_id = min(
             candidate_kf_ids,
-            key=lambda kf_id: abs(
-                (keyframe_map[kf_id].timestamp_seconds if kf_id in keyframe_map else float("inf"))
-                - midpoints.get(kf_id, 0.0)
+            key=lambda kf_id: (
+                -_relevance_score(kf_id),
+                _is_generic(kf_id),
+                abs(
+                    (keyframe_map[kf_id].timestamp_seconds if kf_id in keyframe_map else float("inf"))
+                    - midpoints.get(kf_id, 0.0)
+                ),
             ),
         )
         return keyframe_map.get(best_id)
@@ -423,7 +458,11 @@ class StructureAgent:
             if not section.source_scenes:
                 continue
 
-            keyframe = self._find_best_keyframe(section.source_scenes, extraction)
+            keyframe = self._find_best_keyframe(
+                section.source_scenes, extraction,
+                section_heading=section.heading,
+                section_content_hint=section.content_hint,
+            )
             if keyframe is None or keyframe.id in used_keyframe_ids:
                 continue
 

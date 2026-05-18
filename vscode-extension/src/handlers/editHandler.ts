@@ -148,12 +148,24 @@ export async function handleEdit(
         if (doc) {
             stateManager.setStage('generated');
 
-            // Update the workspace file with edited content
+            // Update the workspace file with edited content AND re-download media
             let savedPath: string | undefined;
             try {
-                const savedUri = await outputManager.updateDocument(
+                // Re-download media files (editor may have reassigned screenshots)
+                const mediaFiles: Array<{filename: string, data: Uint8Array, outputPath?: string}> = [];
+                for (const mf of doc.media_files ?? []) {
+                    try {
+                        const data = await client.downloadMedia(state.currentDocumentId!, mf.filename);
+                        mediaFiles.push({ filename: mf.filename, data, outputPath: mf.output_path });
+                    } catch {
+                        // Non-fatal: skip media that can't be downloaded
+                    }
+                }
+
+                const savedUri = await outputManager.saveDocument(
                     state.currentDocumentId!,
                     doc.markdown_content,
+                    mediaFiles,
                     state.savedFilename,
                 );
                 savedPath = savedUri.fsPath;
