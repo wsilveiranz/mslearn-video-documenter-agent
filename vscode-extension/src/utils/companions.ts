@@ -11,7 +11,9 @@ export interface CompanionExtension {
     id: string;
     /** Human-readable name */
     name: string;
-    /** Whether the extension is currently installed and active */
+    /** Whether the extension is installed (may not be active) */
+    installed: boolean;
+    /** Whether the extension is installed AND active */
     available: boolean;
     /** Whether this is a Microsoft-internal extension */
     internal: boolean;
@@ -40,10 +42,14 @@ export const COMPANION_EXTENSIONS: readonly { id: string; name: string; internal
  * Detect which companion extensions are installed.
  */
 export function detectCompanions(): CompanionExtension[] {
-    return COMPANION_EXTENSIONS.map(ext => ({
-        ...ext,
-        available: vscode.extensions.getExtension(ext.id) !== undefined,
-    }));
+    return COMPANION_EXTENSIONS.map(ext => {
+        const extension = vscode.extensions.getExtension(ext.id);
+        return {
+            ...ext,
+            installed: extension !== undefined,
+            available: extension?.isActive === true,
+        };
+    });
 }
 
 /**
@@ -83,7 +89,7 @@ export function getCompanionTips(companions?: CompanionExtension[]): string {
 export function getCompanionStatus(): string {
     const companions = detectCompanions();
     const lines = companions.map(c => {
-        const status = c.available ? '✅' : '❌';
+        const status = c.available ? '✅ Active' : c.installed ? '⚠️ Installed (not active)' : '❌ Not installed';
         const scope = c.internal ? '(internal)' : '(public)';
         return `${status} ${c.name} ${scope}`;
     });

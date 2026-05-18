@@ -34,37 +34,37 @@ export const POLISH_CHECKS: Record<PolishCheck, {
     style: {
         label: 'Writing Style',
         description: 'MS Writing Style Guide compliance (35 rules)',
-        companion: { id: 'docsmsft.learn-authoring-assistant', name: 'Learn Authoring Assistant', command: 'suggestEdits' },
+        companion: { id: 'docsmsft.learn-authoring-assistant', name: 'Learn Authoring Assistant', command: 'suggestEdits', participantHandle: 'learn-authoring-assistant' },
         fallbackAvailable: true,
     },
     brand: {
         label: 'Branding',
         description: 'Product/technology name correctness',
-        companion: { id: 'docsmsft.learn-authoring-assistant', name: 'Learn Authoring Assistant', command: 'correctBranding' },
+        companion: { id: 'docsmsft.learn-authoring-assistant', name: 'Learn Authoring Assistant', command: 'correctBranding', participantHandle: 'learn-authoring-assistant' },
         fallbackAvailable: false,
     },
     meta: {
         label: 'Metadata',
         description: 'Title, description, ms.date optimization',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'metadata' },
+        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'metadata', participantHandle: 'content-mentor' },
         fallbackAvailable: true,
     },
     seo: {
         label: 'SEO',
         description: 'Search engine optimization',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'seo' },
+        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'seo', participantHandle: 'content-mentor' },
         fallbackAvailable: false,
     },
     fix: {
         label: 'Auto-fix Markdown',
         description: 'Fix common Markdown formatting issues',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'autoFixMarkdown' },
+        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'autoFixMarkdown', participantHandle: 'content-mentor' },
         fallbackAvailable: true,
     },
     sfi: {
         label: 'Security (SFI)',
         description: 'Sensitive information scan',
-        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'sfi' },
+        companion: { id: 'msft-content.content-mentor', name: 'Content Mentor', command: 'sfi', participantHandle: 'content-mentor' },
         fallbackAvailable: false,
     },
 };
@@ -110,7 +110,7 @@ export class ChatParticipantProxy {
         return this._companions;
     }
 
-    /** Check if a specific companion is available for a check */
+    /** Check if a specific companion is available (installed AND active) for a check */
     isCompanionAvailable(check: PolishCheck): boolean {
         const config = POLISH_CHECKS[check];
         if (!config.companion) {
@@ -120,10 +120,20 @@ export class ChatParticipantProxy {
         return companions.some(c => c.id === config.companion!.id && c.available);
     }
 
+    /** Check if companion is installed but not active (needs workspace) */
+    isCompanionInstalledButInactive(check: PolishCheck): boolean {
+        const config = POLISH_CHECKS[check];
+        if (!config.companion) {
+            return false;
+        }
+        const companions = this.getCompanions();
+        return companions.some(c => c.id === config.companion!.id && c.installed && !c.available);
+    }
+
     /**
      * Run a polish check.
      * Always runs built-in fallback when available for immediate results.
-     * Additionally offers companion button when a companion is installed.
+     * Additionally offers companion button when a companion is active.
      * If no fallback and no companion → skipped.
      */
     async runCheck(
@@ -134,6 +144,7 @@ export class ChatParticipantProxy {
     ): Promise<PolishResult> {
         const config = POLISH_CHECKS[check];
         const companionAvailable = this.isCompanionAvailable(check);
+        const companionInactive = this.isCompanionInstalledButInactive(check);
 
         // Run fallback for immediate results when available
         if (config.fallbackAvailable) {
@@ -145,6 +156,8 @@ export class ChatParticipantProxy {
             if (companionAvailable) {
                 stream.markdown(`\n\n💡 For a more thorough check, use **${config.companion!.name}** directly:\n\n`);
                 this._createCompanionButton(check, stream);
+            } else if (companionInactive) {
+                stream.markdown(`\n\n⚠️ **${config.companion!.name}** is installed but not active — open a workspace folder to activate it.\n`);
             }
 
             return result;
@@ -153,7 +166,7 @@ export class ChatParticipantProxy {
         // No fallback — rely on companion button only
         if (companionAvailable) {
             stream.markdown(`\n### ✅ ${config.label}\n\n`);
-            stream.markdown(`**${config.companion!.name}** is installed — use it for the ${config.label.toLowerCase()} check.\n\n`);
+            stream.markdown(`**${config.companion!.name}** is active — use it for the ${config.label.toLowerCase()} check.\n\n`);
             this._createCompanionButton(check, stream);
 
             return {
@@ -161,6 +174,17 @@ export class ChatParticipantProxy {
                 source: 'companion',
                 summary: `${config.companion!.name} is available for ${config.label} check`,
                 suggestions: `Use the button above to run the ${config.label} check with ${config.companion!.name}.`,
+                issueCount: 0,
+            };
+        }
+
+        // Companion installed but not active, no fallback
+        if (companionInactive) {
+            return {
+                check,
+                source: 'skipped',
+                summary: `${config.label} check skipped — ${config.companion!.name} is installed but not active (open a workspace folder to activate)`,
+                suggestions: `Open a workspace folder to activate **${config.companion!.name}**, then re-run this check.`,
                 issueCount: 0,
             };
         }

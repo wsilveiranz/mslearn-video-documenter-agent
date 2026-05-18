@@ -50,13 +50,14 @@ describe('detectCompanions', () => {
 
 describe('getCompanionTips', () => {
     it('returns empty string when no companions are available', () => {
-        const companions = COMPANION_EXTENSIONS.map(ext => ({ ...ext, available: false }));
+        const companions = COMPANION_EXTENSIONS.map(ext => ({ ...ext, installed: false, available: false }));
         assert.strictEqual(getCompanionTips(companions), '');
     });
 
     it('includes Learn Authoring Pack tip when available', () => {
         const companions = COMPANION_EXTENSIONS.map(ext => ({
             ...ext,
+            installed: ext.id === 'docsmsft.docs-authoring-pack',
             available: ext.id === 'docsmsft.docs-authoring-pack',
         }));
         const tips = getCompanionTips(companions);
@@ -67,6 +68,7 @@ describe('getCompanionTips', () => {
     it('includes Content Mentor tip when available', () => {
         const companions = COMPANION_EXTENSIONS.map(ext => ({
             ...ext,
+            installed: ext.id === 'msft-content.content-mentor',
             available: ext.id === 'msft-content.content-mentor',
         }));
         const tips = getCompanionTips(companions);
@@ -77,6 +79,7 @@ describe('getCompanionTips', () => {
     it('includes Learn Authoring Assistant tip when available', () => {
         const companions = COMPANION_EXTENSIONS.map(ext => ({
             ...ext,
+            installed: ext.id === 'docsmsft.learn-authoring-assistant',
             available: ext.id === 'docsmsft.learn-authoring-assistant',
         }));
         const tips = getCompanionTips(companions);
@@ -85,7 +88,7 @@ describe('getCompanionTips', () => {
     });
 
     it('includes all tips when all companions are available', () => {
-        const companions = COMPANION_EXTENSIONS.map(ext => ({ ...ext, available: true }));
+        const companions = COMPANION_EXTENSIONS.map(ext => ({ ...ext, installed: true, available: true }));
         const tips = getCompanionTips(companions);
         assert.ok(tips.includes('Learn Authoring Pack'));
         assert.ok(tips.includes('Content Mentor'));
@@ -98,6 +101,7 @@ describe('getCompanionTips', () => {
     it('returns a non-empty string with header when at least one companion is available', () => {
         const companions = COMPANION_EXTENSIONS.map(ext => ({
             ...ext,
+            installed: ext.id === 'docsmsft.docs-authoring-pack',
             available: ext.id === 'docsmsft.docs-authoring-pack',
         }));
         const tips = getCompanionTips(companions);
