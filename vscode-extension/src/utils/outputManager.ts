@@ -50,6 +50,7 @@ function sanitizeOutputDir(dir: string): string {
 export interface MediaFile {
     filename: string;
     data: Uint8Array;
+    outputPath?: string;  // e.g., "./media/article-slug/image-name.jpg"
 }
 
 export class OutputManager {
@@ -80,17 +81,29 @@ export class OutputManager {
         const mdFileUri = vscode.Uri.joinPath(baseDirUri, mdFileName);
         await vscode.workspace.fs.writeFile(mdFileUri, Buffer.from(markdownContent, 'utf-8'));
 
-        // Save media files
+        // Save media files, preserving subdirectory structure from outputPath
         if (mediaFiles.length > 0) {
-            const mediaDirUri = vscode.Uri.joinPath(baseDirUri, 'media');
-            await vscode.workspace.fs.createDirectory(mediaDirUri);
-
             for (const media of mediaFiles) {
-                const destUri = vscode.Uri.joinPath(mediaDirUri, media.filename);
+                // Determine relative path from outputPath, falling back to flat media/
+                let relativePath: string;
+                if (media.outputPath) {
+                    // outputPath is like "./media/article-slug/image.jpg" — strip leading "./"
+                    relativePath = media.outputPath.replace(/^\.\//, '');
+                } else {
+                    relativePath = `media/${media.filename}`;
+                }
+
+                const destUri = vscode.Uri.joinPath(baseDirUri, relativePath);
+                // Ensure parent directory exists (handles article-specific subfolders)
+                const lastSlash = relativePath.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    const parentDir = relativePath.substring(0, lastSlash);
+                    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(baseDirUri, parentDir));
+                }
+
                 try {
                     await vscode.workspace.fs.writeFile(destUri, media.data);
                 } catch {
-                    // Log but don't fail if a media file can't be saved
                     console.warn(`Failed to save media file: ${media.filename}`);
                 }
             }

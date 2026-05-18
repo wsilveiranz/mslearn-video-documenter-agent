@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
-import { OutputManager, sanitizeFilename } from '../utils/outputManager';
+import { OutputManager, MediaFile, sanitizeFilename } from '../utils/outputManager';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { BackendMetadata } from '../api/backendClient';
 import { getProgressUpdateIntervalMs } from '../utils/config';
@@ -231,11 +231,11 @@ export async function handleGenerate(
         stateManager.setStage('generated');
 
         // 10. Save to workspace and open (with extracted screenshots)
-        const mediaFiles: Array<{filename: string, data: Uint8Array}> = [];
+        const mediaFiles: MediaFile[] = [];
         for (const mf of doc.media_files ?? []) {
             try {
                 const data = await client.downloadMedia(documentId, mf.filename);
-                mediaFiles.push({ filename: mf.filename, data });
+                mediaFiles.push({ filename: mf.filename, data, outputPath: mf.output_path });
             } catch {
                 // Non-fatal: skip media that can't be downloaded
             }
