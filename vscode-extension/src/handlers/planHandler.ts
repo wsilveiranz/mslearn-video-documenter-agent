@@ -210,7 +210,7 @@ export async function handlePlan(
             canSelectFiles: true,
             canSelectFolders: false,
             canSelectMany: true,
-            filters: { 'Documentation': ['md', 'txt', 'json', 'yaml', 'yml', 'rst'] },
+            filters: { 'Documentation': ['md', 'txt', 'json', 'yaml', 'yml', 'rst', 'docx', 'pdf', 'pptx', 'xlsx', 'html', 'csv', 'xml'] },
             title: 'Select reference documentation files',
         });
         if (docFiles && docFiles.length > 0) {

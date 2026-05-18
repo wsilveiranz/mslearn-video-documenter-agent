@@ -107,6 +107,20 @@ a = Analysis(
         'isodate.isoduration',
         'isodate.isoerror',
         'isodate.tzinfo',
+        # --- MCP SDK (lazy imports in mcp_client.py) ---
+        'mcp',
+        'mcp.client',
+        'mcp.client.streamable_http',
+        'mcp.client.stdio',
+        'mcp.types',
+        # --- MarkItDown (lazy import in document_converter.py) ---
+        'markitdown',
+        'markitdown._markitdown',
+        # --- New service modules (lazy imports in routes.py / orchestrator.py) ---
+        'src.services.mcp_client',
+        'src.services.learn_mcp_tools',
+        'src.services.workiq_mcp_tools',
+        'src.services.document_converter',
     ],
     hookspath=['./pyinstaller-hooks'],
     hooksconfig={},

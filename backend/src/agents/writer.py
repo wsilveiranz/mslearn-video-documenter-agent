@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
 
     from src.models.video import DataQualityReport, ExtractionResult
+    from src.services.learn_mcp_tools import LearnMCPTools
 
 logger = structlog.get_logger()
 
@@ -23,8 +24,9 @@ logger = structlog.get_logger()
 class WriterAgent:
     """Generates MS Learn-style Markdown documents from structured outlines."""
 
-    def __init__(self, client: FoundryChatClient) -> None:
+    def __init__(self, client: FoundryChatClient, learn_tools: LearnMCPTools | None = None) -> None:
         self._client = client
+        self._learn_tools = learn_tools
         self._load_system_prompt()
         self._load_template_cache()
 
@@ -57,6 +59,7 @@ class WriterAgent:
     async def process(
         self, outline: DocumentOutline, extraction: ExtractionResult,
         quality_report: DataQualityReport | None = None,
+        supplementary_context: str = "",
     ) -> GeneratedDocument:
         """Generate a full Markdown document from the outline.
 
@@ -64,6 +67,7 @@ class WriterAgent:
             outline: Document structure with sections and screenshots.
             extraction: Original extraction data for reference.
             quality_report: Optional quality assessment; injects guardrails when thin/minimal.
+            supplementary_context: Reference docs and additional context from user.
 
         Returns:
             GeneratedDocument with full Markdown content.
@@ -74,6 +78,9 @@ class WriterAgent:
             sections=len(outline.sections),
             quality_level=quality_report.quality_level if quality_report else "unknown",
         )
+
+        # Fetch MS Learn grounding context (voice/tone examples + code samples)
+        mcp_grounding = await self._fetch_mcp_grounding(outline, extraction)
 
         template = self._templates.get(outline.doc_type, "")
         outline_json = outline.model_dump_json(indent=2)
@@ -119,6 +126,27 @@ class WriterAgent:
                 manifest_lines.append(f"- `{s.output_path}` — {s.alt_text}")
             screenshot_manifest = "\n".join(manifest_lines) + "\n\n"
 
+        supplementary_section = ""
+        if supplementary_context:
+            # Truncate to avoid token overflow (keep most relevant content at the top)
+            max_context = 12000
+            ctx = supplementary_context[:max_context]
+            if len(supplementary_context) > max_context:
+                ctx += "\n\n[… truncated for length]"
+            supplementary_section = (
+                "## Reference documents (REQUIRED — primary source material)\n\n"
+                "These documents are authoritative source material provided by the user. "
+                "You MUST actively integrate information from these documents into the article:\n\n"
+                "- Use them to fill prerequisites, configuration values, and setup details\n"
+                "- Use correct terminology and naming from these documents\n"
+                "- Replace TODO placeholders with real content where these documents provide the answer\n"
+                "- Add detail to procedures that the video mentions but doesn't elaborate on\n"
+                "- Include limitations, known issues, or constraints documented here\n\n"
+                "Treat these documents as EQUAL in authority to the video transcript. "
+                "Content from reference documents is grounded (not hallucinated) — use it confidently.\n\n"
+                f"{ctx}\n\n"
+            )
+
         user_message = (
             quality_guardrail +
             "## Document Outline\n\n"
@@ -128,10 +156,15 @@ class WriterAgent:
             "## Extraction Data\n\n"
             f"{extraction_context}\n\n"
             f"{screenshot_manifest}"
+            f"{supplementary_section}"
+            f"{mcp_grounding}"
             "## Instructions\n\n"
             "Generate a complete MS Learn article following the outline and template. "
             "Include YAML frontmatter, all sections, numbered steps, and :::image::: references for screenshots. "
             "Use the extraction data to ground your content — do not invent steps not shown in the video. "
+            "Reference documents are a PRIMARY source — actively weave their content into every relevant section. "
+            "If a reference doc provides details the video skips (config values, prerequisites, limitations, exact commands), "
+            "include them as real content, not TODOs. "
             "Return the complete Markdown document only, without any explanation or wrapper text."
         )
 
@@ -159,6 +192,64 @@ class WriterAgent:
 
         logger.info("writer.complete", doc_id=doc_id, words=word_count, doc_type=outline.doc_type)
         return document
+
+    async def _fetch_mcp_grounding(self, outline: DocumentOutline, extraction: ExtractionResult) -> str:
+        """Fetch published MS Learn articles and code samples for voice/tone grounding."""
+        if not self._learn_tools or not self._learn_tools.available:
+            return ""
+
+        topic = outline.frontmatter.title or outline.frontmatter.ms_service
+        if not topic:
+            return ""
+
+        grounding_parts: list[str] = []
+
+        try:
+            # Fetch 1-2 published articles as voice/tone reference
+            search_results = await self._learn_tools.search_docs(topic, top_k=2)
+            fetched_articles: list[str] = []
+            for result in search_results[:2]:
+                if result.url:
+                    doc = await self._learn_tools.fetch_doc(result.url)
+                    if doc.content:
+                        fetched_articles.append(
+                            f"### Reference: {doc.title or result.title}\n\n{doc.content}"
+                        )
+            if fetched_articles:
+                grounding_parts.append(
+                    "## MS Learn Voice/Tone Reference (published articles)\n\n"
+                    "Use these published articles as a reference for voice, tone, and formatting style:\n\n"
+                    + "\n\n---\n\n".join(fetched_articles)
+                    + "\n\n"
+                )
+                logger.info("writer.mcp_articles_fetched", topic=topic, count=len(fetched_articles))
+        except Exception as exc:
+            logger.warning("writer.mcp_articles_failed", topic=topic, error=str(exc))
+
+        # Search for code samples if the content involves code (OCR or transcript hints)
+        has_code = bool(extraction.ocr_entries) or any(
+            kw in " ".join(seg.text for seg in extraction.transcript).lower()
+            for kw in ("code", "command", "script", "function", "api", "cli")
+        )
+        if has_code:
+            try:
+                code_samples = await self._learn_tools.search_code_samples(topic)
+                if code_samples:
+                    sample_lines = []
+                    for sample in code_samples[:3]:
+                        lang = sample.language or ""
+                        fence = f"```{lang}" if lang else "```"
+                        sample_lines.append(f"**{sample.title}**\n\n{fence}\n{sample.code}\n```")
+                    grounding_parts.append(
+                        "## Official Code Samples (from Microsoft Learn)\n\n"
+                        + "\n\n".join(sample_lines)
+                        + "\n\n"
+                    )
+                    logger.info("writer.mcp_code_samples_fetched", topic=topic, count=len(code_samples))
+            except Exception as exc:
+                logger.warning("writer.mcp_code_samples_failed", topic=topic, error=str(exc))
+
+        return "".join(grounding_parts)
 
     async def _generate_with_retry(
         self,

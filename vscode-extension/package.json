@@ -2,7 +2,7 @@
   "name": "mslearn-video-documenter",
   "displayName": "MS Learn Video Documenter",
   "description": "Analyzes screen recordings and generates MS Learn-style documentation",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "publisher": "video-documenter",
   "icon": "media/icon.png",
   "license": "MIT",
@@ -16,6 +16,13 @@
   },
   "categories": [
     "Chat"
+  ],
+  "extensionDependencies": [
+    "docsmsft.docs-authoring-pack"
+  ],
+  "extensionPack": [
+    "msft-content.content-mentor",
+    "docsmsft.learn-authoring-assistant"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -43,8 +50,12 @@
             "description": "Generate documentation from analyzed video"
           },
           {
+            "name": "edit",
+            "description": "Edit a section of generated documentation"
+          },
+          {
             "name": "refine",
-            "description": "Refine a section of generated documentation"
+            "description": "Refine generated documentation (alias for /edit)"
           },
           {
             "name": "save",
@@ -53,6 +64,10 @@
           {
             "name": "status",
             "description": "Check processing status"
+          },
+          {
+            "name": "polish",
+            "description": "Run quality checks: style, branding, metadata, SEO, formatting, security"
           }
         ]
       }

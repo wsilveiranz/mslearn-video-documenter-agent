@@ -81,14 +81,23 @@ export async function handleSave(
         const docMediaFiles = doc.media_files ?? [];
         let mediaCopyFailures: string[] = [];
         if (docMediaFiles.length > 0) {
-            const mediaDirUri = vscode.Uri.joinPath(
-                vscode.Uri.file(path.dirname(targetUri.fsPath)),
-                'media'
-            );
-            await vscode.workspace.fs.createDirectory(mediaDirUri);
+            const saveBaseDir = vscode.Uri.file(path.dirname(targetUri.fsPath));
 
             for (const mf of docMediaFiles) {
-                const destUri = vscode.Uri.joinPath(mediaDirUri, mf.filename);
+                // Determine relative path from output_path, falling back to flat media/
+                let relativePath: string;
+                if (mf.output_path) {
+                    relativePath = mf.output_path.replace(/^\.\//, '');
+                } else {
+                    relativePath = `media/${mf.filename}`;
+                }
+                const destUri = vscode.Uri.joinPath(saveBaseDir, relativePath);
+                // Ensure parent directory exists (handles article-specific subfolders)
+                const lastSlash = relativePath.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    const parentDir = relativePath.substring(0, lastSlash);
+                    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(saveBaseDir, parentDir));
+                }
                 try {
                     const data = await client.downloadMedia(state.currentDocumentId, mf.filename);
                     await vscode.workspace.fs.writeFile(destUri, data);
@@ -111,6 +120,10 @@ export async function handleSave(
             `| Word count | ${doc.word_count} |\n` +
             `| Revision | ${doc.revision_number} |\n` +
             warnings
+        );
+        stream.markdown(
+            '💡 Use `/polish` to run MS Learn style checks before publishing.\n' +
+            'For deeper Markdown, metadata, and SEO checks, use **Content Mentor** (`@content-mentor`) directly.\n'
         );
 
         // Non-blocking notification — don't await to avoid freezing the chat

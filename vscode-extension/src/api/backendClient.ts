@@ -37,6 +37,16 @@ export interface ExtractionResponse {
     message: string;
 }
 
+export interface EvalScores {
+    completeness: number;
+    accuracy: number;
+    style_compliance: number;
+    readability: number;
+    grounding: number;
+    overall: number;
+    passed: boolean;
+}
+
 export interface DocumentResponse {
     document_id: string;
     doc_type: string;
@@ -48,6 +58,7 @@ export interface DocumentResponse {
         output_path: string;
         alt_text: string;
     }>;
+    eval_scores?: EvalScores;
 }
 
 export interface DataQualityResponse {
@@ -64,6 +75,20 @@ export interface DataQualityResponse {
 export interface HealthResponse {
     status: string;
     service: string;
+}
+
+export interface M365Document {
+    title: string;
+    content_preview: string;
+    url: string;
+    source_type: string;
+}
+
+export interface M365SearchResult {
+    documents: M365Document[];
+    summary: string;
+    query: string;
+    available: boolean;
 }
 
 export interface ProgressMessage {
@@ -92,13 +117,58 @@ export interface Disposable {
 
 export class BackendClient {
     private readonly baseUrl: string;
+    private sessionSecret: string | null = null;
+    private secretFetchPromise: Promise<void> | null = null;
+    private bootstrapToken: string | undefined;
 
     constructor(config?: BackendConfig) {
         this.baseUrl = (config?.baseUrl ?? getBackendUrl()).replace(/\/$/, '');
     }
 
+    /** Set the bootstrap token used to authenticate session-secret retrieval. */
+    setBootstrapToken(token: string): void {
+        this.bootstrapToken = token;
+    }
+
+    /**
+     * Fetch the one-time session secret from the backend.
+     * Called automatically before requests; safe to call multiple times.
+     */
+    async fetchSessionSecret(bootstrapToken?: string): Promise<void> {
+        if (this.sessionSecret) {
+            return;
+        }
+        if (this.secretFetchPromise) {
+            return this.secretFetchPromise;
+        }
+        this.secretFetchPromise = (async () => {
+            try {
+                const url = `${this.baseUrl}/api/v1/auth/session-secret`;
+                const headers: Record<string, string> = {};
+                if (bootstrapToken) {
+                    headers['X-Bootstrap-Token'] = bootstrapToken;
+                }
+                const response = await fetch(url, { headers });
+                if (response.ok) {
+                    const data = await response.json() as { secret: string };
+                    this.sessionSecret = data.secret;
+                } else {
+                    // Clear promise so next call retries
+                    this.secretFetchPromise = null;
+                }
+            } catch {
+                // Non-fatal: backend may not be ready yet — allow retry
+                this.secretFetchPromise = null;
+            }
+        })();
+        return this.secretFetchPromise;
+    }
+
     async checkHealth(): Promise<HealthResponse> {
-        return this.get<HealthResponse>('/health');
+        const result = await this.get<HealthResponse>('/health');
+        // Fetch session secret after first successful health check
+        await this.fetchSessionSecret(this.bootstrapToken);
+        return result;
     }
 
     async ingestVideo(filePath: string, model?: string): Promise<IngestResponse> {
@@ -114,8 +184,14 @@ export class BackendClient {
             formData.append('model', model);
         }
 
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+
         const response = await fetch(url, {
             method: 'POST',
+            headers,
             body: formData,
         });
 
@@ -131,8 +207,14 @@ export class BackendClient {
             formData.append('model', model);
         }
 
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+
         const response = await fetch(url, {
             method: 'POST',
+            headers,
             body: formData,
         });
 
@@ -182,7 +264,11 @@ export class BackendClient {
 
     async downloadMedia(documentId: string, filename: string): Promise<Buffer> {
         const url = `${this.baseUrl}/api/v1/documents/${documentId}/media/${encodeURIComponent(filename)}`;
-        const response = await fetch(url);
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+        const response = await fetch(url, { headers });
         if (!response.ok) {
             const text = await response.text().catch(() => '');
             throw new BackendError(
@@ -194,12 +280,39 @@ export class BackendClient {
         return Buffer.from(arrayBuffer);
     }
 
-    async refineDocument(documentId: string, feedback: string, model?: string): Promise<GenerateResponse> {
+    async refineDocument(documentId: string, feedback: string, model?: string, enrichM365?: boolean): Promise<GenerateResponse> {
         const body: Record<string, unknown> = { feedback };
         if (model) {
             body.model = model;
         }
+        if (enrichM365) {
+            body.enrich_m365 = true;
+        }
         return this.post<GenerateResponse>(`/documents/${documentId}/refine`, body);
+    }
+
+    /**
+     * Search M365 for supplementary context via Work IQ.
+     * Only call when the user explicitly requests context enrichment.
+     */
+    async searchM365Context(query: string, videoId?: string): Promise<M365SearchResult> {
+        const body: Record<string, unknown> = { query };
+        if (videoId) {
+            body.video_id = videoId;
+        }
+        return this.post<M365SearchResult>('/context/search-m365', body);
+    }
+
+    /**
+     * Convert a document file (docx, pdf, pptx, etc.) to Markdown via MarkItDown.
+     * Returns the converted Markdown text, or null if conversion fails.
+     */
+    async convertDocument(filePath: string): Promise<{ markdown: string; word_count: number } | null> {
+        try {
+            return await this.post<{ markdown: string; word_count: number }>('/context/convert-path', { path: filePath });
+        } catch {
+            return null;
+        }
     }
 
     connectProgress(videoId: string, onProgress: (msg: ProgressMessage) => void): Disposable {
@@ -255,15 +368,23 @@ export class BackendClient {
 
     private async get<T>(apiPath: string): Promise<T> {
         const url = `${this.baseUrl}/api/v1${apiPath}`;
-        const response = await fetch(url);
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+        const response = await fetch(url, { headers });
         return this.handleResponse<T>(response);
     }
 
     private async post<T>(apiPath: string, body: Record<string, unknown>): Promise<T> {
         const url = `${this.baseUrl}/api/v1${apiPath}`;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(body),
         });
         return this.handleResponse<T>(response);

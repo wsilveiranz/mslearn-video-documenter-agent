@@ -14,7 +14,7 @@ You receive:
   - `entities`: recognized names, products, and services mentioned
   - `video_metadata`: duration, resolution, fps
 - **doc_type**: the user-selected document type (quickstart, tutorial, howto, concept, overview)
-- **context**: optional supplementary materials (README, API specs, existing docs)
+- **Reference documents**: user-provided supplementary materials (README, API specs, existing docs, working documents). When present, treat these as a **primary source** equal to the video — they contain authoritative details that must inform the outline structure
 
 ## Your output
 
@@ -226,7 +226,12 @@ The user message may include a `## User-provided metadata` section with these fi
 
 - If the video covers more content than fits in a single document (e.g., 30+ distinct steps), suggest splitting into multiple documents and note this in the outline.
 - If the video lacks clear audio/narration for some segments, note these gaps so the Writer Agent can handle them.
-- If supplementary context materials are provided, use them to fill in details the video doesn't narrate (e.g., exact prerequisite versions from a README).
+- **Reference documents are a primary source.** When supplementary context materials are provided, actively use them to:
+  - Identify prerequisites the video doesn't mention (e.g., exact versions, required tools, permissions)
+  - Add sections the video skips (limitations, configuration, networking considerations)
+  - Refine section headings and terminology to match official product naming
+  - Fill in content_hint fields with specific details from reference docs so the Writer Agent can produce real content instead of TODOs
+  - Determine the correct scope and audience if the video is ambiguous
 - Always estimate transcript ranges even if approximate — the Writer Agent uses them to ground its prose in what was actually said.
 
 ## Step 6: Add standard supplementary sections

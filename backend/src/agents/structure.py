@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from agent_framework.foundry import FoundryChatClient
 
     from src.models.video import ExtractionResult, Keyframe
+    from src.services.learn_mcp_tools import LearnMCPTools
 
 logger = structlog.get_logger()
 
@@ -33,8 +34,9 @@ _MS_TOPIC_MAP: dict[DocType, str] = {
 class StructureAgent:
     """Analyzes extraction results and creates a document outline matching an MS Learn template."""
 
-    def __init__(self, client: FoundryChatClient) -> None:
+    def __init__(self, client: FoundryChatClient, learn_tools: LearnMCPTools | None = None) -> None:
         self._client = client
+        self._learn_tools = learn_tools
         self._load_system_prompt()
 
     def _load_system_prompt(self) -> None:
@@ -66,7 +68,10 @@ class StructureAgent:
         """
         logger.info("structure.start", doc_type=doc_type, scenes=len(extraction.scenes))
 
-        user_message = self._build_user_message(extraction, doc_type, supplementary_context, metadata)
+        # Fetch related published articles for grounding context
+        mcp_context = await self._fetch_mcp_context(extraction)
+
+        user_message = self._build_user_message(extraction, doc_type, supplementary_context, metadata, mcp_context)
 
         agent = Agent(
             client=self._client,
@@ -91,12 +96,58 @@ class StructureAgent:
     # Private helpers
     # ------------------------------------------------------------------
 
+    async def _fetch_mcp_context(self, extraction: ExtractionResult) -> str:
+        """Search MS Learn for related articles and return them as context text."""
+        if not self._learn_tools or not self._learn_tools.available:
+            return ""
+
+        # Derive a search query from entities and transcript keywords
+        topic = self._extract_topic(extraction)
+        if not topic:
+            return ""
+
+        try:
+            results = await self._learn_tools.search_docs(topic, top_k=3)
+        except Exception as exc:
+            logger.warning("structure.mcp_search_failed", topic=topic, error=str(exc))
+            return ""
+
+        if not results:
+            return ""
+
+        logger.info("structure.mcp_articles_found", topic=topic, count=len(results))
+        lines = []
+        for r in results:
+            line = f"- [{r.title}]({r.url})"
+            if r.description:
+                line += f": {r.description}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _extract_topic(self, extraction: ExtractionResult) -> str:
+        """Derive a concise search topic from the extraction data."""
+        # Prefer named service/product entities
+        service_types = {"product", "service", "technology", "brand"}
+        for entity in extraction.entities:
+            if entity.entity_type.lower() in service_types and entity.name:
+                return entity.name
+
+        # Fall back to first entity name
+        if extraction.entities:
+            return extraction.entities[0].name
+
+        # Fall back to first 10 words of transcript
+        transcript_text = " ".join(seg.text for seg in extraction.transcript)
+        words = transcript_text.split()[:10]
+        return " ".join(words)
+
     def _build_user_message(
         self,
         extraction: ExtractionResult,
         doc_type: DocType,
         supplementary_context: str,
         metadata: DocumentMetadata | None = None,
+        mcp_context: str = "",
     ) -> str:
         """Build the user message summarising the extraction data for the LLM."""
         transcript_text = " ".join(seg.text for seg in extraction.transcript)
@@ -133,7 +184,17 @@ class StructureAgent:
         ]
 
         if supplementary_context:
-            parts.append(f"## Supplementary context\n{supplementary_context}")
+            parts.append(
+                "## Reference documents (PRIMARY source — use actively)\n\n"
+                "The user provided these documents as authoritative source material. "
+                "Use them to inform section structure, identify prerequisites, refine terminology, "
+                "and add content_hints with specific details so the Writer Agent produces real content "
+                "instead of TODO placeholders.\n\n"
+                f"{supplementary_context}"
+            )
+
+        if mcp_context:
+            parts.append(f"## Related Microsoft Learn articles (for structural reference)\n{mcp_context}")
 
         if metadata:
             meta_parts = []
@@ -312,9 +373,16 @@ class StructureAgent:
         )
 
     def _find_best_keyframe(
-        self, scene_ids: list[str], extraction: ExtractionResult
+        self, scene_ids: list[str], extraction: ExtractionResult,
+        section_heading: str = "", section_content_hint: str = "",
     ) -> Keyframe | None:
-        """Find the keyframe closest to the midpoint of the referenced scenes."""
+        """Find the best keyframe for a section, preferring content relevance over timestamp.
+
+        Selection priority:
+        1. Keyframes with ui_description matching the section heading/content (content relevance)
+        2. Among relevant candidates, pick the one closest to the scene midpoint (temporal proximity)
+        3. If no content match, fall back to pure temporal proximity
+        """
         if not scene_ids:
             return None
 
@@ -335,19 +403,60 @@ class StructureAgent:
         if not candidate_kf_ids:
             return None
 
+        # Score candidates: content relevance (higher = better) + temporal proximity (lower = better)
+        search_terms = (section_heading + " " + section_content_hint).lower().split()
+        # Filter out common stop words
+        stop_words = {"the", "a", "an", "and", "or", "to", "in", "for", "of", "is", "it", "on", "at", "by", "with"}
+        search_terms = [t for t in search_terms if t not in stop_words and len(t) > 2]
+
+        def _relevance_score(kf_id: str) -> int:
+            """Count how many search terms appear in the keyframe description."""
+            kf = keyframe_map.get(kf_id)
+            if not kf or not kf.ui_description:
+                return 0
+            desc_lower = kf.ui_description.lower()
+            return sum(1 for term in search_terms if term in desc_lower)
+
+        def _is_generic(kf_id: str) -> bool:
+            """Check if keyframe shows a generic/login screen rather than meaningful content."""
+            kf = keyframe_map.get(kf_id)
+            if not kf or not kf.ui_description:
+                return False
+            desc_lower = kf.ui_description.lower()
+            generic_patterns = ["sign in", "login", "loading", "blank", "splash", "welcome screen"]
+            return any(p in desc_lower for p in generic_patterns)
+
+        # Sort: highest relevance first, then non-generic, then closest to midpoint
         best_id = min(
             candidate_kf_ids,
-            key=lambda kf_id: abs(
-                (keyframe_map[kf_id].timestamp_seconds if kf_id in keyframe_map else float("inf"))
-                - midpoints.get(kf_id, 0.0)
+            key=lambda kf_id: (
+                -_relevance_score(kf_id),
+                _is_generic(kf_id),
+                abs(
+                    (keyframe_map[kf_id].timestamp_seconds if kf_id in keyframe_map else float("inf"))
+                    - midpoints.get(kf_id, 0.0)
+                ),
             ),
         )
         return keyframe_map.get(best_id)
+
+    @staticmethod
+    def _slugify(text: str, max_length: int = 50) -> str:
+        """Convert text to a URL/filesystem-safe slug."""
+        slug = text.lower().strip()
+        slug = re.sub(r'[^a-z0-9\s-]', '', slug)
+        slug = re.sub(r'[\s_]+', '-', slug)
+        slug = re.sub(r'-+', '-', slug)
+        slug = slug.strip('-')
+        return slug[:max_length].rstrip('-')
 
     def _attach_screenshots(
         self, outline: DocumentOutline, extraction: ExtractionResult
     ) -> DocumentOutline:
         """Select and attach the best keyframe screenshot for each section."""
+        article_title = outline.frontmatter.title
+        article_slug = self._slugify(article_title) or "article"
+
         all_screenshots: list[Screenshot] = []
         used_keyframe_ids: set[str] = set()
         step_counter = 1
@@ -356,16 +465,27 @@ class StructureAgent:
             if not section.source_scenes:
                 continue
 
-            keyframe = self._find_best_keyframe(section.source_scenes, extraction)
+            keyframe = self._find_best_keyframe(
+                section.source_scenes, extraction,
+                section_heading=section.heading,
+                section_content_hint=section.content_hint,
+            )
             if keyframe is None or keyframe.id in used_keyframe_ids:
                 continue
 
             ext = Path(keyframe.image_path).suffix or ".png"
             alt_text = keyframe.ui_description or f"Screenshot for section: {section.heading}"
+
+            desc_source = section.heading or keyframe.ui_description or f"step-{step_counter:02d}"
+            desc_slug = self._slugify(desc_source, max_length=40)
+            if not desc_slug:
+                desc_slug = f"step-{step_counter:02d}"
+            image_name = f"{desc_slug}-{step_counter:02d}{ext}"
+
             screenshot = Screenshot(
                 keyframe_id=keyframe.id,
                 source_path=keyframe.image_path,
-                output_path=f"./media/step-{step_counter:02d}{ext}",
+                output_path=f"./media/{article_slug}/{image_name}",
                 alt_text=alt_text,
                 step_number=step_counter,
             )

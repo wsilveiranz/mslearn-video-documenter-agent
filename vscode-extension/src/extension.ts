@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { createChatHandler } from './chatHandler';
+import { BackendClient } from './api/backendClient';
 import { registerAnalyzeFileCommand } from './commands/analyzeFile';
 import { LmProxyServer } from './api/lmProxyServer';
 import { BackendProcessManager } from './services/backendProcessManager';
@@ -34,7 +35,7 @@ async function waitForBackendHealth(baseUrl: string, timeoutMs: number = 30000):
  * Handles prerequisites, process spawn, health check, and LM proxy handshake.
  */
 async function startBackendInBackground(
-    resolvedPath: string, port: number, host: string, backendUrl: string,
+    resolvedPath: string, port: number, host: string, backendUrl: string, client: BackendClient,
 ): Promise<void> {
     try {
         const prereqStatus = await prerequisiteManager!.ensurePrerequisites(resolvedPath);
@@ -60,6 +61,13 @@ async function startBackendInBackground(
         }
 
         await backendManager!.start(resolvedPath, port, host);
+
+        // Pass bootstrap token to client for session-secret authentication
+        const token = backendManager!.bootstrapToken;
+        if (token) {
+            client.setBootstrapToken(token);
+        }
+
         const healthy = await waitForBackendHealth(backendUrl);
 
         if (!healthy) {
@@ -100,7 +108,7 @@ async function startBackendInBackground(
 
 export async function activate(context: vscode.ExtensionContext) {
     try {
-        const handler = createChatHandler(context);
+        const { handler, client } = createChatHandler(context);
 
         const participant = vscode.chat.createChatParticipant(
             'video-documenter.agent',
@@ -156,7 +164,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }
 
             // Start backend in the background so activation completes instantly.
-            void startBackendInBackground(resolvedPath, port, host, backendUrl);
+            void startBackendInBackground(resolvedPath, port, host, backendUrl, client);
         }
 
         context.subscriptions.push(participant);

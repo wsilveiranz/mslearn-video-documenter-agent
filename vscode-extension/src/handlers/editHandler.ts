@@ -67,7 +67,7 @@ function summarizeChanges(before: string, after: string): string {
     return lines.join('\n');
 }
 
-export async function handleRefine(
+export async function handleEdit(
     request: vscode.ChatRequest,
     stream: vscode.ChatResponseStream,
     _token: vscode.CancellationToken,
@@ -79,24 +79,32 @@ export async function handleRefine(
 
     if (!state.currentDocumentId) {
         stream.markdown(
-            '✏️ No document to refine. Please generate a document first:\n\n' +
+            '✏️ No document to edit. Please generate a document first:\n\n' +
             '```\n@video-documenter /generate\n```'
         );
-        return { metadata: { command: 'refine' } };
+        return { metadata: { command: 'edit' } };
     }
 
     const feedback = request.prompt.trim();
     if (!feedback) {
         stream.markdown(
-            '✏️ Please provide feedback for refinement:\n\n' +
-            '```\n@video-documenter /refine Make the introduction more concise\n```'
+            '✏️ Please provide feedback for editing:\n\n' +
+            '```\n@video-documenter /edit Make the introduction more concise\n```'
         );
-        return { metadata: { command: 'refine' } };
+        return { metadata: { command: 'edit' } };
     }
 
     try {
         stateManager.setStage('refining');
-        stream.progress('Refining document...');
+        stream.progress('Editing document...');
+
+        // Detect if the user wants M365 context enrichment
+        const m365Triggers = /\b(m365|microsoft\s*365|work\s*iq|working\s*documents?|work\s*documents?|my\s*documents?|sharepoint|teams\s*messages?)\b/i;
+        const enrichM365 = m365Triggers.test(feedback);
+
+        if (enrichM365) {
+            stream.progress('Searching M365 for relevant context via Work IQ...');
+        }
 
         // Capture current revision so we can detect when the backend update lands
         let currentRevision = 0;
@@ -111,7 +119,7 @@ export async function handleRefine(
 
         const selectedModel = request.model?.id;
 
-        await client.refineDocument(state.currentDocumentId, feedback, selectedModel);
+        await client.refineDocument(state.currentDocumentId, feedback, selectedModel, enrichM365);
 
         stream.progress('Applying changes...');
 
@@ -139,7 +147,7 @@ export async function handleRefine(
             const now = Date.now();
             if ((now - lastRefineEmitTime) >= refineProgressIntervalMs) {
                 lastRefineEmitTime = now;
-                stream.progress(`Refining document... (${formatElapsed(refineStartTime)})`);
+                stream.progress(`Editing document... (${formatElapsed(refineStartTime)})`);
             }
 
             retries++;
@@ -148,12 +156,24 @@ export async function handleRefine(
         if (doc) {
             stateManager.setStage('generated');
 
-            // Update the workspace file with refined content
+            // Update the workspace file with edited content AND re-download media
             let savedPath: string | undefined;
             try {
-                const savedUri = await outputManager.updateDocument(
+                // Re-download media files (editor may have reassigned screenshots)
+                const mediaFiles: Array<{filename: string, data: Uint8Array, outputPath?: string}> = [];
+                for (const mf of doc.media_files ?? []) {
+                    try {
+                        const data = await client.downloadMedia(state.currentDocumentId!, mf.filename);
+                        mediaFiles.push({ filename: mf.filename, data, outputPath: mf.output_path });
+                    } catch {
+                        // Non-fatal: skip media that can't be downloaded
+                    }
+                }
+
+                const savedUri = await outputManager.saveDocument(
                     state.currentDocumentId!,
                     doc.markdown_content,
+                    mediaFiles,
                     state.savedFilename,
                 );
                 savedPath = savedUri.fsPath;
@@ -165,21 +185,33 @@ export async function handleRefine(
                 ? summarizeChanges(originalContent, doc.markdown_content)
                 : 'Document updated';
 
+            // Build eval score row if available
+            let evalRow = '';
+            if (doc.eval_scores) {
+                const s = doc.eval_scores;
+                const pct = (v: number) => `${Math.round(v * 100)}%`;
+                const icon = s.passed ? '✅' : '⚠️';
+                evalRow =
+                    `| Quality score | ${icon} **${pct(s.overall)}** overall |\n` +
+                    `| | Completeness ${pct(s.completeness)} · Accuracy ${pct(s.accuracy)} · Style ${pct(s.style_compliance)} · Readability ${pct(s.readability)} · Grounding ${pct(s.grounding)} |\n`;
+            }
+
             const summary =
-                `✅ **Document refined** (revision ${doc.revision_number})\n\n` +
+                `✅ **Document edited** (revision ${doc.revision_number})\n\n` +
                 `${changeSummary}\n\n` +
                 `| Field | Value |\n` +
                 `|-------|-------|\n` +
                 `| Word count | ${doc.word_count} |\n` +
                 `| Revision | ${doc.revision_number} |\n` +
                 (savedPath ? `| Saved to | \`${savedPath}\` |\n` : '') +
-                '\n💡 Check the updated document in the editor. Use `/refine` again for further changes.\n';
+                evalRow +
+                '\n💡 Check the updated document in the editor. Use `/edit` again for further changes.\n';
 
             stream.markdown(summary);
         } else {
             stateManager.setStage('generated');
             stream.markdown(
-                '⚠️ Refinement was submitted but could not verify completion. ' +
+                '⚠️ Edit was submitted but could not verify completion. ' +
                 'Use `/status` to check progress.'
             );
         }
@@ -188,8 +220,8 @@ export async function handleRefine(
         const message = error instanceof BackendError
             ? `Backend error: ${error.detail}`
             : `Error: ${error instanceof Error ? error.message : String(error)}`;
-        stream.markdown(`❌ Refinement failed: ${message}`);
+        stream.markdown(`❌ Edit failed: ${message}`);
     }
 
-    return { metadata: { command: 'refine' } };
+    return { metadata: { command: 'edit' } };
 }

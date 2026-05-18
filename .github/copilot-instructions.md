@@ -288,6 +288,16 @@ The extension runs in **two different layouts** — code must handle both:
 - **Cache prerequisite state**: don't re-run `pip install -e` on every activation — check if the venv and package already exist
 - **Activate on `onStartupFinished`**: prereqs and backend should start in the background before the user first invokes `@video-documenter`, not on first chat message
 
+### PyInstaller Hidden Imports
+
+The VSIX bundles the Python backend as a standalone executable via PyInstaller (`backend/backend.spec`). PyInstaller traces imports **statically** from `src/main.py` — any module imported lazily inside a function body (e.g., `from mcp import ClientSession` inside an `async def`) will **not** be discovered and must be added to the `hiddenimports` list in `backend.spec`.
+
+**When adding a new backend module or dependency:**
+1. Check whether the module is imported at the top level of a file in the import chain from `main.py → routes.py → agents/`
+2. If it's imported inside a function (lazy/deferred import), add it to `hiddenimports` in `backend.spec`
+3. This applies to both first-party modules (`src.services.*`) and third-party packages (`mcp`, `markitdown`, etc.)
+4. Always clean `__pycache__` before building — stale `.pyc` files cause PyInstaller to bundle old bytecode (use the `--clean` flag)
+
 ---
 
 ## Implementation Quality

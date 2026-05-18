@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import os
+import secrets
 import tempfile
 import uuid
 from pathlib import Path
@@ -10,7 +12,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -24,6 +26,7 @@ from src.agents.writer import WriterAgent
 from src.api.websocket import manager
 from src.config import get_settings
 from src.models.document import DocType, DocumentMetadata
+from src.models.evaluation import EvaluationReport
 from src.models.services import AZURE_SERVICES
 from src.models.video import DataQualityReport, ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
 
@@ -37,6 +40,19 @@ router = APIRouter(tags=["Video Documenter"])
 _video_jobs: dict[str, VideoJob] = {}
 _documents: dict[str, GeneratedDocument] = {}
 _extractions: dict[str, ExtractionResult] = {}
+_evaluations: dict[str, EvaluationReport] = {}
+
+# ---- Session auth ----
+_session_secret: str = secrets.token_hex(32)
+_secret_retrieved: bool = False
+_bootstrap_token: str | None = os.environ.get("VD_BOOTSTRAP_TOKEN")
+
+
+def _require_session_auth(request: Request) -> None:
+    """Validate the session secret header on sensitive endpoints."""
+    token = request.headers.get("X-Session-Secret")
+    if token != _session_secret:
+        raise HTTPException(status_code=403, detail="Invalid or missing session secret.")
 
 
 # ---- Request/Response Models ----
@@ -70,6 +86,7 @@ class ExtractionResponse(BaseModel):
 class RefineRequest(BaseModel):
     feedback: str
     model: str | None = None
+    enrich_m365: bool = False
 
 
 class ExtractionSummary(BaseModel):
@@ -97,6 +114,16 @@ class MediaFileResponse(BaseModel):
     alt_text: str
 
 
+class EvalScoreResponse(BaseModel):
+    completeness: float
+    accuracy: float
+    style_compliance: float
+    readability: float
+    grounding: float
+    overall: float
+    passed: bool
+
+
 class DocumentResponse(BaseModel):
     document_id: str
     doc_type: DocType
@@ -104,6 +131,7 @@ class DocumentResponse(BaseModel):
     word_count: int
     revision_number: int
     media_files: list[MediaFileResponse] = []
+    eval_scores: EvalScoreResponse | None = None
 
 
 
@@ -204,6 +232,24 @@ async def health_deep() -> dict[str, object]:
             ) from exc
 
     return {"status": "ok", "imports_verified": len(critical_modules)}
+
+
+# ---- Session Auth ----
+
+@router.get("/auth/session-secret")
+async def get_session_secret(request: Request):
+    """Return the session secret. Requires bootstrap token and is only callable once."""
+    global _secret_retrieved
+    if _secret_retrieved:
+        raise HTTPException(status_code=403, detail="Session secret already retrieved.")
+
+    # Require the bootstrap token that was passed via env var at process start
+    provided_token = request.headers.get("X-Bootstrap-Token")
+    if not _bootstrap_token or provided_token != _bootstrap_token:
+        raise HTTPException(status_code=403, detail="Invalid or missing bootstrap token.")
+
+    _secret_retrieved = True
+    return {"secret": _session_secret}
 
 
 # ---- Services ----
@@ -331,8 +377,14 @@ async def _run_extraction(video_id: str) -> None:
                 detail="Extraction produced no transcript, scenes, or keyframes",
             )
             job.status = ProcessingStatus.FAILED
-            job.error_message = "Extraction produced no transcript, scenes, or keyframes. The video may be unreadable or unsupported."
-            manager.send_progress(video_id, "failed", 2, 6, "Extraction failed: no content could be extracted from the video.")
+            job.error_message = (
+                "Extraction produced no transcript, scenes, or keyframes. "
+                "The video may be unreadable or unsupported."
+            )
+            manager.send_progress(
+                video_id, "failed", 2, 6,
+                "Extraction failed: no content could be extracted from the video.",
+            )
             manager.clear_progress(video_id)
             return
         else:
@@ -351,6 +403,36 @@ async def _run_extraction(video_id: str) -> None:
         manager.clear_progress(video_id)
 
 
+async def _create_learn_tools():
+    """Create MCP client + LearnMCPTools for the API pipeline.
+
+    Returns (mcp_manager, learn_tools) where learn_tools may be None if
+    MCP is not configured.  Caller must ``await mcp_manager.close()``
+    when done.
+    """
+    from src.services.learn_mcp_tools import LEARN_MCP_SERVER, LearnMCPTools
+    from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+
+    settings = get_settings()
+    if not settings.mcp_learn_endpoint:
+        return None, None
+
+    learn_server = MCPServerConfig(
+        name=LEARN_MCP_SERVER,
+        transport_type=MCPTransportType.STREAMABLE_HTTP,
+        endpoint=settings.mcp_learn_endpoint,
+        enabled=True,
+    )
+    mcp_manager = MCPClientManager(
+        servers={LEARN_MCP_SERVER: learn_server},
+        cache_ttl=settings.mcp_cache_ttl_seconds,
+        request_timeout=settings.mcp_request_timeout_seconds,
+        graceful_degradation=settings.mcp_graceful_degradation,
+    )
+    learn_tools = LearnMCPTools(mcp_manager)
+    return mcp_manager, learn_tools
+
+
 async def _run_pipeline(
     video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None,
 ) -> None:
@@ -359,11 +441,15 @@ async def _run_pipeline(
     if job is None:
         return
 
+    mcp_manager = None
     try:
         settings = get_settings()
         mode = ProcessingMode(settings.processing_mode)
         client = create_llm_client(mode, model_override=job.llm_model)
         job.status = ProcessingStatus.PROCESSING
+
+        # Create MCP tools for documentation grounding
+        mcp_manager, learn_tools = await _create_learn_tools()
 
         # Check if extraction was already done (e.g., by /extract endpoint)
         if job.extraction_result is not None:
@@ -413,7 +499,7 @@ async def _run_pipeline(
         job.step = 3
         manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Creating document outline...")
 
-        structure_agent = StructureAgent(client)
+        structure_agent = StructureAgent(client, learn_tools=learn_tools)
         outline = await structure_agent.process(extraction_result, doc_type, supplementary_context, metadata)
 
         manager.send_progress(video_id, "structuring", 3, 6, "Step 3/6: Outline ready ✓")
@@ -423,8 +509,12 @@ async def _run_pipeline(
         job.step = 4
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Writing document...")
 
-        writer_agent = WriterAgent(client)
-        document = await writer_agent.process(outline, extraction_result, quality_report=job.quality_report)
+        writer_agent = WriterAgent(client, learn_tools=learn_tools)
+        document = await writer_agent.process(
+            outline, extraction_result,
+            quality_report=job.quality_report,
+            supplementary_context=supplementary_context,
+        )
 
         manager.send_progress(video_id, "writing", 4, 6, "Step 4/6: Draft complete ✓")
 
@@ -433,8 +523,8 @@ async def _run_pipeline(
         job.step = 5
         manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing for MS Learn style...")
 
-        editor_agent = EditorAgent(client)
-        document = await editor_agent.process(document)
+        editor_agent = EditorAgent(client, learn_tools=learn_tools)
+        document = await editor_agent.process(document, extraction=extraction_result)
 
         manager.send_progress(video_id, "editing", 5, 6, "Step 5/6: Editing complete ✓")
 
@@ -456,13 +546,14 @@ async def _run_pipeline(
             feedback = "\n".join(
                 f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions
             )
-            document = await editor_agent.process(document, feedback=feedback)
+            document = await editor_agent.process(document, feedback=feedback, extraction=extraction_result)
             evaluation = await evaluate_agent.process(document, extraction_result, quality_report=job.quality_report)
 
         # Done
         result_doc_id = document.document_id
         _documents[result_doc_id] = document
         _extractions[result_doc_id] = extraction_result
+        _evaluations[result_doc_id] = evaluation
 
         job.document_id = result_doc_id
         job.status = ProcessingStatus.COMPLETED
@@ -483,9 +574,9 @@ async def _run_pipeline(
         logger.error("api.pipeline_failed", video_id=video_id, error=repr(exc), exc_info=True)
         manager.send_progress(video_id, "failed", job.step, 6, str(exc))
         manager.clear_progress(video_id)
-
-
-# ---- Video Endpoints ----
+    finally:
+        if mcp_manager is not None:
+            await mcp_manager.close()
 
 @router.post("/videos/ingest", response_model=IngestResponse)
 async def ingest_video(
@@ -708,6 +799,21 @@ async def get_document(document_id: str) -> DocumentResponse:
         for s in doc.media_files
     ]
 
+    # Include eval scores if available
+    eval_scores = None
+    evaluation = _evaluations.get(document_id)
+    if evaluation:
+        s = evaluation.scores
+        eval_scores = EvalScoreResponse(
+            completeness=s.completeness,
+            accuracy=s.accuracy,
+            style_compliance=s.style_compliance,
+            readability=s.readability,
+            grounding=s.grounding,
+            overall=s.overall,
+            passed=s.passed,
+        )
+
     return DocumentResponse(
         document_id=doc.document_id,
         doc_type=doc.doc_type,
@@ -715,6 +821,7 @@ async def get_document(document_id: str) -> DocumentResponse:
         word_count=doc.word_count,
         revision_number=doc.revision_number,
         media_files=media_files,
+        eval_scores=eval_scores,
     )
 
 
@@ -740,11 +847,88 @@ async def download_media(document_id: str, filename: str) -> FileResponse:
     raise HTTPException(status_code=404, detail=f"Media file '{filename}' not found in document")
 
 
+async def _fetch_m365_context_for_doc(doc: GeneratedDocument, user_feedback: str) -> str:
+    """Build a smart query from the document context and fetch M365 content via Work IQ.
+
+    Returns the M365 summary text, or empty string if unavailable/disabled.
+    """
+    from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+    from src.services.workiq_mcp_tools import WORKIQ_MCP_SERVER, WorkIQTools
+
+    settings = get_settings()
+    if not settings.mcp_workiq_enabled:
+        logger.info("m365_enrich.disabled")
+        return ""
+
+    # Build a targeted query from document metadata + user intent
+    query_parts: list[str] = []
+
+    # Extract title from YAML frontmatter or first H1
+    if doc.markdown_content:
+        for line in doc.markdown_content.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("title:"):
+                query_parts.append(stripped.removeprefix("title:").strip().strip('"').strip("'"))
+                break
+            if stripped.startswith("# "):
+                query_parts.append(stripped.removeprefix("# ").strip())
+                break
+
+    # Add the user's feedback intent (strip the M365 trigger words for a cleaner query)
+    import re
+    clean_feedback = re.sub(
+        r"\b(m365|microsoft\s*365|work\s*iq|working\s*documents?|work\s*documents?|"
+        r"my\s*documents?|sharepoint|teams\s*messages?|enrich|use|from|with|the|and|to)\b",
+        "", user_feedback, flags=re.IGNORECASE,
+    ).strip()
+    if clean_feedback:
+        query_parts.append(clean_feedback)
+
+    query = " ".join(query_parts).strip()
+    if not query:
+        query = "related documentation and context"
+
+    logger.info("m365_enrich.query", query_length=len(query))
+
+    workiq_server = MCPServerConfig(
+        name=WORKIQ_MCP_SERVER,
+        transport_type=MCPTransportType.STDIO,
+        command=settings.mcp_workiq_npx_path,
+        args=["-y", "@microsoft/workiq", "mcp"],
+        enabled=True,
+    )
+    mcp_manager = MCPClientManager(
+        servers={WORKIQ_MCP_SERVER: workiq_server},
+        cache_ttl=settings.mcp_cache_ttl_seconds,
+        request_timeout=settings.mcp_request_timeout_seconds,
+        graceful_degradation=settings.mcp_graceful_degradation,
+    )
+
+    try:
+        tools = WorkIQTools(mcp_manager)
+        result = await tools.search_context(query)
+        if result.available and result.summary:
+            logger.info("m365_enrich.success", query=query, summary_length=len(result.summary))
+            return result.summary
+        logger.info("m365_enrich.no_results", query=query)
+        return ""
+    except Exception as exc:
+        logger.warning("m365_enrich.failed", query=query, error=str(exc))
+        return ""
+    finally:
+        await mcp_manager.close()
+
+
 @router.post("/documents/{document_id}/refine", response_model=GenerateResponse)
 async def refine_document(
-    document_id: str, request: RefineRequest, background_tasks: BackgroundTasks
+    document_id: str, request: RefineRequest, background_tasks: BackgroundTasks,
+    http_request: Request,
 ) -> GenerateResponse:
     """Iteratively refine a generated document with feedback."""
+    # Require session auth when M365 enrichment is requested
+    if request.enrich_m365:
+        _require_session_auth(http_request)
+
     doc = _documents.get(document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")
@@ -770,13 +954,55 @@ async def refine_document(
             if video_id:
                 manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
 
+            # Build the final feedback, enriching with M365 context if requested
+            final_feedback = request.feedback
+
+            if request.enrich_m365:
+                m365_context = await _fetch_m365_context_for_doc(doc, request.feedback)
+                if m365_context:
+                    final_feedback = (
+                        f"{request.feedback}\n\n"
+                        "---\n\n"
+                        "## M365 Context (from Work IQ)\n\n"
+                        "The following content was retrieved from the user's M365 working documents "
+                        "(SharePoint, Teams, emails, meetings). This is authoritative source material — "
+                        "integrate it into the article where relevant.\n\n"
+                        f"{m365_context}"
+                    )
+                    if video_id:
+                        manager.send_progress(video_id, "refining", 1, 2, "M365 context retrieved. Applying edits...")
+
             client = create_llm_client(model_override=llm_model)
-            editor = EditorAgent(client)
-            refined = await editor.process(doc, feedback=request.feedback)
+
+            # Set up MS Learn MCP tools for style reference during editing
+            from src.services.learn_mcp_tools import LEARN_MCP_SERVER, LearnMCPTools
+            from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+
+            settings = get_settings()
+            learn_server = MCPServerConfig(
+                name=LEARN_MCP_SERVER,
+                transport_type=MCPTransportType.STREAMABLE_HTTP,
+                endpoint=settings.mcp_learn_endpoint,
+                enabled=bool(settings.mcp_learn_endpoint),
+            )
+            mcp_manager = MCPClientManager(
+                servers={LEARN_MCP_SERVER: learn_server},
+                cache_ttl=settings.mcp_cache_ttl_seconds,
+                request_timeout=settings.mcp_request_timeout_seconds,
+                graceful_degradation=settings.mcp_graceful_degradation,
+            )
+            learn_tools = LearnMCPTools(mcp_manager)
+
+            try:
+                editor = EditorAgent(client, learn_tools=learn_tools)
+                refined = await editor.process(doc, feedback=final_feedback, extraction=extraction)
+            finally:
+                await mcp_manager.close()
 
             if extraction is not None:
                 evaluator = EvaluateAgent(client)
                 evaluation = await evaluator.process(refined, extraction)
+                _evaluations[document_id] = evaluation
                 logger.info(
                     "api.refine_evaluated",
                     doc_id=document_id,
@@ -802,3 +1028,151 @@ async def refine_document(
         status="queued",
         message="Refinement queued.",
     )
+
+
+# --- Document Conversion Endpoints ---
+
+class ConvertPathRequest(BaseModel):
+    path: str
+
+
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+@router.post("/context/convert-document")
+async def convert_document_upload(file: UploadFile):
+    """Convert an uploaded document file to Markdown."""
+    from src.services.document_converter import DocumentConversionError, DocumentConverter
+
+    # Enforce size limit while reading (don't load unbounded into memory)
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1MB chunks
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum upload size is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+
+    converter = DocumentConverter()
+    try:
+        result = converter.convert_bytes(content, file.filename or "unknown")
+        return result
+    except (ValueError, DocumentConversionError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("api.convert_document_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="Document conversion failed") from e
+
+
+@router.post("/context/convert-path")
+async def convert_document_path(request: ConvertPathRequest, http_request: Request):
+    """Convert a local document file to Markdown by path.
+
+    Only converts files with supported document extensions (.docx, .pdf, .pptx, etc.).
+    Rejects paths with traversal patterns or unsupported file types to prevent
+    arbitrary file reads.
+    """
+    _require_session_auth(http_request)
+    from src.services.document_converter import DocumentConversionError, DocumentConverter
+
+    # Resolve to absolute path and restrict to safe directories
+    resolved = Path(request.path).resolve()
+    allowed_bases = [
+        Path(tempfile.gettempdir()).resolve(),
+        Path.home().resolve(),
+    ]
+    if not any(resolved.is_relative_to(base) for base in allowed_bases):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied. File must be under the user's home directory or system temp directory.",
+        )
+
+    # Only allow supported document extensions (prevents reading arbitrary files)
+    converter = DocumentConverter()
+    if resolved.suffix.lower() not in converter.supported_extensions():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported file type '{resolved.suffix}'. "
+                f"Supported: {', '.join(sorted(converter.supported_extensions()))}"
+            ),
+        )
+
+    try:
+        result = converter.convert(str(resolved))
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except (ValueError, DocumentConversionError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("api.convert_path_failed", path=request.path, error=str(e))
+        raise HTTPException(status_code=500, detail="Document conversion failed") from e
+
+
+# --- M365 Context Search ---
+
+class M365SearchRequest(BaseModel):
+    query: str
+    video_id: str | None = None
+
+
+@router.post("/context/search-m365")
+async def search_m365_context(request: M365SearchRequest, http_request: Request):
+    """Search M365 for supplementary context via Work IQ.
+
+    This endpoint is user-triggered — it should only be called when the
+    user explicitly requests M365 context enrichment.
+    """
+    _require_session_auth(http_request)
+    from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+    from src.services.workiq_mcp_tools import WORKIQ_MCP_SERVER, WorkIQTools
+
+    settings = get_settings()
+
+    if not settings.mcp_workiq_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Work IQ integration is not enabled. Set MCP_WORKIQ_ENABLED=true.",
+        )
+
+    workiq_server = MCPServerConfig(
+        name=WORKIQ_MCP_SERVER,
+        transport_type=MCPTransportType.STDIO,
+        command=settings.mcp_workiq_npx_path,
+        args=["-y", "@microsoft/workiq", "mcp"],
+        enabled=True,
+    )
+    mcp_manager = MCPClientManager(
+        servers={WORKIQ_MCP_SERVER: workiq_server},
+        cache_ttl=settings.mcp_cache_ttl_seconds,
+        request_timeout=settings.mcp_request_timeout_seconds,
+        graceful_degradation=settings.mcp_graceful_degradation,
+    )
+
+    try:
+        tools = WorkIQTools(mcp_manager)
+        result = await tools.search_context(request.query)
+
+        if not result.available:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Work IQ MCP server is not available. "
+                    "Ensure @microsoft/workiq is installed and M365 Copilot is configured."
+                ),
+            )
+
+        if request.video_id:
+            logger.info("api.m365_search", video_id=request.video_id, query_length=len(request.query))
+
+        return result
+    finally:
+        await mcp_manager.close()
