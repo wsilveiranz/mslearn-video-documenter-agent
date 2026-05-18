@@ -134,10 +134,16 @@ class WriterAgent:
             if len(supplementary_context) > max_context:
                 ctx += "\n\n[… truncated for length]"
             supplementary_section = (
-                "## Reference documents (supplementary context)\n\n"
-                "Use this material to enrich and ground the article content. "
-                "Incorporate relevant details, terminology, and context from these documents "
-                "where they complement the video content:\n\n"
+                "## Reference documents (REQUIRED — primary source material)\n\n"
+                "These documents are authoritative source material provided by the user. "
+                "You MUST actively integrate information from these documents into the article:\n\n"
+                "- Use them to fill prerequisites, configuration values, and setup details\n"
+                "- Use correct terminology and naming from these documents\n"
+                "- Replace TODO placeholders with real content where these documents provide the answer\n"
+                "- Add detail to procedures that the video mentions but doesn't elaborate on\n"
+                "- Include limitations, known issues, or constraints documented here\n\n"
+                "Treat these documents as EQUAL in authority to the video transcript. "
+                "Content from reference documents is grounded (not hallucinated) — use it confidently.\n\n"
                 f"{ctx}\n\n"
             )
 
@@ -156,7 +162,9 @@ class WriterAgent:
             "Generate a complete MS Learn article following the outline and template. "
             "Include YAML frontmatter, all sections, numbered steps, and :::image::: references for screenshots. "
             "Use the extraction data to ground your content — do not invent steps not shown in the video. "
-            "Where reference documents are provided, incorporate relevant details to enrich the article. "
+            "Reference documents are a PRIMARY source — actively weave their content into every relevant section. "
+            "If a reference doc provides details the video skips (config values, prerequisites, limitations, exact commands), "
+            "include them as real content, not TODOs. "
             "Return the complete Markdown document only, without any explanation or wrapper text."
         )
 

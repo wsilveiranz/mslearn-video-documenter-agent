@@ -184,7 +184,14 @@ class StructureAgent:
         ]
 
         if supplementary_context:
-            parts.append(f"## Supplementary context\n{supplementary_context}")
+            parts.append(
+                "## Reference documents (PRIMARY source — use actively)\n\n"
+                "The user provided these documents as authoritative source material. "
+                "Use them to inform section structure, identify prerequisites, refine terminology, "
+                "and add content_hints with specific details so the Writer Agent produces real content "
+                "instead of TODO placeholders.\n\n"
+                f"{supplementary_context}"
+            )
 
         if mcp_context:
             parts.append(f"## Related Microsoft Learn articles (for structural reference)\n{mcp_context}")

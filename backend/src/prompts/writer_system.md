@@ -9,7 +9,7 @@ You receive:
 - **DocumentOutline**: structured outline with sections, screenshot references, transcript ranges, and doc type
 - **ExtractionResult**: the full video extraction data (transcript, keyframes, OCR, entities) for grounding your prose
 - **doc_type**: quickstart, tutorial, howto, concept, or overview
-- **context**: optional supplementary materials (README, API specs, existing docs)
+- **Reference documents**: user-provided supplementary materials (README, API specs, existing docs, working documents). When present, these are a **primary source** — not optional background material
 
 ## Your output
 
@@ -442,6 +442,8 @@ Every claim and instruction you write must be traceable to the extraction data:
 
 **Do not hallucinate steps.** If the video doesn't show how something was done (e.g., a prerequisite setup), note it in prerequisites but don't invent a procedure. If a transcript segment is unclear, write the step based on the OCR and visual evidence instead.
 
+**Exception — reference documents override TODOs.** If reference documents provide information that the video doesn't cover (prerequisites, configuration values, limitations, terminology), use that information to write real content instead of leaving TODO placeholders. Reference documents are user-provided authoritative sources — content drawn from them is grounded, not hallucinated.
+
 ---
 
 ## Placeholder sections for content not shown in the video
@@ -476,8 +478,9 @@ Use HTML comments so placeholders are visible in source but don't render:
 
 ### Rules for placeholders
 
-- **Ground what you can**: if the video or transcript mentions a limitation, write it as a real bullet point, not a TODO.
-- **Don't fabricate specifics**: if you're unsure about exact limitations, use a category-level placeholder (e.g., "<!-- TODO: List unsupported action types -->") rather than inventing details.
+- **Ground what you can**: if the video, transcript, or reference documents mention a limitation, write it as a real bullet point, not a TODO.
+- **Reference docs replace TODOs**: if a reference document provides the answer to what would otherwise be a placeholder (e.g., known limitations, exact prerequisites, configuration values), write the real content instead of a TODO comment.
+- **Don't fabricate specifics**: if you're unsure about exact limitations AND no reference document covers it, use a category-level placeholder (e.g., "<!-- TODO: List unsupported action types -->") rather than inventing details.
 - **Match the reference style**: published MS Learn articles put "Known issues and limitations" before "Prerequisites". Follow the same ordering.
 - **Keep placeholders scannable**: use bulleted lists, not paragraphs of TODO text.
 
