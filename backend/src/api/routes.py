@@ -72,6 +72,7 @@ class ExtractionResponse(BaseModel):
 class RefineRequest(BaseModel):
     feedback: str
     model: str | None = None
+    enrich_m365: bool = False
 
 
 class ExtractionSummary(BaseModel):
@@ -814,6 +815,78 @@ async def download_media(document_id: str, filename: str) -> FileResponse:
     raise HTTPException(status_code=404, detail=f"Media file '{filename}' not found in document")
 
 
+async def _fetch_m365_context_for_doc(doc: "GeneratedDocument", user_feedback: str) -> str:
+    """Build a smart query from the document context and fetch M365 content via Work IQ.
+
+    Returns the M365 summary text, or empty string if unavailable/disabled.
+    """
+    from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+    from src.services.workiq_mcp_tools import WORKIQ_MCP_SERVER, WorkIQTools
+
+    settings = get_settings()
+    if not settings.mcp_workiq_enabled:
+        logger.info("m365_enrich.disabled")
+        return ""
+
+    # Build a targeted query from document metadata + user intent
+    query_parts: list[str] = []
+
+    # Extract title from YAML frontmatter or first H1
+    if doc.markdown_content:
+        for line in doc.markdown_content.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("title:"):
+                query_parts.append(stripped.removeprefix("title:").strip().strip('"').strip("'"))
+                break
+            if stripped.startswith("# "):
+                query_parts.append(stripped.removeprefix("# ").strip())
+                break
+
+    # Add the user's feedback intent (strip the M365 trigger words for a cleaner query)
+    import re
+    clean_feedback = re.sub(
+        r"\b(m365|microsoft\s*365|work\s*iq|working\s*documents?|work\s*documents?|"
+        r"my\s*documents?|sharepoint|teams\s*messages?|enrich|use|from|with|the|and|to)\b",
+        "", user_feedback, flags=re.IGNORECASE,
+    ).strip()
+    if clean_feedback:
+        query_parts.append(clean_feedback)
+
+    query = " ".join(query_parts).strip()
+    if not query:
+        query = "related documentation and context"
+
+    logger.info("m365_enrich.query", query=query)
+
+    workiq_server = MCPServerConfig(
+        name=WORKIQ_MCP_SERVER,
+        transport_type=MCPTransportType.STDIO,
+        command=settings.mcp_workiq_npx_path,
+        args=["-y", "@microsoft/workiq", "mcp"],
+        enabled=True,
+    )
+    mcp_manager = MCPClientManager(
+        servers={WORKIQ_MCP_SERVER: workiq_server},
+        cache_ttl=settings.mcp_cache_ttl_seconds,
+        request_timeout=settings.mcp_request_timeout_seconds,
+        graceful_degradation=settings.mcp_graceful_degradation,
+    )
+
+    try:
+        tools = WorkIQTools(mcp_manager)
+        result = await tools.search_context(query)
+        if result.available and result.summary:
+            logger.info("m365_enrich.success", query=query, summary_length=len(result.summary))
+            return result.summary
+        logger.info("m365_enrich.no_results", query=query)
+        return ""
+    except Exception as exc:
+        logger.warning("m365_enrich.failed", query=query, error=str(exc))
+        return ""
+    finally:
+        await mcp_manager.close()
+
+
 @router.post("/documents/{document_id}/refine", response_model=GenerateResponse)
 async def refine_document(
     document_id: str, request: RefineRequest, background_tasks: BackgroundTasks
@@ -844,9 +917,27 @@ async def refine_document(
             if video_id:
                 manager.send_progress(video_id, "refining", 1, 2, "Refining document...")
 
+            # Build the final feedback, enriching with M365 context if requested
+            final_feedback = request.feedback
+
+            if request.enrich_m365:
+                m365_context = await _fetch_m365_context_for_doc(doc, request.feedback)
+                if m365_context:
+                    final_feedback = (
+                        f"{request.feedback}\n\n"
+                        "---\n\n"
+                        "## M365 Context (from Work IQ)\n\n"
+                        "The following content was retrieved from the user's M365 working documents "
+                        "(SharePoint, Teams, emails, meetings). This is authoritative source material — "
+                        "integrate it into the article where relevant.\n\n"
+                        f"{m365_context}"
+                    )
+                    if video_id:
+                        manager.send_progress(video_id, "refining", 1, 2, "M365 context retrieved. Applying edits...")
+
             client = create_llm_client(model_override=llm_model)
             editor = EditorAgent(client)
-            refined = await editor.process(doc, feedback=request.feedback, extraction=extraction)
+            refined = await editor.process(doc, feedback=final_feedback, extraction=extraction)
 
             if extraction is not None:
                 evaluator = EvaluateAgent(client)

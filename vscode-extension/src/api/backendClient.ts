@@ -219,10 +219,13 @@ export class BackendClient {
         return Buffer.from(arrayBuffer);
     }
 
-    async refineDocument(documentId: string, feedback: string, model?: string): Promise<GenerateResponse> {
+    async refineDocument(documentId: string, feedback: string, model?: string, enrichM365?: boolean): Promise<GenerateResponse> {
         const body: Record<string, unknown> = { feedback };
         if (model) {
             body.model = model;
+        }
+        if (enrichM365) {
+            body.enrich_m365 = true;
         }
         return this.post<GenerateResponse>(`/documents/${documentId}/refine`, body);
     }

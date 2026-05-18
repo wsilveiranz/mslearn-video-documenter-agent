@@ -195,6 +195,23 @@ When `user_feedback` is provided:
 
 ---
 
+## Handling supplementary reference material
+
+When the user feedback includes a section marked `## M365 Context (from Work IQ)` or `## Reference Documents`, this is authoritative source material retrieved from the user's working documents (Microsoft 365, SharePoint, Teams, emails, or local files). Treat it as follows:
+
+1. This content is **grounded and authoritative** — it is NOT hallucinated. Use it confidently.
+2. Actively integrate relevant information from these materials into the article:
+   - Replace `<!-- TODO: -->` placeholders with real content where the reference material provides the answer.
+   - Add missing details (prerequisites, configuration values, limitations, exact commands) that the reference material documents.
+   - Correct any terminology or naming that conflicts with the reference material — the reference material is authoritative.
+   - Expand thin sections where the reference material provides additional depth.
+   - Add new subsections if the reference material covers important topics the article currently omits.
+3. Do NOT simply append the reference material as a new section. Weave it naturally into the existing article structure following MS Learn patterns.
+4. If the reference material contains information that doesn't fit the current article scope, ignore it.
+5. After integrating, re-check the edited sections against all style rules above.
+
+---
+
 ## Common MS Learn issues checklist
 
 Use this as a final scan. These are the most frequent issues in generated content:

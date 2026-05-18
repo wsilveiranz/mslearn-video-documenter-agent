@@ -98,6 +98,14 @@ export async function handleEdit(
         stateManager.setStage('refining');
         stream.progress('Editing document...');
 
+        // Detect if the user wants M365 context enrichment
+        const m365Triggers = /\b(m365|microsoft\s*365|work\s*iq|working\s*documents?|work\s*documents?|my\s*documents?|sharepoint|teams\s*messages?)\b/i;
+        const enrichM365 = m365Triggers.test(feedback);
+
+        if (enrichM365) {
+            stream.progress('Searching M365 for relevant context via Work IQ...');
+        }
+
         // Capture current revision so we can detect when the backend update lands
         let currentRevision = 0;
         let originalContent = '';
@@ -111,7 +119,7 @@ export async function handleEdit(
 
         const selectedModel = request.model?.id;
 
-        await client.refineDocument(state.currentDocumentId, feedback, selectedModel);
+        await client.refineDocument(state.currentDocumentId, feedback, selectedModel, enrichM365);
 
         stream.progress('Applying changes...');
 
