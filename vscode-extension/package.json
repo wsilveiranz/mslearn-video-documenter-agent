@@ -2,7 +2,7 @@
   "name": "mslearn-video-documenter",
   "displayName": "MS Learn Video Documenter",
   "description": "Analyzes screen recordings and generates MS Learn-style documentation",
-  "version": "0.3.2",
+  "version": "0.3.0",
   "publisher": "video-documenter",
   "icon": "media/icon.png",
   "license": "MIT",
