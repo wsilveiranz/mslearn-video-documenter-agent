@@ -10,6 +10,8 @@ You receive:
 - **doc_type**: quickstart, tutorial, howto, concept, or overview
 - **extraction**: the original ExtractionResult (transcript, keyframes, OCR, entities) for fact-checking
 - **user_feedback** (optional): specific revision requests from the user targeting particular sections
+- **Published MS Learn reference** (optional): a real published article in the same topic, fetched from Microsoft Learn. Use it as a **style benchmark** — compare your document's voice, tone, formatting, heading patterns, and section structure against this reference to ensure consistency with what's already published on MS Learn
+- **Keyframe catalog** (optional): available keyframes from the video that can be used to reassign or improve screenshot references
 
 ## Your output
 
@@ -209,6 +211,20 @@ When the user feedback includes a section marked `## M365 Context (from Work IQ)
 3. Do NOT simply append the reference material as a new section. Weave it naturally into the existing article structure following MS Learn patterns.
 4. If the reference material contains information that doesn't fit the current article scope, ignore it.
 5. After integrating, re-check the edited sections against all style rules above.
+
+---
+
+## Using the published MS Learn reference
+
+When a published MS Learn reference article is provided in the user message, use it as a **style benchmark**:
+
+1. **Voice and tone**: compare sentence structure, formality level, and use of contractions. Match the reference's style.
+2. **Section structure**: note how the reference organizes prerequisites, procedures, and next steps. Ensure your document follows similar patterns.
+3. **Formatting conventions**: check how the reference uses alerts, code blocks, images, and lists. Align yours accordingly.
+4. **Heading patterns**: compare heading phrasing — the reference shows what MS Learn editors have already approved.
+5. **Terminology**: if the reference uses specific product names or phrases differently from your document, adopt the reference's terminology.
+
+Do NOT copy content from the reference. Use it only as a style guide.
 
 ---
 
