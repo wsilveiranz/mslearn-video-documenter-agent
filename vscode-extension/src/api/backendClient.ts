@@ -117,13 +117,44 @@ export interface Disposable {
 
 export class BackendClient {
     private readonly baseUrl: string;
+    private sessionSecret: string | null = null;
+    private secretFetchPromise: Promise<void> | null = null;
 
     constructor(config?: BackendConfig) {
         this.baseUrl = (config?.baseUrl ?? getBackendUrl()).replace(/\/$/, '');
     }
 
+    /**
+     * Fetch the one-time session secret from the backend.
+     * Called automatically before requests; safe to call multiple times.
+     */
+    async fetchSessionSecret(): Promise<void> {
+        if (this.sessionSecret) {
+            return;
+        }
+        if (this.secretFetchPromise) {
+            return this.secretFetchPromise;
+        }
+        this.secretFetchPromise = (async () => {
+            try {
+                const url = `${this.baseUrl}/api/v1/auth/session-secret`;
+                const response = await fetch(url);
+                if (response.ok) {
+                    const data = await response.json() as { secret: string };
+                    this.sessionSecret = data.secret;
+                }
+            } catch {
+                // Non-fatal: backend may not be ready yet
+            }
+        })();
+        return this.secretFetchPromise;
+    }
+
     async checkHealth(): Promise<HealthResponse> {
-        return this.get<HealthResponse>('/health');
+        const result = await this.get<HealthResponse>('/health');
+        // Fetch session secret after first successful health check
+        await this.fetchSessionSecret();
+        return result;
     }
 
     async ingestVideo(filePath: string, model?: string): Promise<IngestResponse> {
@@ -139,8 +170,14 @@ export class BackendClient {
             formData.append('model', model);
         }
 
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+
         const response = await fetch(url, {
             method: 'POST',
+            headers,
             body: formData,
         });
 
@@ -156,8 +193,14 @@ export class BackendClient {
             formData.append('model', model);
         }
 
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+
         const response = await fetch(url, {
             method: 'POST',
+            headers,
             body: formData,
         });
 
@@ -207,7 +250,11 @@ export class BackendClient {
 
     async downloadMedia(documentId: string, filename: string): Promise<Buffer> {
         const url = `${this.baseUrl}/api/v1/documents/${documentId}/media/${encodeURIComponent(filename)}`;
-        const response = await fetch(url);
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+        const response = await fetch(url, { headers });
         if (!response.ok) {
             const text = await response.text().catch(() => '');
             throw new BackendError(
@@ -307,15 +354,23 @@ export class BackendClient {
 
     private async get<T>(apiPath: string): Promise<T> {
         const url = `${this.baseUrl}/api/v1${apiPath}`;
-        const response = await fetch(url);
+        const headers: Record<string, string> = {};
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
+        const response = await fetch(url, { headers });
         return this.handleResponse<T>(response);
     }
 
     private async post<T>(apiPath: string, body: Record<string, unknown>): Promise<T> {
         const url = `${this.baseUrl}/api/v1${apiPath}`;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (this.sessionSecret) {
+            headers['X-Session-Secret'] = this.sessionSecret;
+        }
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(body),
         });
         return this.handleResponse<T>(response);

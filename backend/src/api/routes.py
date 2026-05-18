@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import secrets
 import tempfile
 import uuid
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -39,6 +40,17 @@ _video_jobs: dict[str, VideoJob] = {}
 _documents: dict[str, GeneratedDocument] = {}
 _extractions: dict[str, ExtractionResult] = {}
 _evaluations: dict[str, EvaluationReport] = {}
+
+# ---- Session auth ----
+_session_secret: str = secrets.token_hex(32)
+_secret_retrieved: bool = False
+
+
+def _require_session_auth(request: Request) -> None:
+    """Validate the session secret header on sensitive endpoints."""
+    token = request.headers.get("X-Session-Secret")
+    if token != _session_secret:
+        raise HTTPException(status_code=403, detail="Invalid or missing session secret.")
 
 
 # ---- Request/Response Models ----
@@ -218,6 +230,18 @@ async def health_deep() -> dict[str, object]:
             ) from exc
 
     return {"status": "ok", "imports_verified": len(critical_modules)}
+
+
+# ---- Session Auth ----
+
+@router.get("/auth/session-secret")
+async def get_session_secret():
+    """Return the session secret. Only callable once to prevent replay."""
+    global _secret_retrieved
+    if _secret_retrieved:
+        raise HTTPException(status_code=403, detail="Session secret already retrieved.")
+    _secret_retrieved = True
+    return {"secret": _session_secret}
 
 
 # ---- Services ----
@@ -856,7 +880,7 @@ async def _fetch_m365_context_for_doc(doc: "GeneratedDocument", user_feedback: s
     if not query:
         query = "related documentation and context"
 
-    logger.info("m365_enrich.query", query=query)
+    logger.info("m365_enrich.query", query_length=len(query))
 
     workiq_server = MCPServerConfig(
         name=WORKIQ_MCP_SERVER,
@@ -999,14 +1023,32 @@ class ConvertPathRequest(BaseModel):
     path: str
 
 
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
 @router.post("/context/convert-document")
 async def convert_document_upload(file: UploadFile):
     """Convert an uploaded document file to Markdown."""
     from src.services.document_converter import DocumentConversionError, DocumentConverter
 
+    # Enforce size limit while reading (don't load unbounded into memory)
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1MB chunks
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum upload size is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+
     converter = DocumentConverter()
     try:
-        content = await file.read()
         result = converter.convert_bytes(content, file.filename or "unknown")
         return result
     except (ValueError, DocumentConversionError) as e:
@@ -1017,21 +1059,26 @@ async def convert_document_upload(file: UploadFile):
 
 
 @router.post("/context/convert-path")
-async def convert_document_path(request: ConvertPathRequest):
+async def convert_document_path(request: ConvertPathRequest, http_request: Request):
     """Convert a local document file to Markdown by path.
 
     Only converts files with supported document extensions (.docx, .pdf, .pptx, etc.).
     Rejects paths with traversal patterns or unsupported file types to prevent
     arbitrary file reads.
     """
+    _require_session_auth(http_request)
     from src.services.document_converter import DocumentConversionError, DocumentConverter
 
-    # Path traversal guard: resolve to absolute and check for traversal indicators
+    # Resolve to absolute path and restrict to safe directories
     resolved = Path(request.path).resolve()
-    if ".." in Path(request.path).parts:
+    allowed_bases = [
+        Path(tempfile.gettempdir()).resolve(),
+        Path.home().resolve(),
+    ]
+    if not any(resolved.is_relative_to(base) for base in allowed_bases):
         raise HTTPException(
-            status_code=400,
-            detail="Path traversal is not allowed.",
+            status_code=403,
+            detail="Access denied. File must be under the user's home directory or system temp directory.",
         )
 
     # Only allow supported document extensions (prevents reading arbitrary files)
@@ -1065,12 +1112,13 @@ class M365SearchRequest(BaseModel):
 
 
 @router.post("/context/search-m365")
-async def search_m365_context(request: M365SearchRequest):
+async def search_m365_context(request: M365SearchRequest, http_request: Request):
     """Search M365 for supplementary context via Work IQ.
 
     This endpoint is user-triggered — it should only be called when the
     user explicitly requests M365 context enrichment.
     """
+    _require_session_auth(http_request)
     from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
     from src.services.workiq_mcp_tools import WORKIQ_MCP_SERVER, WorkIQTools
 
@@ -1110,7 +1158,7 @@ async def search_m365_context(request: M365SearchRequest):
             )
 
         if request.video_id:
-            logger.info("api.m365_search", video_id=request.video_id, query=request.query)
+            logger.info("api.m365_search", video_id=request.video_id, query_length=len(request.query))
 
         return result
     finally:
