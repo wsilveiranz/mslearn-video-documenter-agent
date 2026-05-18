@@ -67,24 +67,35 @@ export async function handlePolish(
         return { metadata: { command: 'polish' } };
     }
 
+    // Resolve document content: prefer backend state, fall back to active editor
+    let content: string | undefined;
     const documentId = stateManager.getState().currentDocumentId;
-    if (!documentId) {
-        stream.markdown(
-            '❌ No document to polish. Please generate a document first:\n\n' +
-            '```\n@video-documenter /generate\n```'
-        );
-        return { metadata: { command: 'polish' } };
+
+    if (documentId) {
+        try {
+            const doc = await client.getDocument(documentId);
+            content = doc.markdown_content;
+        } catch (error) {
+            const message = error instanceof BackendError
+                ? `Backend error: ${error.detail}`
+                : `Error: ${error instanceof Error ? error.message : String(error)}`;
+            stream.markdown(`⚠️ Could not fetch generated document: ${message}\n\nFalling back to active editor…\n\n`);
+        }
     }
 
-    let content: string;
-    try {
-        const doc = await client.getDocument(documentId);
-        content = doc.markdown_content;
-    } catch (error) {
-        const message = error instanceof BackendError
-            ? `Backend error: ${error.detail}`
-            : `Error: ${error instanceof Error ? error.message : String(error)}`;
-        stream.markdown(`❌ Failed to fetch document: ${message}`);
+    if (!content) {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && editor.document.languageId === 'markdown') {
+            content = editor.document.getText();
+        }
+    }
+
+    if (!content) {
+        stream.markdown(
+            '❌ No document to polish. Either:\n\n' +
+            '1. Open a Markdown file in the editor, or\n' +
+            '2. Generate a document first with `/generate`\n'
+        );
         return { metadata: { command: 'polish' } };
     }
 
