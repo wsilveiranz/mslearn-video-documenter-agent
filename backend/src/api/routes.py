@@ -936,8 +936,31 @@ async def refine_document(
                         manager.send_progress(video_id, "refining", 1, 2, "M365 context retrieved. Applying edits...")
 
             client = create_llm_client(model_override=llm_model)
-            editor = EditorAgent(client)
-            refined = await editor.process(doc, feedback=final_feedback, extraction=extraction)
+
+            # Set up MS Learn MCP tools for style reference during editing
+            from src.services.mcp_client import MCPClientManager, MCPServerConfig, MCPTransportType
+            from src.services.learn_mcp_tools import LEARN_MCP_SERVER, LearnMCPTools
+
+            settings = get_settings()
+            learn_server = MCPServerConfig(
+                name=LEARN_MCP_SERVER,
+                transport_type=MCPTransportType.STREAMABLE_HTTP,
+                endpoint=settings.mcp_learn_endpoint,
+                enabled=bool(settings.mcp_learn_endpoint),
+            )
+            mcp_manager = MCPClientManager(
+                servers={LEARN_MCP_SERVER: learn_server},
+                cache_ttl=settings.mcp_cache_ttl_seconds,
+                request_timeout=settings.mcp_request_timeout_seconds,
+                graceful_degradation=settings.mcp_graceful_degradation,
+            )
+            learn_tools = LearnMCPTools(mcp_manager)
+
+            try:
+                editor = EditorAgent(client, learn_tools=learn_tools)
+                refined = await editor.process(doc, feedback=final_feedback, extraction=extraction)
+            finally:
+                await mcp_manager.close()
 
             if extraction is not None:
                 evaluator = EvaluateAgent(client)
