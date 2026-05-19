@@ -208,7 +208,12 @@ async def run_pipeline(request: PipelineInput) -> PipelineResult:
                         words=converted.word_count,
                     )
                 except (ValueError, DocumentConversionError, FileNotFoundError) as e:
-                    logger.warning("pipeline.supplementary_conversion_failed", path=Path(doc_path).name, error=str(e))
+                    logger.warning(
+                        "pipeline.supplementary_conversion_failed",
+                        path=Path(doc_path).name,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
 
             if converted_parts:
                 extra_context = "\n\n---\n\n".join(converted_parts)

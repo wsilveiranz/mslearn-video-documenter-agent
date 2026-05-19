@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -118,3 +119,75 @@ class TestDocumentConverter:
         result = converter.convert(str(test_file))
         assert result.markdown == ""
         assert result.word_count == 0
+
+
+@pytest.mark.integration
+class TestDocumentConverterIntegration:
+    """Integration tests using real document files — no mocking.
+
+    These tests verify MarkItDown actually converts documents correctly.
+    They catch regressions like #115 where conversion silently fails.
+    """
+
+    def test_convert_real_docx(self, sample_docx):
+        """Verify .docx conversion produces expected content."""
+        converter = DocumentConverter()
+        result = converter.convert(str(sample_docx))
+
+        assert result.source_type == ".docx"
+        assert result.word_count > 0
+        # Verify specific content survived conversion
+        assert "Integration Test Document" in result.markdown
+        assert "alpha-bravo-charlie" in result.markdown
+
+    def test_convert_real_docx_table(self, sample_docx):
+        """Verify table content is extracted from .docx."""
+        converter = DocumentConverter()
+        result = converter.convert(str(sample_docx))
+
+        # Table cells should appear in output
+        assert "Header1" in result.markdown
+        assert "CellA" in result.markdown
+
+    def test_convert_real_pdf(self, sample_pdf):
+        """Verify .pdf conversion produces expected content."""
+        converter = DocumentConverter()
+        result = converter.convert(str(sample_pdf))
+
+        assert result.source_type == ".pdf"
+        assert result.word_count > 0
+        assert "golf-hotel-india" in result.markdown
+
+    def test_convert_real_pptx(self, sample_pptx):
+        """Verify .pptx conversion produces expected content."""
+        converter = DocumentConverter()
+        result = converter.convert(str(sample_pptx))
+
+        assert result.source_type == ".pptx"
+        assert result.word_count > 0
+        # Verify slide content
+        assert "juliet-kilo-lima" in result.markdown or "Presentation Test" in result.markdown
+
+    def test_convert_bytes_real_docx(self, sample_docx):
+        """Verify convert_bytes() works with real .docx content."""
+        converter = DocumentConverter()
+        content = Path(sample_docx).read_bytes()
+        result = converter.convert_bytes(content, "test-doc.docx")
+
+        assert result.source_path == "test-doc.docx"
+        assert result.word_count > 0
+        assert "alpha-bravo-charlie" in result.markdown
+
+    def test_markitdown_dependencies_available(self):
+        """Verify all MarkItDown converter dependencies are importable.
+
+        This catches missing dependencies in bundled environments (VSIX/PyInstaller).
+        """
+        import importlib
+
+        deps = ["mammoth", "pdfminer", "pdfplumber", "pptx"]
+        for dep in deps:
+            try:
+                importlib.import_module(dep)
+            except ImportError:
+                pytest.fail(f"Required MarkItDown dependency '{dep}' is not importable")
