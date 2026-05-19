@@ -305,13 +305,14 @@ export class BackendClient {
 
     /**
      * Convert a document file (docx, pdf, pptx, etc.) to Markdown via MarkItDown.
-     * Returns the converted Markdown text, or null if conversion fails.
+     * Returns the converted Markdown text, or an error object describing what went wrong.
      */
-    async convertDocument(filePath: string): Promise<{ markdown: string; word_count: number } | null> {
+    async convertDocument(filePath: string): Promise<{ markdown: string; word_count: number } | { error: string }> {
         try {
             return await this.post<{ markdown: string; word_count: number }>('/context/convert-path', { path: filePath });
-        } catch {
-            return null;
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            return { error: message };
         }
     }
 

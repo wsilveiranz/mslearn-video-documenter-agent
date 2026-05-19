@@ -137,8 +137,12 @@ export async function handleGenerate(
                         // Binary format — convert via backend MarkItDown service
                         stream.progress(`Converting reference doc: ${basename}...`);
                         const result = await client.convertDocument(refPath);
-                        if (!result || !result.markdown) {
-                            stream.progress(`⚠️ Could not convert ${basename} — skipping`);
+                        if ('error' in result) {
+                            stream.progress(`⚠️ Could not convert ${basename}: ${result.error}`);
+                            continue;
+                        }
+                        if (!result.markdown) {
+                            stream.progress(`⚠️ Could not convert ${basename}: empty content returned`);
                             continue;
                         }
                         text = result.markdown;
