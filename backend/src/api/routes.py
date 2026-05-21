@@ -83,10 +83,16 @@ class ExtractionResponse(BaseModel):
     message: str
 
 
+class ReferenceFile(BaseModel):
+    filename: str
+    content: str
+
+
 class RefineRequest(BaseModel):
     feedback: str
     model: str | None = None
     enrich_m365: bool = False
+    reference_files: list[ReferenceFile] | None = None
 
 
 class ExtractionSummary(BaseModel):
@@ -935,7 +941,12 @@ async def refine_document(
 
     extraction = _extractions.get(document_id)
 
-    logger.info("api.refine", doc_id=document_id, feedback_length=len(request.feedback))
+    logger.info(
+        "api.refine",
+        doc_id=document_id,
+        feedback_length=len(request.feedback),
+        ref_files=len(request.reference_files or []),
+    )
 
     async def _refine() -> None:
         # Find associated video_id for WebSocket broadcast
@@ -995,7 +1006,18 @@ async def refine_document(
 
             try:
                 editor = EditorAgent(client, learn_tools=learn_tools)
-                refined = await editor.process(doc, feedback=final_feedback, extraction=extraction)
+                ref_files = None
+                if request.reference_files:
+                    ref_files = [
+                        {"filename": rf.filename, "content": rf.content}
+                        for rf in request.reference_files
+                    ]
+                refined = await editor.process(
+                    doc,
+                    feedback=final_feedback,
+                    extraction=extraction,
+                    reference_files=ref_files,
+                )
             finally:
                 await mcp_manager.close()
 

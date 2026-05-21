@@ -3,6 +3,7 @@ import * as path from 'path';
 import { BackendClient, BackendError } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager, MediaFile, sanitizeFilename } from '../utils/outputManager';
+import { extractChatReferences } from '../utils/chatReferences';
 import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/docTypes';
 import { BackendMetadata } from '../api/backendClient';
 import { getProgressUpdateIntervalMs } from '../utils/config';
@@ -108,6 +109,9 @@ export async function handleGenerate(
 
         stream.progress(`Generating ${docType} document...`);
 
+        // Extract reference files from chat context (in addition to /plan state refs)
+        const chatRefFiles = await extractChatReferences(request.references ?? [], client, stream);
+
         // Build metadata for the backend from plan state
         const backendMetadata: BackendMetadata | undefined = state.metadata ? {
             author: state.metadata.author,
@@ -171,6 +175,14 @@ export async function handleGenerate(
             }
             refContext = contents.join('\n\n');
         }
+
+        // Also include chat-attached references
+        if (chatRefFiles.length > 0) {
+            const chatRefContents = chatRefFiles.map(rf => `--- ${rf.filename} ---\n${rf.content}`);
+            const chatRefText = chatRefContents.join('\n\n');
+            refContext = refContext ? `${refContext}\n\n${chatRefText}` : chatRefText;
+        }
+
         const fullContext = [supplementaryContext, refContext].filter(Boolean).join('\n\n');
 
         // Trigger the pipeline

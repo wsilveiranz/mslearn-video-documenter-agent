@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { BackendClient, BackendError, DocumentResponse } from '../api/backendClient';
 import { ConversationStateManager } from '../utils/conversationState';
 import { OutputManager } from '../utils/outputManager';
+import { extractChatReferences } from '../utils/chatReferences';
 import { formatElapsed } from '../utils/progress';
 import { getProgressUpdateIntervalMs } from '../utils/config';
 
@@ -98,6 +99,12 @@ export async function handleEdit(
         stateManager.setStage('refining');
         stream.progress('Editing document...');
 
+        // Extract reference files from chat context
+        const referenceFiles = await extractChatReferences(request.references ?? [], client, stream);
+        if (referenceFiles.length > 0) {
+            stream.progress(`Loaded ${referenceFiles.length} reference file(s)...`);
+        }
+
         // Detect if the user wants M365 context enrichment
         const m365Triggers = /\b(m365|microsoft\s*365|work\s*iq|working\s*documents?|work\s*documents?|my\s*documents?|sharepoint|teams\s*messages?)\b/i;
         const enrichM365 = m365Triggers.test(feedback);
@@ -119,7 +126,13 @@ export async function handleEdit(
 
         const selectedModel = request.model?.id;
 
-        await client.refineDocument(state.currentDocumentId, feedback, selectedModel, enrichM365);
+        await client.refineDocument(
+            state.currentDocumentId,
+            feedback,
+            selectedModel,
+            enrichM365,
+            referenceFiles.length > 0 ? referenceFiles : undefined,
+        );
 
         stream.progress('Applying changes...');
 

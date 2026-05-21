@@ -214,6 +214,7 @@ class EditorAgent:
     async def process(
         self, document: GeneratedDocument, feedback: str | None = None,
         extraction: ExtractionResult | None = None,
+        reference_files: list[dict[str, str]] | None = None,
     ) -> GeneratedDocument:
         """Review and refine a generated document.
 
@@ -221,12 +222,18 @@ class EditorAgent:
             document: The generated document to refine.
             feedback: Optional evaluation feedback for targeted revision.
             extraction: Optional extraction data — provides keyframe catalog for screenshot reassignment.
+            reference_files: Optional reference files to use as examples for requested edits.
 
         Returns:
             Refined GeneratedDocument with updated content, or the original if
             refinement fails validation.
         """
-        logger.info("editor.start", doc_id=document.document_id, has_feedback=feedback is not None)
+        logger.info(
+            "editor.start",
+            doc_id=document.document_id,
+            has_feedback=feedback is not None,
+            ref_files=len(reference_files or []),
+        )
 
         # Fetch a published reference article for style comparison
         style_reference = await self._fetch_style_reference(document)
@@ -241,6 +248,12 @@ class EditorAgent:
         ]
         if feedback:
             user_message_parts.insert(1, f"User feedback to address:\n{feedback}\n")
+        if reference_files:
+            ref_block_parts = ["## Reference Files (use as examples for the requested edits)\n"]
+            for rf in reference_files:
+                ref_block_parts.append(f"### --- {rf['filename']} ---\n{rf['content']}\n")
+            ref_block = "\n".join(ref_block_parts)
+            user_message_parts.insert(1, ref_block)
         if keyframe_catalog:
             user_message_parts.insert(1, keyframe_catalog)
         if style_reference:
