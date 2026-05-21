@@ -57,6 +57,9 @@ export async function handlePlan(
 ): Promise<vscode.ChatResult> {
     const promptText = request.prompt;
 
+    // Clear all stale state from previous sessions — each /plan starts fresh
+    stateManager.reset();
+
     // Step 1: Video file
     stream.markdown('📋 **Let\'s plan your documentation!**\n\n');
 
