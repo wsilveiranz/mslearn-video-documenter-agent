@@ -7,6 +7,12 @@ extraction, which is blocked by Windows Application Control / AppLocker
 policies on many corporate machines.
 """
 
+from PyInstaller.utils.hooks import collect_data_files
+
+# Magika ships ML model data files (model.onnx, metadata.json) that PyInstaller
+# won't discover automatically. markitdown uses magika for file-type detection.
+magika_datas = collect_data_files('magika', subdir='models')
+
 a = Analysis(
     ['src/main.py'],
     pathex=['.'],
@@ -14,7 +20,7 @@ a = Analysis(
     datas=[
         ('src/prompts', 'src/prompts'),
         ('src/templates', 'src/templates'),
-    ],
+    ] + magika_datas,
     hiddenimports=[
         'uvicorn.logging',
         'uvicorn.loops',
@@ -139,6 +145,10 @@ a = Analysis(
         'pdfplumber',
         'pptx',
         'openpyxl',
+        # Magika — file-type detection used by markitdown
+        'magika',
+        'magika.magika',
+        'onnxruntime',
         # --- New service modules (lazy imports in routes.py / orchestrator.py) ---
         'src.services.mcp_client',
         'src.services.learn_mcp_tools',
