@@ -32,9 +32,9 @@ export function createChatHandler(
         const command = request.command;
 
         if (command === 'plan') {
-            return handlePlan(request, stream, token, client, stateManager);
+            return handlePlan(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'analyze') {
-            return handleAnalyze(request, stream, token, client, stateManager);
+            return handleAnalyze(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'generate') {
             return handleGenerate(request, stream, token, client, stateManager, outputManager);
         } else if (command === 'edit' || command === 'refine') {
