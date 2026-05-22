@@ -4,13 +4,16 @@ import { ConversationStateManager } from '../utils/conversationState';
 import { detectVideoPath } from '../utils/fileDetection';
 import { getProgressUpdateIntervalMs } from '../utils/config';
 import { formatElapsed } from '../utils/progress';
+import { OutputManager } from '../utils/outputManager';
+import { handleGenerate } from './generateHandler';
 
 export async function handleAnalyze(
     request: vscode.ChatRequest,
     stream: vscode.ChatResponseStream,
     token: vscode.CancellationToken,
     client: BackendClient,
-    stateManager: ConversationStateManager
+    stateManager: ConversationStateManager,
+    outputManager: OutputManager
 ): Promise<vscode.ChatResult> {
     // 1. Detect video path from prompt
     let videoPath = detectVideoPath(request.prompt);
@@ -41,6 +44,17 @@ export async function handleAnalyze(
         );
         return { metadata: { command: 'analyze' } };
     }
+
+    // Ask if user wants auto-generation after analysis
+    const autoGenerateChoice = await vscode.window.showQuickPick(
+        [
+            { label: '🚀 Yes, generate document after analysis', value: 'yes' },
+            { label: '🔍 No, just analyze', value: 'no' },
+        ],
+        { placeHolder: 'Automatically generate documentation after analysis completes?', title: 'Auto-Generate' }
+    );
+
+    const autoGenerate = autoGenerateChoice && (autoGenerateChoice as { value: string }).value === 'yes';
 
     // 4. Check if cancelled
     if (token.isCancellationRequested) {
@@ -285,6 +299,21 @@ export async function handleAnalyze(
         }
 
         stream.progress('Preparing analysis summary...');
+        if (autoGenerate) {
+            // Show brief summary then chain into generation
+            stream.markdown(
+                `✅ **Video analyzed! Starting generation...**\n\n` +
+                `| Field | Value |\n` +
+                `|-------|-------|\n` +
+                `| Video | \`${videoPath}\` |\n` +
+                `| Video ID | \`${videoId}\` |\n` +
+                extractionRows +
+                `\n` +
+                qualityWarning
+            );
+            return handleGenerate(request, stream, token, client, stateManager, outputManager);
+        }
+
         stream.markdown(
             `✅ **Video analyzed successfully!**\n\n` +
             `| Field | Value |\n` +
