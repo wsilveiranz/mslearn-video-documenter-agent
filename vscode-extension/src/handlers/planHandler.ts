@@ -6,6 +6,8 @@ import { DOC_TYPES, DOC_TYPE_PATTERNS, fuzzyMatchDocType } from '../constants/do
 import { AZURE_SERVICE_ITEMS, AzureServiceItem } from '../constants/azureServices';
 import { getProgressUpdateIntervalMs } from '../utils/config';
 import { formatElapsed } from '../utils/progress';
+import { OutputManager } from '../utils/outputManager';
+import { handleGenerate } from './generateHandler';
 
 /**
  * Attempt to detect a doc type from the user's prompt text.
@@ -53,7 +55,8 @@ export async function handlePlan(
     stream: vscode.ChatResponseStream,
     token: vscode.CancellationToken,
     client: BackendClient,
-    stateManager: ConversationStateManager
+    stateManager: ConversationStateManager,
+    outputManager: OutputManager
 ): Promise<vscode.ChatResult> {
     const promptText = request.prompt;
 
@@ -221,7 +224,20 @@ export async function handlePlan(
         }
     }
 
-    // Step 8: Check backend health + run analysis
+    // Step 8: Auto-generate option
+    if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
+
+    const autoGenerateChoice = await vscode.window.showQuickPick(
+        [
+            { label: '🚀 Yes, generate immediately after analysis', value: 'yes' },
+            { label: '📋 No, just show the plan summary', value: 'no' },
+        ],
+        { placeHolder: 'Start document generation automatically after analysis?', title: 'Auto-Generate' }
+    );
+
+    const autoGenerate = autoGenerateChoice && (autoGenerateChoice as { value: string }).value === 'yes';
+
+    // Step 9: Check backend health + run analysis
     if (token.isCancellationRequested) { return { metadata: { command: 'plan' } }; }
 
     try {
@@ -469,6 +485,27 @@ export async function handlePlan(
         }
 
         const refDocsInfo = supplementaryDocRefs.length > 0 ? `${supplementaryDocRefs.length} file(s) attached` : 'None';
+
+        if (autoGenerate) {
+            // Chain directly into document generation
+            stream.markdown(
+                `✅ **Plan complete! Starting generation...**\n\n` +
+                `| Field | Value |\n` +
+                `|-------|-------|\n` +
+                `| Video | \`${videoPath}\` |\n` +
+                `| Video ID | \`${videoId}\` |\n` +
+                extractionInfo +
+                `| Type | ${docType} |\n` +
+                `| Filename | ${desiredFilename ? `\`${desiredFilename}\`` : '_(auto-generated)_'} |\n` +
+                `| Author | ${author || '_(not set)_'} |\n` +
+                `| ms.author | ${msAuthor || '_(not set)_'} |\n` +
+                `| ms.service | ${msService || '_(not set)_'} |\n` +
+                `| Customer intent | ${customerIntent || '_(not set)_'} |\n` +
+                `| Reference docs | ${refDocsInfo} |\n\n` +
+                qualityWarning
+            );
+            return handleGenerate(request, stream, token, client, stateManager, outputManager);
+        }
 
         stream.markdown(
             `✅ **Plan complete! Ready to generate documentation.**\n\n` +
