@@ -36,14 +36,19 @@
         "fullName": "MS Learn Video Documenter",
         "description": "Analyzes screen recordings and generates MS Learn documentation",
         "isSticky": true,
+        "sampleRequest": [
+          "/plan C:\\path\\to\\video.mp4",
+          "/analyze",
+          "/generate tutorial"
+        ],
         "commands": [
           {
             "name": "plan",
-            "description": "Plan documentation: select video, collect metadata, and analyze"
+            "description": "Plan documentation: select video, collect metadata, analyze, and optionally generate"
           },
           {
             "name": "analyze",
-            "description": "Analyze a screen recording video"
+            "description": "Analyze a screen recording video (with option to auto-generate)"
           },
           {
             "name": "generate",
