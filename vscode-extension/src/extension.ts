@@ -115,6 +115,25 @@ export async function activate(context: vscode.ExtensionContext) {
             handler
         );
         participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.png');
+        (participant as vscode.ChatParticipant & {
+            welcomeMessageProvider?: {
+                provideWelcomeMessage(token: vscode.CancellationToken): string[];
+            };
+        }).welcomeMessageProvider = {
+            provideWelcomeMessage(_token: vscode.CancellationToken) {
+                return [
+                    '👋 **Welcome to MS Learn Video Documenter!**\n\n' +
+                    'I help you turn screen recordings into professional Microsoft Learn documentation.\n\n' +
+                    '**Quick start:**\n' +
+                    '- `/plan` — Guided workflow: select video, set metadata, analyze, and optionally generate in one go\n' +
+                    '- `/analyze` — Analyze a video file (with option to auto-generate after)\n' +
+                    '- `/generate` — Generate documentation from an analyzed video\n\n' +
+                    '**Example:**\n' +
+                    '```\n@video-documenter /plan C:\\path\\to\\recording.mp4\n```\n\n' +
+                    '💡 *Tip: Use `/plan` for the full guided experience, or `/analyze` if you just want to inspect the video first.*',
+                ];
+            },
+        };
 
         registerAnalyzeFileCommand(context);
 
