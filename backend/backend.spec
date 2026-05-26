@@ -9,9 +9,10 @@ policies on many corporate machines.
 
 from PyInstaller.utils.hooks import collect_data_files
 
-# Magika ships ML model data files (model.onnx, metadata.json) that PyInstaller
-# won't discover automatically. markitdown uses magika for file-type detection.
-magika_datas = collect_data_files('magika', subdir='models')
+# Magika ships data files (model, config, metadata) that PyInstaller won't
+# discover automatically. markitdown uses magika for file-type detection.
+# Collect all subdirs — both models/ and config/ are required at runtime.
+magika_datas = collect_data_files('magika')
 
 a = Analysis(
     ['src/main.py'],
