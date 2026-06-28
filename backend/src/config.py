@@ -20,9 +20,14 @@ class Settings(BaseSettings):
     )
 
     # --- Processing Mode ---
-    processing_mode: Literal["cloud", "local"] = Field(
-        default="local",
-        description="Use 'cloud' for Azure services or 'local' for local-only processing",
+    processing_mode: Literal["auto", "cloud", "local"] = Field(
+        default="auto",
+        description=(
+            "'auto' selects per-stage clients based on what is configured "
+            "(Foundry/Video Indexer for extraction, Copilot proxy for downstream). "
+            "'cloud' forces Azure Foundry everywhere. "
+            "'local' forces local extraction + Copilot proxy downstream."
+        ),
     )
 
     # --- Environment ---
@@ -151,6 +156,10 @@ class Settings(BaseSettings):
     )
 
     @property
+    def is_auto_mode(self) -> bool:
+        return self.processing_mode == "auto"
+
+    @property
     def is_cloud_mode(self) -> bool:
         return self.processing_mode == "cloud"
 
@@ -162,6 +171,21 @@ class Settings(BaseSettings):
     def use_copilot_proxy(self) -> bool:
         """Whether to use Copilot LM Proxy for LLM calls (local mode with proxy configured)."""
         return self.is_local_mode and bool(self.copilot_proxy_url)
+
+    @property
+    def foundry_available(self) -> bool:
+        """Whether Azure AI Foundry is configured (endpoint set)."""
+        return bool(self.foundry_project_endpoint)
+
+    @property
+    def video_indexer_available(self) -> bool:
+        """Whether Azure Video Indexer is configured for cloud extraction."""
+        return bool(self.video_indexer_account_id and self.video_indexer_resource_id)
+
+    @property
+    def copilot_proxy_available(self) -> bool:
+        """Whether the Copilot LM Proxy is configured for downstream LLM calls."""
+        return bool(self.copilot_proxy_url)
 
     def get_azure_credential(self):
         """Get Azure credential for service authentication.
