@@ -32,7 +32,7 @@ class TestConfiguration:
         """Settings can be loaded with defaults."""
         from src.config import Settings
         settings = Settings()
-        assert settings.processing_mode in ("cloud", "local")
+        assert settings.processing_mode in ("auto", "cloud", "local")
         assert settings.foundry_model  # just verify it's set
         assert settings.blob_container_name == "video-documenter"
 

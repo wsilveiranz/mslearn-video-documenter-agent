@@ -168,6 +168,85 @@ class TestRunPipeline:
         # Verify ExtractionAgent received the extraction vision client (separate from downstream)
         mock_extraction_cls.assert_called_once_with(foundry_client=mock_extraction_vision_client)
 
+    @patch("src.agents.orchestrator.create_copilot_client")
+    @patch("src.agents.orchestrator.create_extraction_client")
+    @patch("src.agents.orchestrator.create_foundry_client")
+    @patch("src.agents.orchestrator.EvaluateAgent")
+    @patch("src.agents.orchestrator.EditorAgent")
+    @patch("src.agents.orchestrator.WriterAgent")
+    @patch("src.agents.orchestrator.StructureAgent")
+    @patch("src.agents.orchestrator.ExtractionAgent")
+    @patch("src.agents.orchestrator.IngestionAgent")
+    @patch("src.agents.orchestrator.get_settings")
+    async def test_auto_mode_extraction_and_downstream_receive_different_clients(
+        self,
+        mock_settings,
+        mock_ingestion_cls,
+        mock_extraction_cls,
+        mock_structure_cls,
+        mock_writer_cls,
+        mock_editor_cls,
+        mock_evaluate_cls,
+        mock_foundry,
+        mock_create_extraction_client,
+        mock_copilot,
+    ):
+        """In auto mode, ExtractionAgent gets extraction_client; downstream agents get a separate client."""
+        settings = MagicMock()
+        settings.processing_mode = "auto"
+        settings.copilot_proxy_available = True
+        settings.copilot_proxy_url = "http://localhost:3001"
+        settings.copilot_proxy_model = "copilot-auto"
+        settings.copilot_proxy_secret = ""
+        mock_settings.return_value = settings
+
+        extraction_client = MagicMock(name="extraction_client")
+        downstream_client = MagicMock(name="downstream_client")
+        mock_create_extraction_client.return_value = extraction_client
+        mock_copilot.return_value = downstream_client
+
+        ingestion = MagicMock()
+        ingestion.process = AsyncMock(return_value=_make_ingestion_result())
+        mock_ingestion_cls.return_value = ingestion
+
+        extraction = MagicMock()
+        extraction.process = AsyncMock(return_value=_make_extraction_result())
+        mock_extraction_cls.return_value = extraction
+
+        structure = MagicMock()
+        structure.process = AsyncMock(return_value=_make_outline())
+        mock_structure_cls.return_value = structure
+
+        writer = MagicMock()
+        writer.process = AsyncMock(return_value=_make_document())
+        mock_writer_cls.return_value = writer
+
+        editor = MagicMock()
+        editor.process = AsyncMock(return_value=_make_document())
+        mock_editor_cls.return_value = editor
+
+        evaluate = MagicMock()
+        evaluate.process = AsyncMock(return_value=_make_evaluation(passed=True))
+        mock_evaluate_cls.return_value = evaluate
+
+        request = PipelineInput(video_source="/fake/video.mp4", doc_type=DocType.TUTORIAL)
+        events = await run_pipeline.run(request)
+        result = events[-1].data
+
+        assert isinstance(result, PipelineResult)
+
+        # ExtractionAgent must receive the extraction vision client
+        mock_extraction_cls.assert_called_once_with(foundry_client=extraction_client)
+
+        # Downstream agents receive the copilot (downstream) client as first positional arg
+        assert mock_structure_cls.call_args.args[0] is downstream_client
+        assert mock_writer_cls.call_args.args[0] is downstream_client
+        assert mock_editor_cls.call_args.args[0] is downstream_client
+        assert mock_evaluate_cls.call_args.args[0] is downstream_client
+
+        # The two clients are distinct objects
+        assert extraction_client is not downstream_client
+
     @patch("src.agents.orchestrator.create_extraction_client")
     @patch("src.agents.orchestrator.create_foundry_client")
     @patch("src.agents.orchestrator.EvaluateAgent")
