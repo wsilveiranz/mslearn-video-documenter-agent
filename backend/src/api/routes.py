@@ -20,7 +20,12 @@ from src.agents.editor import EditorAgent
 from src.agents.evaluate import EvaluateAgent
 from src.agents.extraction import ExtractionAgent
 from src.agents.ingestion import IngestionAgent
-from src.agents.orchestrator import MAX_REVISION_ITERATIONS, create_llm_client
+from src.agents.orchestrator import (
+    MAX_REVISION_ITERATIONS,
+    create_extraction_client,
+    create_llm_client,
+    resolve_extraction_mode,
+)
 from src.agents.structure import StructureAgent
 from src.agents.writer import WriterAgent
 from src.api.websocket import manager
@@ -28,7 +33,7 @@ from src.config import get_settings
 from src.models.document import DocType, DocumentMetadata
 from src.models.evaluation import EvaluationReport
 from src.models.services import AZURE_SERVICES
-from src.models.video import DataQualityReport, ExtractionResult, ProcessingMode, ProcessingStatus, VideoJob
+from src.models.video import DataQualityReport, ExtractionResult, ProcessingStatus, VideoJob
 
 if TYPE_CHECKING:
     from src.models.document import GeneratedDocument
@@ -56,6 +61,7 @@ def _require_session_auth(request: Request) -> None:
 
 
 # ---- Request/Response Models ----
+
 
 class IngestResponse(BaseModel):
     video_id: str
@@ -140,7 +146,6 @@ class DocumentResponse(BaseModel):
     eval_scores: EvalScoreResponse | None = None
 
 
-
 class LmProxyConfigRequest(BaseModel):
     proxy_url: str
     proxy_secret: str = ""
@@ -184,6 +189,7 @@ async def register_lm_proxy(request: LmProxyConfigRequest) -> LmProxyConfigRespo
 
 
 # ---- Health ----
+
 
 @router.get("/health")
 async def health_check() -> dict[str, str]:
@@ -242,6 +248,7 @@ async def health_deep() -> dict[str, object]:
 
 # ---- Session Auth ----
 
+
 @router.get("/auth/session-secret")
 async def get_session_secret(request: Request):
     """Return the session secret. Requires bootstrap token and is only callable once."""
@@ -260,6 +267,7 @@ async def get_session_secret(request: Request):
 
 # ---- Services ----
 
+
 @router.get("/services")
 async def list_services() -> list[dict[str, str]]:
     """Return the list of common Azure service slugs for ms.service metadata."""
@@ -267,6 +275,7 @@ async def list_services() -> list[dict[str, str]]:
 
 
 # ---- Intent Classification ----
+
 
 class ClassifyIntentRequest(BaseModel):
     message: str
@@ -299,6 +308,7 @@ async def classify_intent_endpoint(request: ClassifyIntentRequest) -> dict:
 
 # ---- Background task helpers ----
 
+
 async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = False) -> None:
     """Run ingestion in the background and update the video job."""
     job = _video_jobs[video_id]
@@ -308,8 +318,7 @@ async def _run_ingestion(video_id: str, source: str, *, is_temp_file: bool = Fal
         job.step = 1
         manager.send_progress(video_id, "ingestion", 1, 6, "Step 1/6: Ingesting video...")
 
-        settings = get_settings()
-        mode = ProcessingMode(settings.processing_mode)
+        mode = resolve_extraction_mode()
         agent = IngestionAgent()
         result = await agent.process(source, mode)
 
@@ -350,10 +359,9 @@ async def _run_extraction(video_id: str) -> None:
         job.step = 2
         manager.send_progress(video_id, "extracting", 2, 6, "Step 2/6: Extracting transcript, scenes, and keyframes...")
 
-        settings = get_settings()
-        mode = ProcessingMode(settings.processing_mode)
-        client = create_llm_client(mode, model_override=job.llm_model)
-        extraction_agent = ExtractionAgent(foundry_client=client)
+        mode = resolve_extraction_mode()
+        extraction_client = create_extraction_client()
+        extraction_agent = ExtractionAgent(foundry_client=extraction_client)
 
         # Reuse cached metadata from ingestion to avoid re-probing the video
         if job.video_metadata is not None:
@@ -371,9 +379,7 @@ async def _run_extraction(video_id: str) -> None:
             job.progress_detail = detail
             manager.send_progress(video_id, "extracting", 2, 6, detail)
 
-        extraction_result = await extraction_agent.process(
-            video_metadata, mode, on_progress=_on_extraction_progress
-        )
+        extraction_result = await extraction_agent.process(video_metadata, mode, on_progress=_on_extraction_progress)
 
         if not extraction_result.transcript and not extraction_result.scenes and not extraction_result.keyframes:
             logger.error(
@@ -384,11 +390,13 @@ async def _run_extraction(video_id: str) -> None:
             )
             job.status = ProcessingStatus.FAILED
             job.error_message = (
-                "Extraction produced no transcript, scenes, or keyframes. "
-                "The video may be unreadable or unsupported."
+                "Extraction produced no transcript, scenes, or keyframes. The video may be unreadable or unsupported."
             )
             manager.send_progress(
-                video_id, "failed", 2, 6,
+                video_id,
+                "failed",
+                2,
+                6,
                 "Extraction failed: no content could be extracted from the video.",
             )
             manager.clear_progress(video_id)
@@ -440,7 +448,10 @@ async def _create_learn_tools():
 
 
 async def _run_pipeline(
-    video_id: str, doc_type: DocType, supplementary_context: str, metadata: DocumentMetadata | None = None,
+    video_id: str,
+    doc_type: DocType,
+    supplementary_context: str,
+    metadata: DocumentMetadata | None = None,
 ) -> None:
     """Run the full pipeline in the background with per-stage progress updates."""
     job = _video_jobs.get(video_id)
@@ -449,9 +460,9 @@ async def _run_pipeline(
 
     mcp_manager = None
     try:
-        settings = get_settings()
-        mode = ProcessingMode(settings.processing_mode)
-        client = create_llm_client(mode, model_override=job.llm_model)
+        mode = resolve_extraction_mode()
+        extraction_client = create_extraction_client()
+        client = create_llm_client(model_override=job.llm_model)
         job.status = ProcessingStatus.PROCESSING
 
         # Create MCP tools for documentation grounding
@@ -466,10 +477,14 @@ async def _run_pipeline(
             job.current_stage = "extracting"
             job.step = 2
             manager.send_progress(
-                video_id, "extracting", 2, 6, "Step 2/6: Extracting transcript, scenes, and keyframes...",
+                video_id,
+                "extracting",
+                2,
+                6,
+                "Step 2/6: Extracting transcript, scenes, and keyframes...",
             )
 
-            extraction_agent = ExtractionAgent(foundry_client=client)
+            extraction_agent = ExtractionAgent(foundry_client=extraction_client)
 
             # Reuse cached metadata from ingestion to avoid re-probing the video
             if job.video_metadata is not None:
@@ -517,7 +532,8 @@ async def _run_pipeline(
 
         writer_agent = WriterAgent(client, learn_tools=learn_tools)
         document = await writer_agent.process(
-            outline, extraction_result,
+            outline,
+            extraction_result,
             quality_report=job.quality_report,
             supplementary_context=supplementary_context,
         )
@@ -546,12 +562,8 @@ async def _run_pipeline(
         iteration = 1
         while not evaluation.passed and iteration < MAX_REVISION_ITERATIONS:
             iteration += 1
-            manager.send_progress(
-                video_id, "evaluating", 6, 6, f"Step 6/6: Revision {iteration} — re-editing..."
-            )
-            feedback = "\n".join(
-                f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions
-            )
+            manager.send_progress(video_id, "evaluating", 6, 6, f"Step 6/6: Revision {iteration} — re-editing...")
+            feedback = "\n".join(f"- [{s.dimension}] {s.issue}: {s.suggestion}" for s in evaluation.suggestions)
             document = await editor_agent.process(document, feedback=feedback, extraction=extraction_result)
             evaluation = await evaluate_agent.process(document, extraction_result, quality_report=job.quality_report)
 
@@ -583,6 +595,7 @@ async def _run_pipeline(
     finally:
         if mcp_manager is not None:
             await mcp_manager.close()
+
 
 @router.post("/videos/ingest", response_model=IngestResponse)
 async def ingest_video(
@@ -757,6 +770,7 @@ async def assess_quality(video_id: str, body: ModelOverrideRequest | None = None
 
 # ---- Document Endpoints ----
 
+
 @router.post("/documents/generate", response_model=GenerateResponse)
 async def generate_document(request: GenerateRequest, background_tasks: BackgroundTasks) -> GenerateResponse:
     """Generate an MS Learn document from a processed video."""
@@ -839,11 +853,7 @@ async def download_media(document_id: str, filename: str) -> FileResponse:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found")
 
     for screenshot in doc.media_files:
-        mf_name = (
-            Path(screenshot.output_path).name
-            if screenshot.output_path
-            else Path(screenshot.source_path).name
-        )
+        mf_name = Path(screenshot.output_path).name if screenshot.output_path else Path(screenshot.source_path).name
         if mf_name == filename:
             source = Path(screenshot.source_path)
             if not source.is_file():
@@ -882,10 +892,13 @@ async def _fetch_m365_context_for_doc(doc: GeneratedDocument, user_feedback: str
 
     # Add the user's feedback intent (strip the M365 trigger words for a cleaner query)
     import re
+
     clean_feedback = re.sub(
         r"\b(m365|microsoft\s*365|work\s*iq|working\s*documents?|work\s*documents?|"
         r"my\s*documents?|sharepoint|teams\s*messages?|enrich|use|from|with|the|and|to)\b",
-        "", user_feedback, flags=re.IGNORECASE,
+        "",
+        user_feedback,
+        flags=re.IGNORECASE,
     ).strip()
     if clean_feedback:
         query_parts.append(clean_feedback)
@@ -927,7 +940,9 @@ async def _fetch_m365_context_for_doc(doc: GeneratedDocument, user_feedback: str
 
 @router.post("/documents/{document_id}/refine", response_model=GenerateResponse)
 async def refine_document(
-    document_id: str, request: RefineRequest, background_tasks: BackgroundTasks,
+    document_id: str,
+    request: RefineRequest,
+    background_tasks: BackgroundTasks,
     http_request: Request,
 ) -> GenerateResponse:
     """Iteratively refine a generated document with feedback."""
@@ -1008,10 +1023,7 @@ async def refine_document(
                 editor = EditorAgent(client, learn_tools=learn_tools)
                 ref_files = None
                 if request.reference_files:
-                    ref_files = [
-                        {"filename": rf.filename, "content": rf.content}
-                        for rf in request.reference_files
-                    ]
+                    ref_files = [{"filename": rf.filename, "content": rf.content} for rf in request.reference_files]
                 refined = await editor.process(
                     doc,
                     feedback=final_feedback,
@@ -1053,6 +1065,7 @@ async def refine_document(
 
 
 # --- Document Conversion Endpoints ---
+
 
 class ConvertPathRequest(BaseModel):
     path: str
@@ -1140,6 +1153,7 @@ async def convert_document_path(request: ConvertPathRequest, http_request: Reque
 
 
 # --- M365 Context Search ---
+
 
 class M365SearchRequest(BaseModel):
     query: str
