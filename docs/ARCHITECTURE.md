@@ -303,14 +303,54 @@ class IngestionAgent:
 
 **Responsibility:** Extract structured data from the video (transcript, keyframes, OCR, scenes).
 
-**Two processing modes:**
+**Three processing modes with per-stage client selection:**
 
-| Mode | Services Used | Cost | Best For |
-|------|--------------|------|----------|
-| **Cloud (default)** | Azure Video Indexer | Per-minute billing | Production, highest quality |
-| **Local** | FFmpeg + PySceneDetect + Whisper + OpenCV | Free (compute only) | Development, cost-sensitive |
+The pipeline now selects LLM and video analysis clients **per stage** based on what is configured:
 
-**Cloud Mode Pipeline:**
+| Mode | Extraction Path | Extraction Vision | Downstream Agents | Best For |
+|------|-----------------|-------------------|-------------------|----------|
+| **auto** (default) | Foundry + VI if configured; else local FFmpeg/Whisper | Foundry GPT-4o | Copilot proxy if configured; else Foundry | Production, maximizes available capabilities |
+| **cloud** | Azure Video Indexer | Foundry GPT-4o | Azure Foundry | Cloud-only deployment, highest quality |
+| **local** | FFmpeg + PySceneDetect + Whisper | Foundry GPT-4o or local | Copilot LM Proxy | Local development, cost-sensitive |
+
+#### Auto Mode: Per-Stage Client Selection
+
+In `auto` mode (the new default), the pipeline intelligently selects clients based on configuration:
+
+```mermaid
+flowchart TD
+    A["processing_mode = auto"] --> B["Extraction Stage"]
+    B --> C{"Foundry +<br/>Video Indexer<br/>configured?"}
+    C -->|yes| D["Cloud extraction:<br/>Video Indexer + Foundry vision"]
+    C -->|no| E["Local extraction:<br/>FFmpeg + PySceneDetect + Whisper"]
+    A --> F["Downstream Agents<br/>Structure, Writer, Editor, Evaluate"]
+    F --> G{"Copilot proxy<br/>configured?"}
+    G -->|yes| H["Local models via<br/>Copilot LM Proxy"]
+    G -->|no| I["Azure Foundry<br/>GPT-4o, GPT-4o-mini"]
+    D --> J["Vision Analysis"]
+    E --> J
+    J --> K["GPT-4o Vision per keyframe"]
+    K --> L["UI State Description"]
+    L --> F
+```
+
+**Auto Mode Behavior:**
+- **Extraction:** Uses Azure Video Indexer + Foundry GPT-4o if both are configured; falls back to local FFmpeg + PySceneDetect + Whisper
+- **Vision Analysis:** Always uses Foundry GPT-4o for keyframe UI state analysis (when available)
+- **Downstream Agents:** Uses Copilot LM Proxy if configured, otherwise Azure Foundry
+
+**Cloud Mode Behavior:**
+- All stages use Azure Foundry (GPT-4o, GPT-4o-mini)
+- Extraction uses Azure Video Indexer + Foundry vision
+- No fallback; requires full Azure setup
+
+**Local Mode Behavior:**
+- Extraction uses FFmpeg + PySceneDetect + Whisper
+- Vision analysis can use Foundry GPT-4o (if configured) or skip detailed vision if not available
+- Downstream agents use Copilot LM Proxy (if configured); otherwise Foundry
+
+#### Cloud Extraction Pipeline (auto or cloud mode with Video Indexer configured)
+
 ```
 Video (Blob URL)
     │
@@ -325,11 +365,12 @@ Azure Video Indexer
     └── Named Entities (brands, products from text + speech)
     │
     ▼
-GPT-4o Vision (per keyframe)
+Foundry GPT-4o Vision (per keyframe)
     └── UI State Description (what the user sees, what action is being performed)
 ```
 
-**Local Mode Pipeline:**
+#### Local Extraction Pipeline (auto mode without Video Indexer, or local mode)
+
 ```
 Video File
     │
@@ -340,7 +381,7 @@ Video File
     │
     ├── FFmpeg ──▶ Keyframes at Scene Changes (.png)
     │                 ├── OpenCV OCR / Azure Vision OCR ──▶ On-Screen Text
-    │                 └── GPT-4o Vision ──▶ UI State Description
+    │                 └── Foundry GPT-4o Vision ──▶ UI State Description
     │
     └── Combined Output: ExtractionResult
 ```
@@ -735,7 +776,12 @@ Pipeline steps: 1=Ingestion, 2=Extraction, 3=Structure, 4=Writer, 5=Editor, 6=Ev
 # config.py - Environment-based configuration
 class Settings(BaseSettings):
     # Processing mode
-    processing_mode: Literal["cloud", "local"] = "local"
+    processing_mode: Literal["auto", "cloud", "local"] = "auto"
+    # 'auto' (default): Extraction uses Foundry + Video Indexer if available, else local FFmpeg/Whisper.
+    #                   Downstream agents use Copilot proxy if available, else Foundry.
+    # 'cloud': All stages use Azure Foundry (requires full Azure setup).
+    # 'local': Extraction uses local FFmpeg/PySceneDetect/Whisper.
+    #          Downstream agents use Copilot proxy if available, else Foundry.
     
     # Azure AI Foundry
     foundry_project_endpoint: str
@@ -743,7 +789,7 @@ class Settings(BaseSettings):
     foundry_model_mini: str = "gpt-4o-mini"
     # Authentication: Uses DefaultAzureCredential (no API keys needed)
     
-    # Azure Video Indexer (cloud mode)
+    # Azure Video Indexer (cloud/auto mode)
     video_indexer_account_id: str = ""
     video_indexer_resource_id: str = ""
     
@@ -759,11 +805,31 @@ class Settings(BaseSettings):
     whisper_model: str = "base"  # tiny, base, small, medium, large
     ffmpeg_path: str = "ffmpeg"
     
-    # Copilot LM Proxy (local mode — set via handshake, see §2.4)
+    # Copilot LM Proxy (local/auto mode — set via handshake, see §2.4)
     copilot_proxy_url: str = ""       # e.g. http://localhost:54321
     copilot_proxy_model: str = "copilot-auto"
     # use_copilot_proxy is a computed property:
-    #   True when processing_mode == "local" and copilot_proxy_url is set
+    #   True when (auto or local mode) and copilot_proxy_url is set
+    
+    # Computed properties for client selection (see orchestrator.py)
+    @property
+    def is_auto_mode(self) -> bool:
+        return self.processing_mode == "auto"
+    
+    @property
+    def foundry_available(self) -> bool:
+        """Whether Azure AI Foundry is configured (endpoint set)."""
+        return bool(self.foundry_project_endpoint)
+    
+    @property
+    def video_indexer_available(self) -> bool:
+        """Whether Azure Video Indexer is configured for cloud extraction."""
+        return bool(self.video_indexer_account_id and self.video_indexer_resource_id)
+    
+    @property
+    def copilot_proxy_available(self) -> bool:
+        """Whether the Copilot LM Proxy is configured for downstream LLM calls."""
+        return bool(self.copilot_proxy_url)
     
     # MCP Settings
     mcp_enabled: bool = True
@@ -1182,4 +1248,4 @@ For simple, single-agent, prompt-centric experiences, Foundry Agent Service can 
 | Video analysis (local) | FFmpeg + PySceneDetect | OpenCV only | PySceneDetect's AdaptiveDetector works best for screen recordings |
 | Transcription | Azure Speech (primary) | Whisper-only | Managed service, fast transcription API, diarization; Whisper as free fallback |
 | Backend language | Python | C#/.NET, TypeScript | Best video/ML ecosystem (FFmpeg, OpenCV, Whisper, PySceneDetect) |
-| Processing modes | Cloud + Local | Cloud-only | Local mode enables development without full Azure setup |
+| Processing modes | auto + cloud + local | Cloud-only | Auto mode intelligently selects per-stage clients (Foundry+VI for extraction, Copilot proxy for downstream). Cloud+local overrides available for explicit control. Enables cost-effective local dev and production flexibility. |
