@@ -88,6 +88,7 @@ def _make_evaluation(passed: bool = True) -> EvaluationReport:
 
 
 class TestRunPipeline:
+    @patch("src.agents.orchestrator.create_extraction_client")
     @patch("src.agents.orchestrator.create_foundry_client")
     @patch("src.agents.orchestrator.EvaluateAgent")
     @patch("src.agents.orchestrator.EditorAgent")
@@ -106,6 +107,7 @@ class TestRunPipeline:
         mock_editor_cls,
         mock_evaluate_cls,
         mock_create_client,
+        mock_create_extraction_client,
     ):
         """Test that all 6 pipeline stages execute in order."""
         # Settings — use cloud mode so pipeline always routes to Foundry client
@@ -114,9 +116,11 @@ class TestRunPipeline:
         settings.copilot_proxy_url = ""
         mock_settings.return_value = settings
 
-        # Foundry client
+        # Foundry client (used by both create_foundry_client and create_extraction_client)
         mock_client = MagicMock()
         mock_create_client.return_value = mock_client
+        mock_extraction_vision_client = MagicMock()
+        mock_create_extraction_client.return_value = mock_extraction_vision_client
 
         # Mock each agent
         ingestion = MagicMock()
@@ -161,9 +165,10 @@ class TestRunPipeline:
         assert result.document.document_id == "doc001"
         assert result.evaluation.passed is True
 
-        # Verify ExtractionAgent received the foundry client
-        mock_extraction_cls.assert_called_once_with(foundry_client=mock_client)
+        # Verify ExtractionAgent received the extraction vision client (separate from downstream)
+        mock_extraction_cls.assert_called_once_with(foundry_client=mock_extraction_vision_client)
 
+    @patch("src.agents.orchestrator.create_extraction_client")
     @patch("src.agents.orchestrator.create_foundry_client")
     @patch("src.agents.orchestrator.EvaluateAgent")
     @patch("src.agents.orchestrator.EditorAgent")
@@ -182,6 +187,7 @@ class TestRunPipeline:
         mock_editor_cls,
         mock_evaluate_cls,
         mock_create_client,
+        mock_create_extraction_client,
     ):
         """Test that the pipeline re-edits when evaluation fails."""
         settings = MagicMock()
@@ -189,6 +195,7 @@ class TestRunPipeline:
         settings.copilot_proxy_url = ""
         mock_settings.return_value = settings
         mock_create_client.return_value = MagicMock()
+        mock_create_extraction_client.return_value = MagicMock()
 
         mock_ingestion_cls.return_value.process = AsyncMock(return_value=_make_ingestion_result())
         mock_extraction_cls.return_value.process = AsyncMock(return_value=_make_extraction_result())
