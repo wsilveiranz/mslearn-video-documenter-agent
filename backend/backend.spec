@@ -7,12 +7,31 @@ extraction, which is blocked by Windows Application Control / AppLocker
 policies on many corporate machines.
 """
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # Magika ships data files (model, config, metadata) that PyInstaller won't
 # discover automatically. markitdown uses magika for file-type detection.
 # Collect all subdirs — both models/ and config/ are required at runtime.
 magika_datas = collect_data_files('magika')
+
+# agent_framework (>=1.x) exposes core symbols such as ``workflow`` through a
+# lazy ``__getattr__`` on the package, so PyInstaller cannot statically trace
+# modules like ``agent_framework._workflows._functional``. Collect every core
+# internal submodule (plus the Foundry connector we use) while skipping the
+# optional provider namespaces we don't ship (anthropic, ollama, bedrock, ...).
+_AF_SKIP_NAMESPACES = (
+    'a2a', 'ag_ui', 'amazon', 'anthropic', 'azure', 'chatkit', 'declarative',
+    'devui', 'github', 'google', 'hyperlight', 'lab', 'mem0', 'microsoft',
+    'ollama', 'openai', 'orchestrations', 'redis',
+)
+agent_framework_hidden = [
+    _m
+    for _m in collect_submodules('agent_framework')
+    if not any(
+        _m == f'agent_framework.{_ns}' or _m.startswith(f'agent_framework.{_ns}.')
+        for _ns in _AF_SKIP_NAMESPACES
+    )
+]
 
 a = Analysis(
     ['src/main.py'],
@@ -155,7 +174,7 @@ a = Analysis(
         'src.services.learn_mcp_tools',
         'src.services.workiq_mcp_tools',
         'src.services.document_converter',
-    ],
+    ] + agent_framework_hidden,
     hookspath=['./pyinstaller-hooks'],
     hooksconfig={},
     runtime_hooks=['./pyinstaller-hooks/rthook_suppress_warnings.py'],
